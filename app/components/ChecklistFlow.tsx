@@ -1,35 +1,38 @@
 "use client";
 
 import { useState } from "react";
+import ContextInputs, {
+  combineCoverageDates,
+  combineLocation,
+  resolveVisaOrStatus,
+  DEFAULT_COUNTRY,
+} from "@/app/components/ContextInputs";
 import { buildChecklist, type CollectionChecklist } from "@/app/lib/checklist";
 
-const FIELDS = [
-  { name: "age", label: "Age" },
-  { name: "countryOrResidency", label: "Country / residency" },
-  { name: "visaOrStatus", label: "Visa / status" },
-  { name: "location", label: "Location" },
-  { name: "coverageDates", label: "Coverage dates" },
-] as const;
-
 export default function ChecklistFlow({ onHaveDocuments }: { onHaveDocuments: () => void }) {
-  const [context, setContext] = useState<Record<string, string>>({});
+  const [context, setContext] = useState<Record<string, string>>({
+    countryOrResidency: DEFAULT_COUNTRY,
+  });
   const [list, setList] = useState<CollectionChecklist | null>(null);
+
+  function build() {
+    const visaOrStatus = resolveVisaOrStatus(context);
+    const location = combineLocation(context);
+    const coverageDates = combineCoverageDates(context);
+    setList(buildChecklist({ ...context, visaOrStatus, location, coverageDates }));
+  }
 
   return (
     <section aria-label="What to collect">
       <h2>No documents yet? Start here</h2>
       {!list && (
         <>
-          {FIELDS.map(({ name, label }) => (
-            <label key={name} style={{ display: "block", marginTop: 8 }}>
-              {label}{" "}
-              <input
-                value={context[name] ?? ""}
-                onChange={(e) => setContext({ ...context, [name]: e.target.value })}
-              />
-            </label>
-          ))}
-          <button onClick={() => setList(buildChecklist(context))} style={{ marginTop: 12 }}>
+          <ContextInputs
+            context={context}
+            onChange={setContext}
+            visaLabel="Visa / status"
+          />
+          <button onClick={build} style={{ marginTop: 12 }}>
             Build my checklist
           </button>
         </>

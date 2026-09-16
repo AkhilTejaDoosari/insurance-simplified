@@ -1,19 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import ContextInputs, {
+  combineCoverageDates,
+  combineLocation,
+  resolveVisaOrStatus,
+  DEFAULT_COUNTRY,
+} from "@/app/components/ContextInputs";
 
 export interface UploadResult {
   sessionId: string;
   documents: { documentId: string; filename: string; pageCount: number }[];
 }
 
-const CONTEXT_FIELDS = [
-  { name: "age", label: "Age" },
-  { name: "countryOrResidency", label: "Country / residency" },
-  { name: "visaOrStatus", label: "Visa / status (if relevant)" },
-  { name: "location", label: "Location" },
-  { name: "coverageDates", label: "Coverage dates" },
-] as const;
+const TEXT_FIELDS = ["age", "countryOrResidency"] as const;
 
 export default function UploadDropzone({
   onUploaded,
@@ -21,7 +21,9 @@ export default function UploadDropzone({
   onUploaded: (result: UploadResult, context: Record<string, string>) => void;
 }) {
   const [files, setFiles] = useState<File[]>([]);
-  const [context, setContext] = useState<Record<string, string>>({});
+  const [context, setContext] = useState<Record<string, string>>({
+    countryOrResidency: DEFAULT_COUNTRY,
+  });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -35,9 +37,15 @@ export default function UploadDropzone({
     try {
       const form = new FormData();
       for (const f of files) form.append("documents", f);
-      for (const { name } of CONTEXT_FIELDS) {
+      for (const name of TEXT_FIELDS) {
         if (context[name]?.trim()) form.set(name, context[name].trim());
       }
+      const visaOrStatus = resolveVisaOrStatus(context);
+      if (visaOrStatus) form.set("visaOrStatus", visaOrStatus);
+      const location = combineLocation(context);
+      if (location) form.set("location", location);
+      const coverageDates = combineCoverageDates(context);
+      if (coverageDates) form.set("coverageDates", coverageDates);
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) {
@@ -68,18 +76,7 @@ export default function UploadDropzone({
           <li key={f.name}>{f.name}</li>
         ))}
       </ul>
-      <fieldset>
-        <legend>Your context (used only when documents make it relevant)</legend>
-        {CONTEXT_FIELDS.map(({ name, label }) => (
-          <label key={name} style={{ display: "block", marginTop: 8 }}>
-            {label}{" "}
-            <input
-              value={context[name] ?? ""}
-              onChange={(e) => setContext({ ...context, [name]: e.target.value })}
-            />
-          </label>
-        ))}
-      </fieldset>
+      <ContextInputs context={context} onChange={setContext} />
       {error && <p role="alert">{error}</p>}
       <button onClick={submit} disabled={busy} style={{ marginTop: 12 }}>
         {busy ? "Processing…" : "Compare documents"}
