@@ -1,1 +1,15 @@
 .claude/
+node_modules/
+.next/
+out/
+dist/
+build/
+coverage/
+*.log
+.env*
+.DS_Store
+*.tmp
+*.swp
+test-results/
+playwright-report/
+next-env.d.ts
