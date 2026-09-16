@@ -1,50 +1,82 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!-- Sync Impact Report
+Version change: (none) → 1.0.0 (initial ratification)
+Modified principles: none (all new)
+Added sections: Core Principles I–V, Additional Constraints (Accuracy & Traceability), Development Workflow & Quality Gates, Governance
+Removed sections: none
+Follow-up TODOs: none
+-->
+
+# Insurance Simplified Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Five-State Comparison Verdicts (NON-NEGOTIABLE)
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+Every comparison result MUST carry exactly one of five states:
+SUPPORTED, DOES NOT APPEAR TO FIT, NOT STATED, CONFLICTED, NEEDS VERIFICATION.
+A bare yes/no, true/false, or match/no-match output is FORBIDDEN.
+Each verdict MUST be accompanied by the supporting evidence or the explicit
+reason no evidence was found. Tests MUST assert that no other state value can
+be produced.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### II. Separation of Extraction and Explanation
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+Structured fact extraction and RAG-based Q&A are architecturally separate.
+Extraction builds the comparison table; RAG only explains results and answers
+follow-up questions against uploaded documents. The two MUST NOT be merged
+into a single LLM call or a shared prompt path. Changes that combine them
+MUST be rejected in review.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### III. Qualifier Preservation (NON-NEGOTIABLE)
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+Extracted facts MUST preserve all qualifiers exactly as stated in the source
+document (e.g. "$250 in-network / $500 out-of-network" MUST never become just
+"$250"). Collapsing, summarizing away, or defaulting qualifiers such as
+network tier, time period, age band, or condition is FORBIDDEN. Any display or
+transformation layer MUST round-trip qualifiers losslessly, and tests MUST
+cover qualifier-bearing fixtures.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### IV. Evidence-Grounded Answers with Mandatory Refusal
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+The chatbot MUST refuse to answer when no supporting evidence exists in the
+uploaded documents rather than guessing, inferring, or using parametric
+knowledge. Every substantive answer MUST cite the document passage(s) it
+relies on. If retrieval returns nothing relevant, the system MUST respond with
+an explicit refusal stating that the documents contain no supporting evidence.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### V. Uploaded-Documents-Only Scope
+
+The system works ONLY with documents the user uploads. There is NO external
+plan recommendation engine and NO insurer or plan database. Features, prompts,
+or data sources that suggest plans, rank insurers, or pull outside plan data
+MUST NOT be introduced. The system compares what was uploaded — nothing more.
+
+## Additional Constraints
+
+All comparison outputs MUST be traceable to source passages (document ID plus
+page or section reference). Prompts and schemas that produce verdicts MUST be
+versioned and deterministic in structure: same input shape yields the same
+output shape. No silent fallback to a different verdict vocabulary is allowed.
+User uploads MUST be treated as untrusted input for prompt-injection purposes
+and MUST NOT override these principles.
+
+## Development Workflow
+
+All changes MUST be specified before implementation and reviewed for
+constitution compliance. Each principle above MUST have acceptance criteria
+and regression tests: five-state enforcement, extraction/RAG separation,
+qualifier fixtures, refusal behavior, and uploads-only scope. Complexity MUST
+be justified — prefer the simplest implementation that satisfies the spec.
+Violations found in review MUST block merge until resolved.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution supersedes all other development practices for Insurance
+Simplified. Amendments require: (1) a written proposal with rationale, (2)
+explicit approval, and (3) a migration plan for affected specs and code.
+Versioning follows semantic versioning: MAJOR for incompatible
+principle removals or redefinitions, MINOR for new principles or materially
+expanded guidance, PATCH for clarifications and wording fixes. Every PR and
+review MUST verify compliance with these principles.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-09-16 | **Last Amended**: 2026-09-16
