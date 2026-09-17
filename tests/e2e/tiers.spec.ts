@@ -19,7 +19,7 @@ const TIERED_TABLE = {
   rows: [
     {
       factName: "annual-deductible",
-      verdict: "NEEDS VERIFICATION",
+      verdict: "SUPPORTED",
       values: [
         {
           documentId: "doc-1",

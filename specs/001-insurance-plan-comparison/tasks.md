@@ -22,7 +22,7 @@ implementable and testable after Foundational completes.
 - [X] T002 [P] Configure linting and formatting (eslint + prettier) at repository root
 - [X] T003 [P] Configure Vitest for unit/contract tests at repository root
 - [X] T004 [P] Configure Playwright for end-to-end flows at repository root
-- [X] T005 [P] Create sample English PDF fixtures with known values in tests/fixtures/ (agreeing, conflicting, missing, vague, and qualifier-bearing facts with recorded file/page/quote)
+- [X] T005 [P] Create sample English PDF fixtures with known values in tests/fixtures/ (agreeing, differing, missing, vague, and qualifier-bearing facts with recorded file/page/quote)
 
 ---
 
@@ -63,7 +63,7 @@ one allowed verdict per row, qualifiers intact, and citations present
 ### Implementation for User Story 1
 
 - [X] T015 [P] [US1] Create versioned fact list v1 (covering deductible, out-of-pocket maximum, emergency care, prescriptions, pre-existing conditions, eligibility, network) in app/lib/extraction/fact-list.ts
-- [X] T016 [US1] Implement extraction path with verdict assignment in app/lib/extraction/extract.ts (context field applied only when documents reference it; vague/partial/qualifier-missing → NEEDS VERIFICATION; context-ruled-out → DOES NOT APPEAR TO FIT; disagreement → CONFLICTED; absent everywhere → NOT STATED; depends on T006, T015)
+- [X] T016 [US1] Implement extraction path with verdict assignment in app/lib/extraction/extract.ts (context field applied only when documents reference it; vague/partial/qualifier-missing → NEEDS VERIFICATION; context-ruled-out → DOES NOT APPEAR TO FIT; same-document/same-scope contradiction → CONFLICTED while cross-plan differences → SUPPORTED; absent everywhere → NOT STATED; V1 has no document-to-plan identity so different documentIds alone never establish a conflict; depends on T006, T015)
 - [X] T017 [US1] Implement extraction endpoint in app/api/extract/route.ts emitting comparison-schema v1 (depends on T008, T016)
 - [X] T018 [US1] Build upload UI with context form in app/components/UploadDropzone.tsx (age, country/residency, visa/status if relevant, location, coverage dates)
 - [X] T019 [US1] Build comparison table UI in app/components/ComparisonTable.tsx (one column per document + verdict column; CONFLICTED shows both values; NOT STATED rows explicit; depends on T017)

@@ -34,7 +34,7 @@ describe("comparison-schema v1 contract", () => {
         },
         {
           factName: "emergency-copay",
-          verdict: "CONFLICTED",
+          verdict: "SUPPORTED",
           values: [
             {
               documentId: "doc-1",
@@ -50,10 +50,28 @@ describe("comparison-schema v1 contract", () => {
             },
           ],
         },
+        {
+          factName: "urgent-care",
+          verdict: "CONFLICTED",
+          values: [
+            {
+              documentId: "doc-1",
+              display: "$25 copay",
+              qualifiers: {},
+              evidence: [{ documentId: "doc-1", page: 2, quote: "Urgent care copay is $25." }],
+            },
+            {
+              documentId: "doc-1",
+              display: "$50 copay",
+              qualifiers: {},
+              evidence: [{ documentId: "doc-1", page: 9, quote: "Urgent care copay is $50." }],
+            },
+          ],
+        },
         { factName: "maternity-coverage", verdict: "NOT STATED", values: [] },
       ],
     };
-    expect(validateTable(table).rows).toHaveLength(3);
+    expect(validateTable(table).rows).toHaveLength(4);
   });
 
   it("rejects bare yes/no verdicts", () => {

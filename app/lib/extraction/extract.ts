@@ -30,7 +30,7 @@ export interface ExtractInputDocument {
 }
 
 function normalize(display: string): string {
-  return display.toLowerCase().replace(/\s+/g, " ").replace(/[.]+$/, "").trim();
+  return display.trim().toLowerCase().replace(/\s+/g, " ").replace(/[.]+$/, "");
 }
 
 function isVague(line: string): boolean {
@@ -38,30 +38,54 @@ function isVague(line: string): boolean {
   return VAGUE_PATTERNS.some((p) => lower.includes(p));
 }
 
-type MonetaryShape = "fixed" | "range" | "options" | "non-monetary";
+type ScopeQualifierKey = "planTier" | "networkTier" | "period" | "ageBand" | "conditions";
 
-/** Classify monetary displays so structurally different presentations of one
- *  benefit (range vs. enumerated options vs. fixed amount) are not read as
- *  insurers contradicting the same figure. */
-function monetaryShape(display: string): MonetaryShape {
-  const amounts = display.match(/\$\s*[\d,]+(?:\.\d{1,2})?/g) ?? [];
-  if (amounts.length === 0) return "non-monetary";
-  if (
-    /\$\s*[\d,]+(?:\.\d{1,2})?\s*(?:-|–|—|to)\s*\$?\s*[\d,]+(?:\.\d{1,2})?/i.test(display)
-  ) {
-    return "range";
-  }
-  return amounts.length > 1 ? "options" : "fixed";
+/** Qualifier keys that scope a value to one slice of a plan. Two values
+ *  share a scope only when every one of these agrees (case-insensitive):
+ *  in-network vs. out-of-network are different scopes, as are Lite vs.
+ *  Platinum tiers. */
+const SCOPE_KEYS: readonly ScopeQualifierKey[] = [
+  "planTier",
+  "networkTier",
+  "period",
+  "ageBand",
+  "conditions",
+];
+
+function scopeSignature(qualifiers: unknown): string {
+  const q =
+    typeof qualifiers === "object" && qualifiers !== null
+      ? (qualifiers as Record<string, unknown>)
+      : {};
+  return SCOPE_KEYS.map((k) => {
+    const v = q[k];
+    return typeof v === "string" ? v.toLowerCase().trim() : "";
+  }).join("|");
 }
 
-function describeMonetaryShapes(shapes: MonetaryShape[]): string {
-  const labels = {
-    range: "a range",
-    options: "enumerated options",
-    fixed: "a fixed amount",
-    "non-monetary": "a non-monetary statement",
-  } as const;
-  return [...new Set(shapes)].map((shape) => labels[shape]).join(" vs. ");
+/** Genuine same-document/same-scope contradiction: two values from the SAME
+ *  documentId, under the SAME scope, with different normalized readings.
+ *  Values from different documentIds are different comparison inputs —
+ *  never a conflict, no matter how far apart the figures are. V1 has no
+ *  document-to-plan identity, so it confirms CONFLICTED only within one
+ *  documentId and never infers that two documents describe the same plan;
+ *  cross-document same-plan conflict detection is a future plan-identity
+ *  capability. */
+export function hasSameScopeContradiction(
+  values: { documentId: unknown; display: unknown; qualifiers: unknown }[]
+): boolean {
+  for (let i = 0; i < values.length; i++) {
+    for (let j = i + 1; j < values.length; j++) {
+      const a = values[i];
+      const b = values[j];
+      if (a.documentId !== b.documentId) continue;
+      if (scopeSignature(a.qualifiers) !== scopeSignature(b.qualifiers)) continue;
+      if (typeof a.display !== "string" || typeof b.display !== "string") continue;
+      if (normalize(a.display) === normalize(b.display)) continue;
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Find the first matching line per fact per document (line = sentence-ish unit). */
@@ -136,21 +160,15 @@ export function extractFallback(
     if (allVague) {
       return { factName: fact.name, verdict: "NEEDS VERIFICATION", values };
     }
-    const distinct = new Set(values.map((v) => normalize(v.display)));
-    if (distinct.size > 1) {
-      const shapes = values.map((v) => monetaryShape(v.display));
-      if (shapes.every((shape) => shape !== "non-monetary") && new Set(shapes).size > 1) {
-        return {
-          factName: fact.name,
-          verdict: "NEEDS VERIFICATION",
-          rationale: `The documents structure this benefit differently (${describeMonetaryShapes(shapes)}); verify which presentation applies.`,
-          values,
-        };
-      }
-    }
+    // Cross-document differences are comparison data, not evidence
+    // conflict: separate plans are expected to state different figures
+    // (different structures too — a range in one plan vs. a fixed amount
+    // in another is SUPPORTED). CONFLICTED is reserved for a genuine
+    // same-document/same-scope contradiction, which the single-match-per-document
+    // fallback cannot observe, so every cited row here is SUPPORTED.
     return {
       factName: fact.name,
-      verdict: distinct.size === 1 ? "SUPPORTED" : "CONFLICTED",
+      verdict: "SUPPORTED",
       values,
     };
   });
@@ -179,12 +197,13 @@ const EXTRACTION_INSTRUCTIONS = [
   '[{"documentId":"doc-1","display":"$0 to $2,500","qualifiers":{"planTier":"Lite"},"evidence":[...]},{"documentId":"doc-1","display":"$0 to $2,500","qualifiers":{"planTier":"Plus"},"evidence":[...]},{"documentId":"doc-1","display":"$0 to $25,000","qualifiers":{"planTier":"Platinum"},"evidence":[...]}]',
   "Brochure comparison tables flatten to a header line naming the tiers (e.g. \"LITE PLUS PLATINUM\") followed by benefit lines listing one figure per tier in the SAME ORDER (e.g. \"Deductible $0 to $2,500 $0 to $2,500 $0 to $25,000\" = Lite $0 to $2,500, Plus $0 to $2,500, Platinum $0 to $25,000). Map figures to tiers by position and emit one value per tier; do not keep only the first figure.",
   "A figure that applies to every tier of a document gets one value with no planTier.",
-  "Tiers within one document differing from each other is NOT a conflict; verdicts compare documents against each other.",
+  "Tiers within one document differing from each other is NOT a conflict; different plans, tiers, and scopes stating different values is normal comparison data.",
   "Every populated value needs >=1 evidence entry with 1-based page and the exact quote.",
   "Rows for facts in no document use NOT STATED with empty values.",
   "Never attach evidence to an absence, and never cite an unrelated passage to fill the evidence requirement — state the absence explicitly.",
-  "Differing values across documents use CONFLICTED; vague/partial statements use NEEDS VERIFICATION.",
-  "When values differ in KIND rather than contradicting each other — a range vs. enumerated options vs. one fixed amount — prefer NEEDS VERIFICATION with a rationale explaining the structural difference, not CONFLICTED.",
+  "Use SUPPORTED whenever each value has cited, usable evidence — even when figures differ across documents, plan tiers, or network tiers (e.g. doc-1 deductible $250 vs. doc-2 deductible $500; Lite $250 vs. Platinum $500; in-network vs. out-of-network).",
+  "Use CONFLICTED ONLY for a genuine same-document/same-scope contradiction: two values from the SAME documentId with the SAME scope (planTier, networkTier, period, ageBand, and conditions all equal) making incompatible claims, each with its own evidence. Two values from different documentIds are NEVER sufficient for CONFLICTED — V1 has no document-to-plan identity, so never infer that two documents describe the same plan — and values scoped to different tiers are NEVER contradictory merely because the figures differ.",
+  "Use NEEDS VERIFICATION ONLY when the source statement itself is vague, partial, ambiguous, or cannot safely support a concrete interpretation — never merely because different plans structure a benefit differently (a range in one plan vs. a fixed amount in another is SUPPORTED).",
 ].join("\n");
 
 /** Boundary normalization for LLM output (defense in depth: the prompt
@@ -285,9 +304,12 @@ const ABSENCE_DISPLAY = /^\s*(?:not|no)\s+(?:\w+\s+)?(?:stated|specified|mention
  *    evidence), and flip rows left empty to NOT STATED.
  *  - DOES NOT APPEAR TO FIT must name the ruling-out context field; without
  *    one it is NEEDS VERIFICATION (or NOT STATED when there are no values).
- *  - CONFLICTED needs values from >= 2 documents; with fewer it is SUPPORTED.
- *  - CONFLICTED values that differ in monetary shape (range vs. options vs.
- *    fixed) are NEEDS VERIFICATION, exactly as the deterministic engine rules. */
+ *  - CONFLICTED is kept only for a genuine same-document/same-scope
+ *    contradiction (same documentId, same qualifiers scope, incompatible
+ *    readings each with its own evidence). V1 has no document-to-plan
+ *    identity, so cross-document values are comparison data and are
+ *    recorded SUPPORTED; detecting conflicts across documents that belong
+ *    to one plan is a future plan-identity capability. */
 export function reconcileLlmTable(
   raw: unknown,
   documents: ExtractInputDocument[]
@@ -332,24 +354,15 @@ export function reconcileLlmTable(
       }
       if (r.verdict === "CONFLICTED") {
         const typed = values.filter(
-          (v): v is { documentId: string; display: string } =>
-            typeof v === "object" && v !== null &&
-            typeof (v as Record<string, unknown>).display === "string"
+          (v): v is { documentId: unknown; display: unknown; qualifiers: unknown } =>
+            typeof v === "object" && v !== null
         );
-        const docIds = new Set(typed.map((v) => v.documentId));
-        const shapes = typed.map((v) => monetaryShape(v.display));
-        if (docIds.size < 2) {
+        if (!hasSameScopeContradiction(typed)) {
           console.warn(
-            `[extractViaLlm] CONFLICTED on fact "${String(r.factName)}" with values from ${docIds.size} document(s); recorded as SUPPORTED`
+            `[extractViaLlm] CONFLICTED on fact "${String(r.factName)}" has no same-document/same-scope contradiction (cross-document differences are comparison data); recorded as SUPPORTED`
           );
           out.verdict = "SUPPORTED";
           delete out.rationale;
-        } else if (
-          shapes.every((shape) => shape !== "non-monetary") &&
-          new Set(shapes).size > 1
-        ) {
-          out.verdict = "NEEDS VERIFICATION";
-          out.rationale = `The documents structure this benefit differently (${describeMonetaryShapes(shapes)}); verify which presentation applies.`;
         }
       }
       return out;

@@ -63,7 +63,7 @@ rejected by validation. Contract tests assert rejection.
     },
     {
       "factName": "emergency-copay",
-      "verdict": "CONFLICTED",
+      "verdict": "SUPPORTED",
       "values": [
         {
           "documentId": "doc-1",
@@ -76,6 +76,24 @@ rejected by validation. Contract tests assert rejection.
           "display": "$250 copay",
           "qualifiers": {},
           "evidence": [{ "documentId": "doc-2", "page": 9, "quote": "<exact source text>" }]
+        }
+      ]
+    },
+    {
+      "factName": "urgent-care",
+      "verdict": "CONFLICTED",
+      "values": [
+        {
+          "documentId": "doc-1",
+          "display": "$25 copay",
+          "qualifiers": {},
+          "evidence": [{ "documentId": "doc-1", "page": 4, "quote": "<exact source text>" }]
+        },
+        {
+          "documentId": "doc-1",
+          "display": "$50 copay",
+          "qualifiers": {},
+          "evidence": [{ "documentId": "doc-1", "page": 9, "quote": "<exact source text>" }]
         }
       ]
     }
@@ -94,11 +112,31 @@ rejected by validation. Contract tests assert rejection.
   document describes several (e.g. `"Lite"`, `"Plus"`, `"Platinum"`). Such a
   document contributes one value **per tier** to the row — never one display
   string with the tiers' figures concatenated. A value with no `planTier`
-  applies to the whole document. Tiers differing within one document is not
-  a `CONFLICTED` condition; verdicts compare documents.
-- `NOT STATED` rows have empty `values`.
-- `CONFLICTED` rows show each disagreeing value with its own evidence
-  (FR-010).
+  applies to the whole document. Differences between tiers, documents, or
+  scopes are normal comparison data (`SUPPORTED`); they are never a
+  `CONFLICTED` condition.
+- `SUPPORTED` means the fact has cited, usable evidence. Different values
+  across different documents/plans are normal and remain `SUPPORTED`
+  (e.g. doc-1 deductible `$250` vs. doc-2 deductible `$500`).
+- `NOT STATED` rows have empty `values`, and apply only when there are no
+  supported values for that fact at all.
+- `CONFLICTED` is reserved for a genuine same-document/same-scope
+  contradiction — same documentId, same fact, same qualifiers scope
+  (`planTier`, `networkTier`, `period`, `ageBand`, `conditions` all equal),
+  two incompatible claims each with its own evidence — and shows each
+  contradicting value with its own evidence (FR-010). Two values from
+  different documentIds are never sufficient for `CONFLICTED`, and neither
+  are values scoped to different tiers (Lite vs. Platinum) or network tiers
+  (in-network vs. out-of-network) merely because the figures differ.
+- V1 scope note: the schema carries no document-to-plan identity, so V1
+  confirms `CONFLICTED` only within one documentId and never infers that
+  two uploaded documents describe the same plan. Detecting conflicts
+  across documents that belong to one plan is a future plan-identity
+  capability, not V1 behavior.
+- `NEEDS VERIFICATION` applies only when the source statement itself is
+  vague, partial, ambiguous, or cannot safely support a concrete
+  interpretation — never merely because different plans structure a benefit
+  differently.
 - `DOES NOT APPEAR TO FIT` requires the context field that ruled the fact
   out to be named in the row's rationale.
 - Payloads declaring a different `schemaVersion` MUST be rejected.

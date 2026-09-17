@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Build Insurance Simplified. A user uploads 2-4 insurance documents (PDFs) and provides basic context (age, country/residency, visa/status if relevant, location, coverage dates) — only using a context field if the uploaded documents make it relevant. The system extracts ~20-30 comparable facts per set of documents (deductible, out-of-pocket maximum, emergency care coverage, prescriptions, pre-existing conditions, eligibility, network) with exact page-level citations. It displays a side-by-side comparison table where each cell can be clicked to reveal its source page and exact quote. When two documents disagree on a fact, it flags this as CONFLICTED and shows both values with their sources. When a fact isn't mentioned anywhere, it's flagged NOT STATED. A chatbot side panel lets the user ask questions about the uploaded plans and receives answers with citations, or an explicit refusal if no evidence exists. The system also proactively suggests questions the user should ask their insurer based on gaps or ambiguities it found. If the user has no documents yet, a guided flow collects their context and produces a checklist of what to look for and which documents to collect, then routes them back to upload once they have them."
+**Input**: User description: "Build Insurance Simplified. A user uploads 2-4 insurance documents (PDFs) and provides basic context (age, country/residency, visa/status if relevant, location, coverage dates) — only using a context field if the uploaded documents make it relevant. The system extracts ~20-30 comparable facts per set of documents (deductible, out-of-pocket maximum, emergency care coverage, prescriptions, pre-existing conditions, eligibility, network) with exact page-level citations. It displays a side-by-side comparison table where each cell can be clicked to reveal its source page and exact quote. Different values across different plans are normal comparison data and stay SUPPORTED. When one document contradicts itself on a fact under the same scope, it flags this as CONFLICTED and shows both contradicting values with their sources. When a fact isn't mentioned anywhere, it's flagged NOT STATED. A chatbot side panel lets the user ask questions about the uploaded plans and receives answers with citations, or an explicit refusal if no evidence exists. The system also proactively suggests questions the user should ask their insurer based on gaps or ambiguities it found. If the user has no documents yet, a guided flow collects their context and produces a checklist of what to look for and which documents to collect, then routes them back to upload once they have them."
 
 ## Clarifications
 
@@ -44,9 +44,10 @@ verdicts and citations. Delivers standalone comparison value without chat.
    upload, **Then** the system extracts comparable facts and displays a
    side-by-side table with one of the five verdict states per row and
    page-level citations.
-2. **Given** uploaded documents disagree on a fact, **When** the table renders,
-   **Then** that row is flagged CONFLICTED and shows both values with their
-   sources.
+2. **Given** one document makes two incompatible claims about a fact under the
+    same scope (same documentId, same qualifiers), **When** the table renders,
+    **Then** that row is flagged CONFLICTED and shows both contradicting
+    values with their sources.
 3. **Given** a fact is mentioned in no uploaded document, **When** the table
    renders, **Then** that row is flagged NOT STATED.
 4. **Given** a fact value carries qualifiers (e.g. in-network vs.
@@ -74,7 +75,7 @@ quote. Delivers verification value independently of chat.
    populated cell, **Then** an evidence view shows the source document, page
    reference, and exact quote.
 2. **Given** a CONFLICTED row, **When** the user inspects evidence, **Then**
-   both conflicting values appear, each with its own source and quote.
+    both contradicting values appear, each with its own source and quote.
 
 ---
 
@@ -105,7 +106,8 @@ Delivers explanation value on top of the table.
 ### User Story 4 - Receive suggested insurer questions (Priority: P2)
 
 A user views proactively suggested questions they should ask their insurer,
-generated from gaps, ambiguities, or conflicts found in their documents.
+generated from gaps, ambiguities, or genuine same-document/same-scope
+contradictions found in their documents.
 
 **Why this priority**: Turns detected uncertainty into actionable next steps;
 depends on extraction results from Story 1.
@@ -196,8 +198,16 @@ upload. Delivers onboarding value standalone.
   column per uploaded document plus a fact row label and verdict column.
 - **FR-009**: Clicking any populated cell MUST reveal its source document,
   page reference, and exact quote.
-- **FR-010**: When documents disagree on a fact, the system MUST flag the row
-  CONFLICTED and show each value with its own source.
+- **FR-010**: When a single document makes two incompatible claims about a fact
+  under the same scope (same documentId, same qualifiers such as planTier,
+  networkTier, period, ageBand, and conditions), the system MUST flag the row
+  CONFLICTED and show each contradicting value with its own source. Different
+  values across different plans are normal comparison data and MUST be
+  SUPPORTED, never CONFLICTED. Different documentIds ALONE are not enough
+  evidence to declare a conflict: V1 has no document-to-plan identity, so it
+  does not infer that two uploaded documents describe the same plan, and
+  cross-document same-plan conflict detection is a future plan-identity
+  capability.
 - **FR-011**: When a fact appears in no uploaded document, the system MUST
   flag it NOT STATED.
 - **FR-012**: System MUST provide a chatbot side panel that answers questions
@@ -209,7 +219,8 @@ upload. Delivers onboarding value standalone.
   extraction builds the comparison table and RAG only explains/answers — they
   MUST NOT be merged into a single model call.
 - **FR-015**: System MUST generate suggested insurer questions derived from
-  detected gaps (NOT STATED), conflicts (CONFLICTED), and ambiguities
+  detected gaps (NOT STATED), genuine same-document/same-scope contradictions
+  (CONFLICTED), and ambiguities
   (NEEDS VERIFICATION), each tied to its motivating fact.
 - **FR-016**: System MUST provide a guided no-documents flow that collects
   context and produces a checklist of what to look for and which documents to
@@ -234,7 +245,11 @@ upload. Delivers onboarding value standalone.
   attributes include fact name, per-document value with qualifiers, and
   page-level evidence.
 - **Comparison Verdict**: Exactly one of the five states per row, with
-  supporting evidence or stated absence of evidence. DOES NOT APPEAR TO FIT
+  supporting evidence or stated absence of evidence. SUPPORTED means the
+  fact has cited, usable evidence — different values across different plans
+  stay SUPPORTED. CONFLICTED means one document contradicts itself under the
+  same scope (same documentId — V1 has no document-to-plan identity and never
+  infers that two documents are the same plan). DOES NOT APPEAR TO FIT
   means the user's context rules the fact out for them; NEEDS VERIFICATION
   means the statement is vague, partial, or missing qualifiers.
 - **Evidence Citation**: Source document ID, page/section reference, and exact
@@ -242,7 +257,7 @@ upload. Delivers onboarding value standalone.
 - **Chat Exchange**: A user question plus the cited answer or explicit
   refusal, scoped to the current document set.
 - **Insurer Question**: A suggested follow-up question tied to a specific gap,
-  conflict, or ambiguity in the comparison.
+  genuine same-document/same-scope contradiction, or ambiguity in the comparison.
 - **Collection Checklist**: Guidance output of the no-documents flow listing
   what to look for and which documents to collect.
 

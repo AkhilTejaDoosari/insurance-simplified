@@ -14,10 +14,10 @@ const DOCS = [
   { documentId: "doc-3", filename: "c.pdf", pageCount: 1, pages: ["x"] },
 ];
 
-const value = (documentId: string, display: string) => ({
+const value = (documentId: string, display: string, qualifiers: Record<string, string> = {}) => ({
   documentId,
   display,
-  qualifiers: {},
+  qualifiers,
   evidence: [{ documentId, page: 1, quote: display }],
 });
 
@@ -78,7 +78,7 @@ describe("LLM boundary reconciliation", () => {
     expect(table.rows[0]).toEqual({ factName: "vision-coverage", verdict: "NOT STATED", values: [] });
   });
 
-  it("downgrades CONFLICTED to NEEDS VERIFICATION when values differ in monetary shape", async () => {
+  it("records cross-plan range vs. options vs. fixed differences as SUPPORTED comparison data", async () => {
     mockedComplete.mockResolvedValue(
       payload([
         {
@@ -93,11 +93,11 @@ describe("LLM boundary reconciliation", () => {
       ]),
     );
     const table = await extractViaLlm(DOCS, {});
-    expect(table.rows[0].verdict).toBe("NEEDS VERIFICATION");
-    expect(table.rows[0].rationale).toMatch(/range.*options.*fixed/i);
+    expect(table.rows[0].verdict).toBe("SUPPORTED");
+    expect(table.rows[0].values).toHaveLength(3);
   });
 
-  it("leaves a genuine same-shape conflict alone", async () => {
+  it("records a same-shape cross-plan difference as SUPPORTED, not CONFLICTED", async () => {
     mockedComplete.mockResolvedValue(
       payload([
         {
@@ -108,7 +108,69 @@ describe("LLM boundary reconciliation", () => {
       ]),
     );
     const table = await extractViaLlm(DOCS, {});
+    expect(table.rows[0].verdict).toBe("SUPPORTED");
+  });
+
+  it("keeps a genuine same-document/same-scope contradiction as CONFLICTED", async () => {
+    mockedComplete.mockResolvedValue(
+      payload([
+        {
+          factName: "urgent-care",
+          verdict: "CONFLICTED",
+          values: [
+            {
+              documentId: "doc-1",
+              display: "$25 copay",
+              qualifiers: {},
+              evidence: [{ documentId: "doc-1", page: 2, quote: "Urgent care copay is $25." }],
+            },
+            {
+              documentId: "doc-1",
+              display: "$50 copay",
+              qualifiers: {},
+              evidence: [{ documentId: "doc-1", page: 9, quote: "Urgent care copay is $50." }],
+            },
+            value("doc-2", "$25 copay"),
+          ],
+        },
+      ]),
+    );
+    const table = await extractViaLlm(DOCS, {});
     expect(table.rows[0].verdict).toBe("CONFLICTED");
+  });
+
+  it("downgrades same-document values scoped to different tiers to SUPPORTED", async () => {
+    mockedComplete.mockResolvedValue(
+      payload([
+        {
+          factName: "annual-deductible",
+          verdict: "CONFLICTED",
+          values: [
+            value("doc-1", "$250", { planTier: "Lite" }),
+            value("doc-1", "$500", { planTier: "Platinum" }),
+          ],
+        },
+      ]),
+    );
+    const table = await extractViaLlm(DOCS, {});
+    expect(table.rows[0].verdict).toBe("SUPPORTED");
+  });
+
+  it("downgrades same-document values scoped to different network tiers to SUPPORTED", async () => {
+    mockedComplete.mockResolvedValue(
+      payload([
+        {
+          factName: "annual-deductible",
+          verdict: "CONFLICTED",
+          values: [
+            value("doc-1", "$250", { networkTier: "in-network" }),
+            value("doc-1", "$500", { networkTier: "out-of-network" }),
+          ],
+        },
+      ]),
+    );
+    const table = await extractViaLlm(DOCS, {});
+    expect(table.rows[0].verdict).toBe("SUPPORTED");
   });
 
   it("recovers DOES NOT APPEAR TO FIT rows that name no ruling-out context field", async () => {

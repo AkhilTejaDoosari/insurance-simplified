@@ -8,7 +8,7 @@ prerequisites, steps, and expected outcomes with links to contracts.
 ## Prerequisites
 
 - App running locally; 2+ sample English PDFs with known differing values
-  (e.g. deductibles that disagree, one fact missing everywhere, one vague
+  (e.g. deductibles that differ across plans, one fact missing everywhere, one vague
   statement, one qualifier-bearing value like "$250 in-network /
   $500 out-of-network").
 - Fixtures recorded: which file/page/quote backs each expected cell.
@@ -18,13 +18,15 @@ prerequisites, steps, and expected outcomes with links to contracts.
 1. Upload 2 PDFs + basic context.
 2. Wait for the table (budget: under 5 minutes per SC-001).
 3. **Expect**: ~20–30 rows; every row carries exactly one verdict from the
-   closed enum ([comparison-schema](contracts/comparison-schema.md));
-   CONFLICTED rows show both values; missing facts show NOT STATED.
+    closed enum ([comparison-schema](contracts/comparison-schema.md));
+    differing plan values show side by side as SUPPORTED; missing facts show
+    NOT STATED.     (A CONFLICTED row appears only for a genuine
+    same-document/same-scope contradiction.)
 4. **Expect**: qualifier-bearing values display in full, never collapsed.
 
 ## Flow 2 — Cell evidence inspection (P1)
 
-1. Click several populated cells, including one CONFLICTED row.
+1. Click several populated cells, including one multi-value SUPPORTED row.
 2. **Expect**: evidence panel shows source document, page, and exact quote
    matching the fixture (SC-002: 100% of populated cells).
 
