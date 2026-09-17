@@ -69,7 +69,12 @@ function TierCells({
   return (
     <Fragment>
       {group.visible.map((tier, i) =>
-        render(cellValues(row.values, group.documentId, tier), `${group.documentId}:${tier ?? ""}`, 1, i === 0),
+        render(
+          cellValues(row.values, group.documentId, tier),
+          `${group.documentId}:${tier ?? ""}`,
+          1,
+          i === 0,
+        ),
       )}
     </Fragment>
   );
@@ -83,6 +88,8 @@ export default function ComparisonTable({
   onSelectCell: (cell: SelectedCell) => void;
 }) {
   const groups = groupRows(table.rows);
+  const [activeSection, setActiveSection] = useState(groups[0]?.section.title ?? "");
+  const activeGroup = groups.find(({ section }) => section.title === activeSection) ?? groups[0];
   const tiersByDoc = useMemo(() => documentTiers(table), [table]);
   const [selection, setSelection] = useState<Record<string, string>>({});
 
@@ -97,7 +104,6 @@ export default function ComparisonTable({
   });
   const hasTierRow = docGroups.some((g) => g.tiers.length > 1);
   const valueColumns = docGroups.reduce((n, g) => n + g.visible.length, 0);
-  const columns = valueColumns + 2;
 
   // The tier sub-header sticks just below the document header, whose height
   // depends on wrapping filenames — measure it rather than guess.
@@ -119,7 +125,7 @@ export default function ComparisonTable({
 
   return (
     <section
-      className={`card comparison${valueColumns >= 4 ? " comparison--wide" : ""}`}
+      className="card comparison"
       style={{ "--value-columns": valueColumns } as React.CSSProperties}
       aria-label="Plan comparison"
     >
@@ -127,88 +133,107 @@ export default function ComparisonTable({
         <h2>Your plans, side by side</h2>
         <p>Select any value to see the exact wording it came from.</p>
       </div>
-      <table className="table" ref={tableEl}>
-        <colgroup>
-          <col className="col-fact" />
-          <col className="col-verdict" />
-          {docGroups.map((g) =>
-            g.visible.map((tier) => <col key={`${g.documentId}:${tier ?? ""}`} />),
-          )}
-        </colgroup>
-        <thead>
-          <tr ref={firstHeaderRow}>
-            <th scope="col" rowSpan={hasTierRow ? 2 : 1}>
-              Fact
-            </th>
-            <th scope="col" rowSpan={hasTierRow ? 2 : 1}>
-              Verdict
-            </th>
+
+      <div className="comparison__tabs" role="group" aria-label="Comparison sections">
+        {groups.map(({ section }) => {
+          const active = section.title === activeGroup?.section.title;
+          return (
+            <button
+              key={section.title}
+              type="button"
+              className="comparison__tab"
+              aria-pressed={active}
+              onClick={() => setActiveSection(section.title)}
+            >
+              {section.title}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeGroup && (
+        <div className="comparison__section-summary" aria-live="polite">
+          <h3>{activeGroup.section.title}</h3>
+          <p>{activeGroup.section.description}</p>
+        </div>
+      )}
+
+      <div className="comparison__table-wrap">
+        <table className="table" ref={tableEl} aria-label={activeGroup?.section.title ?? "Comparison"}>
+          <colgroup>
+            <col className="col-fact" />
+            <col className="col-verdict" />
             {docGroups.map((g) =>
-              g.tiers.length > 1 ? (
-                <th
-                  key={g.documentId}
-                  scope="colgroup"
-                  colSpan={g.visible.length}
-                  className="table__group table__group-start"
-                >
-                  <span className="table__group-name">{g.filename}</span>
-                  <label className="table__tier-picker">
-                    <span className="sr-only">Tier shown for {g.filename}</span>
-                    <select
-                      className="select select--compact"
-                      value={selection[g.documentId] ?? ALL_TIERS}
-                      onChange={(e) =>
-                        setSelection({ ...selection, [g.documentId]: e.target.value })
-                      }
-                    >
-                      <option value={ALL_TIERS}>All tiers</option>
-                      {g.tiers.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </th>
-              ) : (
-                <th
-                  key={g.documentId}
-                  scope="col"
-                  rowSpan={hasTierRow ? 2 : 1}
-                  className="table__group-start"
-                >
-                  {g.filename}
-                </th>
-              ),
+              g.visible.map((tier) => <col key={`${g.documentId}:${tier ?? ""}`} />),
             )}
-          </tr>
-          {hasTierRow && (
-            <tr className="table__tiers">
-              {docGroups.flatMap((g) =>
-                g.tiers.length > 1
-                  ? g.visible.map((tier, i) => (
-                      <th
-                        key={`${g.documentId}:${tier}`}
-                        scope="col"
-                        className={i === 0 ? "table__group-start" : undefined}
+          </colgroup>
+          <thead>
+            <tr ref={firstHeaderRow}>
+              <th scope="col" rowSpan={hasTierRow ? 2 : 1}>
+                What matters
+              </th>
+              <th scope="col" rowSpan={hasTierRow ? 2 : 1}>
+                Status
+              </th>
+              {docGroups.map((g) =>
+                g.tiers.length > 1 ? (
+                  <th
+                    key={g.documentId}
+                    scope="colgroup"
+                    colSpan={g.visible.length}
+                    className="table__group table__group-start"
+                  >
+                    <span className="table__group-name">{g.filename}</span>
+                    <label className="table__tier-picker">
+                      <span className="sr-only">Tier shown for {g.filename}</span>
+                      <select
+                        className="select select--compact"
+                        value={selection[g.documentId] ?? ALL_TIERS}
+                        onChange={(e) =>
+                          setSelection({ ...selection, [g.documentId]: e.target.value })
+                        }
                       >
-                        {tier}
-                      </th>
-                    ))
-                  : [],
+                        <option value={ALL_TIERS}>All tiers</option>
+                        {g.tiers.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </th>
+                ) : (
+                  <th
+                    key={g.documentId}
+                    scope="col"
+                    rowSpan={hasTierRow ? 2 : 1}
+                    className="table__group-start"
+                  >
+                    {g.filename}
+                  </th>
+                ),
               )}
             </tr>
-          )}
-        </thead>
-        {groups.map(({ section, rows }) => (
-          <tbody key={section.title}>
-            <tr className="table__section">
-              <th scope="colgroup" colSpan={columns}>
-                <h3>{section.title}</h3>
-                <p>{section.description}</p>
-              </th>
-            </tr>
-            {rows.map((row) => (
+            {hasTierRow && (
+              <tr className="table__tiers">
+                {docGroups.flatMap((g) =>
+                  g.tiers.length > 1
+                    ? g.visible.map((tier, i) => (
+                        <th
+                          key={`${g.documentId}:${tier}`}
+                          scope="col"
+                          className={i === 0 ? "table__group-start" : undefined}
+                        >
+                          {tier}
+                        </th>
+                      ))
+                    : [],
+                )}
+              </tr>
+            )}
+          </thead>
+          <tbody>
+            {(activeGroup?.rows ?? []).map((row) => (
               <tr key={row.factName}>
                 <th scope="row" className="table__fact">
                   {LABELS.get(row.factName) ?? row.factName}
@@ -225,8 +250,8 @@ export default function ComparisonTable({
               </tr>
             ))}
           </tbody>
-        ))}
-      </table>
+        </table>
+      </div>
     </section>
   );
 }
