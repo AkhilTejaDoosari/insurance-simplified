@@ -10,21 +10,15 @@ vi.mock("@/app/lib/llm/client", () => ({
 
 const mockedComplete = vi.mocked(completeJson);
 
-// A brochure that describes three plan tiers for one benefit in sequence —
-// the shape that used to come back as "$0 to $2,500 $0 to $2,500 $0 to $25,000".
+// A brochure comparison table as PDF text extraction flattens it: a header
+// line naming the tiers, then one figure per tier in the same order — the
+// shape that used to come back as "$0 to $2,500 $0 to $2,500 $0 to $25,000".
+const DEDUCTIBLE_LINE = "Deductible $0 to $2,500 $0 to $2,500 $0 to $25,000";
 const BROCHURE = {
   documentId: "doc-1",
   filename: "patriot-travel-brochure.pdf",
   pageCount: 1,
-  pages: [
-    [
-      "Patriot America Lite / Plus / Platinum",
-      "Deductible",
-      "Lite: $0 to $2,500",
-      "Plus: $0 to $2,500",
-      "Platinum: $0 to $25,000",
-    ].join("\n"),
-  ],
+  pages: [["Patriot America", "LITE PLUS PLATINUM", DEDUCTIBLE_LINE].join("\n")],
 };
 
 function tierValue(tier: string, display: string) {
@@ -32,7 +26,7 @@ function tierValue(tier: string, display: string) {
     documentId: "doc-1",
     display,
     qualifiers: { planTier: tier },
-    evidence: [{ documentId: "doc-1", page: 1, quote: `${tier}: ${display}` }],
+    evidence: [{ documentId: "doc-1", page: 1, quote: DEDUCTIBLE_LINE }],
   };
 }
 
@@ -62,6 +56,7 @@ describe("multi-tier documents (planTier qualifier)", () => {
     const prompt = String(mockedComplete.mock.calls[0][0][0].content);
     expect(prompt).toContain("planTier");
     expect(prompt).toMatch(/separate/i);
+    expect(prompt).toMatch(/by position/i);
   });
 
   it("keeps one value per tier instead of one concatenated string", async () => {

@@ -48,6 +48,10 @@ const TIERED_TABLE = {
 };
 
 test("multi-tier document gets one column per tier and a tier picker", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") consoleErrors.push(msg.text());
+  });
   await page.route("**/api/extract", (route) =>
     route.fulfill({ json: TIERED_TABLE }),
   );
@@ -80,6 +84,14 @@ test("multi-tier document gets one column per tier and a tier picker", async ({ 
 
   await picker.selectOption("__all__");
   await expect(table.getByRole("columnheader", { name: "Lite", exact: true })).toBeVisible();
+
+  // Evidence lists one source per value, labelled with its tier, with no
+  // duplicate-key warnings (one document now yields several values).
+  await table.getByRole("button", { name: "$0 to $25,000" }).click();
+  const evidence = page.getByLabel("Evidence");
+  await expect(evidence.getByRole("heading", { name: "plan-b.pdf — Platinum" })).toBeVisible();
+  await expect(evidence.locator(".evidence__source")).toHaveCount(4);
+  expect(consoleErrors).toEqual([]);
   // The tier sub-header sticks below the measured document header row.
   const tierTop = await table
     .getByRole("columnheader", { name: "Lite", exact: true })

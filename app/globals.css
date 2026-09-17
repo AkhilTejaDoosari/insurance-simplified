@@ -335,7 +335,7 @@ select {
   vertical-align: top;
   padding: 10px 14px;
   border-bottom: 1px solid var(--line);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .table thead th {
   position: sticky;
@@ -351,7 +351,7 @@ select {
   width: 180px;
 }
 .table col.col-verdict {
-  width: 156px;
+  width: 172px;
 }
 
 /* Document header groups: every document's first column gets a divider so
@@ -444,6 +444,22 @@ select {
 .cell-value:hover {
   text-decoration-color: var(--action);
   color: var(--action);
+}
+
+/* Many value columns (multi-tier documents): guarantee each a readable
+   width and scroll the card sideways instead of crushing the text. Sticky
+   headers are traded away here, since the card becomes the scroll container. */
+.comparison--wide {
+  overflow-x: auto;
+}
+.comparison--wide .table {
+  min-width: calc(332px + var(--value-columns, 4) * 150px);
+}
+.comparison--wide .table col.col-fact {
+  width: 160px;
+}
+.comparison--wide .table col.col-verdict {
+  width: 172px;
 }
 
 @media (max-width: 719px) {

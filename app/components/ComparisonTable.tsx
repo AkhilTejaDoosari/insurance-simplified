@@ -118,7 +118,11 @@ export default function ComparisonTable({
     onSelectCell({ factName: row.factName, verdict: row.verdict, values: row.values });
 
   return (
-    <section className="card comparison" aria-label="Plan comparison">
+    <section
+      className={`card comparison${valueColumns >= 4 ? " comparison--wide" : ""}`}
+      style={{ "--value-columns": valueColumns } as React.CSSProperties}
+      aria-label="Plan comparison"
+    >
       <div className="comparison__intro">
         <h2>Your plans, side by side</h2>
         <p>Select any value to see the exact wording it came from.</p>

@@ -41,8 +41,10 @@ export default function EvidencePanel({
         )}
       </p>
       <div className="stack" style={{ marginTop: 16 }}>
-        {cell.values.map((v) => (
-          <div key={v.documentId} className="evidence__source">
+        {cell.values.map((v, i) => (
+          // A document contributes one value per tier, so documentId alone
+          // is not a unique key.
+          <div key={`${v.documentId}:${v.qualifiers.planTier ?? i}`} className="evidence__source">
             <h4>
               {filename(v.documentId)}
               {v.qualifiers.planTier ? ` — ${v.qualifiers.planTier}` : ""}

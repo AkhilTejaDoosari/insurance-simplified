@@ -66,7 +66,8 @@ describe("extractViaLlm evidence boundary (principle IV)", () => {
     const row = table.rows.find((r) => r.factName === "emergency-copay");
     expect(row?.values).toHaveLength(1);
     expect(row?.values[0].documentId).toBe("doc-1");
-    expect(warn).toHaveBeenCalledOnce();
+    // One value left → the model's CONFLICTED no longer holds either.
+    expect(row?.verdict).toBe("SUPPORTED");
     expect(warn.mock.calls[0][0]).toContain("emergency-copay");
     expect(warn.mock.calls[0][0]).toContain("doc-2");
     warn.mockRestore();
@@ -96,5 +97,40 @@ describe("extractViaLlm evidence boundary (principle IV)", () => {
     expect(row?.verdict).toBe("NOT STATED");
     expect(row?.values).toEqual([]);
     warn.mockRestore();
+  });
+
+  it("drops a value whose citation points at a different document, keeping the row", async () => {
+    const misCited = {
+      ...value("doc-2", "$250", true),
+      evidence: [{ documentId: "doc-1", page: 1, quote: "Emergency copay $100." }],
+    };
+    mockedComplete.mockResolvedValue(
+      payload([
+        {
+          factName: "emergency-copay",
+          verdict: "CONFLICTED",
+          values: [value("doc-1", "$100", true), misCited],
+        },
+      ]),
+    );
+    const table = await extractViaLlm(DOCS, {});
+    expect(table.rows[0].values.map((v) => v.documentId)).toEqual(["doc-1"]);
+  });
+
+  it("keeps only the matching citations when a value mixes documents", async () => {
+    const mixed = {
+      ...value("doc-2", "$250", true),
+      evidence: [
+        { documentId: "doc-1", page: 1, quote: "Emergency copay $100." },
+        { documentId: "doc-2", page: 1, quote: "Emergency copay $250." },
+      ],
+    };
+    mockedComplete.mockResolvedValue(
+      payload([{ factName: "emergency-copay", verdict: "SUPPORTED", values: [mixed] }]),
+    );
+    const table = await extractViaLlm(DOCS, {});
+    expect(table.rows[0].values[0].evidence).toEqual([
+      { documentId: "doc-2", page: 1, quote: "Emergency copay $250." },
+    ]);
   });
 });
