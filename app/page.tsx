@@ -69,7 +69,7 @@ export default function Home() {
         <>
           <div className="results">
             <ComparisonTable table={table} onSelectCell={setSelected} />
-            <div className="results__rail">
+            <div className="results__tools">
               <EvidencePanel
                 cell={selected}
                 sessionId={sessionId}
