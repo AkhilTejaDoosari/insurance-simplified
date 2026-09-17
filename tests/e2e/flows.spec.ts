@@ -40,6 +40,20 @@ test("upload → table → evidence → chat → export (quickstart Flows 1–4,
   ]);
   await expect(viewer.getByText("Page 1 of 2")).toBeVisible();
   await expect(viewer.getByText(/Annual deductible: \$250 in-network/).first()).toBeVisible();
+  // The viewer embeds the ACTUAL cited source page (one-page PDF), and the
+  // full original stays reachable separately.
+  const frameSrc = await viewer.locator("iframe").getAttribute("src");
+  expect(frameSrc).toMatch(/\/api\/document\/sess-[^/]+\/doc-1\/plan-a\.pdf\?page=1$/);
+  const frameRes = await page.request.get(new URL(frameSrc ?? "", page.url()).toString());
+  expect(frameRes.status()).toBe(200);
+  expect(frameRes.headers()["content-type"]).toBe("application/pdf");
+  await expect(viewer.getByRole("link", { name: "Open full original PDF" })).toHaveAttribute(
+    "href",
+    /\/api\/document\/sess-[^/]+\/doc-1\/plan-a\.pdf$/,
+  );
+  // An invalid citation page fails explicitly instead of showing another page.
+  await viewer.goto(viewer.url().replace("page=1", "page=99"));
+  await expect(viewer.getByText(/does not exist/)).toBeVisible();
   await expect(evidence.getByText(/Annual deductible: \$250 in-network/).first()).toBeVisible();
 
   // Flow 3: cited answer, then explicit refusal.
