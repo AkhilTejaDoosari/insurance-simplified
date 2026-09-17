@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { getEvidenceRecord, getSession } from "@/app/lib/session";
-import { locatePassage, resolveCitationPage } from "@/app/lib/citation";
+import { isMatchingEvidence, locatePassage, resolveCitationPage } from "@/app/lib/citation";
 import { documentUrl, rawDocumentUrl, sourcePageUrl } from "@/app/lib/document-url";
 import SourceFrame from "@/app/components/SourceFrame";
 
@@ -55,10 +55,7 @@ export default async function CitationViewer({ params, searchParams }: Props) {
   // explicitly — a citation never highlights a passage it did not cite.
   const evidenceParam = Array.isArray(evidence) ? evidence[0] : evidence;
   const record = evidenceParam ? getEvidenceRecord(sessionId, evidenceParam) : undefined;
-  const evidenceValid =
-    record !== undefined &&
-    record.documentId === documentId &&
-    record.page === resolved.page;
+  const evidenceValid = isMatchingEvidence(record, documentId, resolved.page);
   const evidenceError =
     evidenceParam !== undefined && !evidenceValid
       ? "This citation link is no longer valid: its evidence reference does not match this document and page."

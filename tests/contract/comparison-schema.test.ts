@@ -1,15 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { validateTable } from "@/app/lib/extraction/types";
-import { evidenceIdFor } from "@/app/lib/evidence-ids";
 
 const docs = [
   { documentId: "doc-1", filename: "a.pdf", pageCount: 2 },
   { documentId: "doc-2", filename: "b.pdf", pageCount: 2 },
 ];
-
-function ev(documentId: string, page: number, quote: string) {
-  return { documentId, page, quote, evidenceId: evidenceIdFor(documentId, page, quote) };
-}
 
 function base() {
   return {
@@ -33,7 +28,7 @@ describe("comparison-schema v1 contract", () => {
               documentId: "doc-1",
               display: "$250 in-network / $500 out-of-network",
               qualifiers: { networkTier: "in-network / out-of-network" },
-              evidence: [ev("doc-1", 1, "Annual deductible: $250 in-network.")],
+              evidence: [{ documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network." }],
             },
           ],
         },
@@ -45,13 +40,13 @@ describe("comparison-schema v1 contract", () => {
               documentId: "doc-1",
               display: "$100",
               qualifiers: {},
-              evidence: [ev("doc-1", 1, "Emergency copay $100.")],
+              evidence: [{ documentId: "doc-1", page: 1, quote: "Emergency copay $100." }],
             },
             {
               documentId: "doc-2",
               display: "$250",
               qualifiers: {},
-              evidence: [ev("doc-2", 1, "Emergency copay $250.")],
+              evidence: [{ documentId: "doc-2", page: 1, quote: "Emergency copay $250." }],
             },
           ],
         },
@@ -63,13 +58,13 @@ describe("comparison-schema v1 contract", () => {
               documentId: "doc-1",
               display: "$25 copay",
               qualifiers: {},
-              evidence: [ev("doc-1", 2, "Urgent care copay is $25.")],
+              evidence: [{ documentId: "doc-1", page: 2, quote: "Urgent care copay is $25." }],
             },
             {
               documentId: "doc-1",
               display: "$50 copay",
               qualifiers: {},
-              evidence: [ev("doc-1", 9, "Urgent care copay is $50.")],
+              evidence: [{ documentId: "doc-1", page: 9, quote: "Urgent care copay is $50." }],
             },
           ],
         },
@@ -98,7 +93,7 @@ describe("comparison-schema v1 contract", () => {
     expect(() =>
       validateTable({
         ...base(),
-        rows: [{ factName: "x", verdict: "NOT STATED", values: [{ documentId: "doc-1", display: "$5", qualifiers: {}, evidence: [ev("doc-1", 1, "q")] }] }],
+        rows: [{ factName: "x", verdict: "NOT STATED", values: [{ documentId: "doc-1", display: "$5", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 1, quote: "q" }] }] }],
       })
     ).toThrow();
   });
@@ -135,14 +130,5 @@ describe("comparison-schema v1 contract", () => {
     expect(() =>
       validateTable({ ...base(), rows: [{ factName: "x", verdict: "DOES NOT APPEAR TO FIT", values: [] }] })
     ).toThrow();
-  });
-
-  it("rejects evidence without a session-bound evidenceId", () => {
-    expect(() =>
-      validateTable({
-        ...base(),
-        rows: [{ factName: "x", verdict: "SUPPORTED", values: [{ documentId: "doc-1", display: "$5", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 1, quote: "q" }] }] }],
-      })
-    ).toThrow(/evidenceId/);
   });
 });

@@ -7,7 +7,7 @@ import ChatPanel from "@/app/components/ChatPanel";
 import InsurerQuestions from "@/app/components/InsurerQuestions";
 import ChecklistFlow from "@/app/components/ChecklistFlow";
 import { suggestQuestions } from "@/app/lib/extraction/insurer-questions";
-import type { ComparisonTable as Table } from "@/app/lib/extraction/types";
+import type { RegisteredComparisonTable as Table } from "@/app/lib/extraction/types";
 
 export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);

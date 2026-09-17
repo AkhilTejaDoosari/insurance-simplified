@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { validateChatResponse } from "@/app/lib/rag/answer";
-import { evidenceIdFor } from "@/app/lib/evidence-ids";
 
 describe("chat-api v1 contract", () => {
   it("accepts cited answers", () => {
@@ -8,7 +7,7 @@ describe("chat-api v1 contract", () => {
       schemaVersion: "v1",
       kind: "answer",
       answerText: "The deductible is $250 in-network.",
-      citations: [{ documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network.", evidenceId: evidenceIdFor("doc-1", 1, "Annual deductible: $250 in-network.") }],
+      citations: [{ documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network." }],
     });
     expect(res.kind).toBe("answer");
   });
@@ -37,16 +36,5 @@ describe("chat-api v1 contract", () => {
     expect(() =>
       validateChatResponse({ schemaVersion: "v2", kind: "refusal", refusalText: "x" })
     ).toThrow();
-  });
-
-  it("rejects citations without a session-bound evidenceId", () => {
-    expect(() =>
-      validateChatResponse({
-        schemaVersion: "v1",
-        kind: "answer",
-        answerText: "The deductible is $250 in-network.",
-        citations: [{ documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network." }],
-      })
-    ).toThrow(/evidenceId/);
   });
 });

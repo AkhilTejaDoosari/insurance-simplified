@@ -35,10 +35,11 @@ describe("cell → evidence flow (User Story 2)", () => {
     expect(row!.values).toHaveLength(2);
     const docIds = new Set(row!.values.map((v) => v.documentId));
     expect(docIds).toEqual(new Set(["doc-1", "doc-2"]));
-    // Every cited passage carries the session-bound ID its citation URL uses.
+    // Core extraction evidence stays session-agnostic: document, page,
+    // quote — no opaque navigation IDs at this layer.
     for (const value of row!.values) {
       for (const e of value.evidence) {
-        expect(e.evidenceId).toMatch(/^ev-[0-9a-f]{16}$/);
+        expect(Object.keys(e).sort()).toEqual(["documentId", "page", "quote"]);
       }
     }
   });

@@ -9,6 +9,7 @@
 // viewer URL without `?page` doubles as a general document link.
 
 import type { Session } from "@/app/lib/session";
+import type { EvidenceRecord } from "@/app/lib/evidence-ids";
 
 export type CitationResolution =
   | {
@@ -116,4 +117,20 @@ export function locatePassage(pageText: string, quote: string): LocatedPassage |
     match: pageText.slice(start, end),
     after: pageText.slice(end),
   };
+}
+
+/** Validate a registry-resolved evidence record against the citation URL
+ *  before highlighting anything: the record must name the same document
+ *  and page the URL points at. A mismatch (or unknown ID) must fail
+ *  explicitly — never highlight a passage the citation did not cite. */
+export function isMatchingEvidence(
+  record: EvidenceRecord | undefined,
+  documentId: string,
+  page: number
+): record is EvidenceRecord {
+  return (
+    record !== undefined &&
+    record.documentId === documentId &&
+    record.page === page
+  );
 }

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, registerEvidence } from "@/app/lib/session";
+import { withEvidenceId } from "@/app/lib/evidence-ids";
 import {
   extractFallback,
   extractViaLlm,
@@ -34,17 +35,25 @@ export async function POST(request: NextRequest) {
       ? await extractViaLlm(session.documents, session.userContext)
       : extractFallback(session.documents, session.userContext);
     const table = validateTable(raw);
-    // Persist every cited passage in the session-bound evidence registry so
-    // citation URLs (&evidence=) resolve to their exact quotes server-side.
+    // Server/session boundary: register every cited passage, then return
+    // the enriched presentation table. Extraction itself stays
+    // session-agnostic and never mints evidence IDs.
     registerEvidence(
       session.sessionId,
       table.rows.flatMap((row) =>
-        row.values.flatMap((value) =>
-          value.evidence.map((e) => ({ documentId: e.documentId, page: e.page, quote: e.quote }))
-        )
+        row.values.flatMap((value) => value.evidence)
       )
     );
-    return NextResponse.json(table);
+    return NextResponse.json({
+      ...table,
+      rows: table.rows.map((row) => ({
+        ...row,
+        values: row.values.map((value) => ({
+          ...value,
+          evidence: value.evidence.map(withEvidenceId),
+        })),
+      })),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed";
     const status = message.startsWith("LLM") ? 503 : 500;

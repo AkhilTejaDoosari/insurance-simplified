@@ -25,3 +25,15 @@ export function evidenceIdFor(documentId: string, page: number, quote: string): 
       .slice(0, 16)
   );
 }
+
+/** Attach the deterministic session-bound evidence ID to a core citation.
+ *  Used at the server/session boundary to enrich validated extraction and
+ *  answer output for UI navigation — never inside the engines. */
+export function withEvidenceId<T extends EvidenceRecord>(
+  entry: T
+): T & { evidenceId: string } {
+  return {
+    ...entry,
+    evidenceId: evidenceIdFor(entry.documentId, entry.page, entry.quote),
+  };
+}

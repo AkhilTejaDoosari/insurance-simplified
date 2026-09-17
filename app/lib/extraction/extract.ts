@@ -13,7 +13,6 @@ import {
   type ComparisonTable,
   type TableRow,
 } from "@/app/lib/extraction/types";
-import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import {
   FACTS,
   FACT_LIST_VERSION,
@@ -142,12 +141,7 @@ export function extractFallback(
         documentId: doc.documentId,
         display: match.quote,
         qualifiers: extractQualifiers(match.quote),
-        evidence: [{
-          documentId: doc.documentId,
-          page: match.page,
-          quote: match.quote,
-          evidenceId: evidenceIdFor(doc.documentId, match.page, match.quote),
-        }],
+        evidence: [{ documentId: doc.documentId, page: match.page, quote: match.quote }],
       });
     }
 
@@ -214,11 +208,7 @@ const EXTRACTION_INSTRUCTIONS = [
 
 /** Boundary normalization for LLM output (defense in depth: the prompt
  *  requires qualifiers, but models still omit or null it). Coerce missing,
- *  null, or non-object qualifiers on any value to {} before validation.
- *  Evidence IDs are always server-assigned here (never model-generated):
- *  every well-formed evidence entry gets its deterministic session-bound
- *  ID so citation URLs resolve; malformed entries are left for validation
- *  to reject. */
+ *  null, or non-object qualifiers on any value to {} before validation. */
 export function normalizeLlmTable(raw: unknown): unknown {
   if (typeof raw !== "object" || raw === null) return raw;
   const table = raw as Record<string, unknown>;
@@ -233,26 +223,12 @@ export function normalizeLlmTable(raw: unknown): unknown {
         ...r,
         values: (r.values as unknown[]).map((value) => {
           if (typeof value !== "object" || value === null) return value;
-          const v = { ...(value as Record<string, unknown>) };
+          const v = value as Record<string, unknown>;
           const q = v.qualifiers;
           if (typeof q !== "object" || q === null || Array.isArray(q)) {
-            v.qualifiers = {};
+            return { ...v, qualifiers: {} };
           }
-          if (Array.isArray(v.evidence)) {
-            v.evidence = v.evidence.map((e) => {
-              if (typeof e !== "object" || e === null) return e;
-              const entry = { ...(e as Record<string, unknown>) };
-              if (
-                typeof entry.documentId === "string" &&
-                typeof entry.page === "number" &&
-                typeof entry.quote === "string"
-              ) {
-                entry.evidenceId = evidenceIdFor(entry.documentId, entry.page, entry.quote);
-              }
-              return entry;
-            });
-          }
-          return v;
+          return value;
         }),
       };
     }),

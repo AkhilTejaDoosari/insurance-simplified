@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { ChatResponse } from "@/app/lib/rag/answer";
+import type { RegisteredChatResponse } from "@/app/lib/rag/answer";
 import { documentUrl } from "@/app/lib/document-url";
 
 interface Turn {
   question: string;
-  response: ChatResponse;
+  response: RegisteredChatResponse;
 }
 
 export default function ChatPanel({
@@ -38,7 +38,7 @@ export default function ChatPanel({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Chat failed");
-      setTurns([...turns, { question, response: data as ChatResponse }]);
+      setTurns([...turns, { question, response: data as RegisteredChatResponse }]);
       setQuestion("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chat failed");

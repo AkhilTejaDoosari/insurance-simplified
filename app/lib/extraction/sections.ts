@@ -65,15 +65,17 @@ const OTHER: Section = {
   factNames: [],
 };
 
-export interface SectionGroup {
+export interface SectionGroup<R extends TableRow = TableRow> {
   section: Section;
-  rows: TableRow[];
+  rows: R[];
 }
 
-/** Split rows into sections in display order; empty sections are dropped. */
-export function groupRows(rows: TableRow[]): SectionGroup[] {
+/** Split rows into sections in display order; empty sections are dropped.
+ *  Generic over the row type so enriched (registered) tables keep their
+ *  evidence IDs. */
+export function groupRows<R extends TableRow>(rows: R[]): SectionGroup<R>[] {
   const byName = new Map(rows.map((r) => [r.factName, r]));
-  const groups: SectionGroup[] = [];
+  const groups: SectionGroup<R>[] = [];
   for (const section of SECTIONS) {
     const matched = section.factNames.flatMap((n) => {
       const r = byName.get(n);

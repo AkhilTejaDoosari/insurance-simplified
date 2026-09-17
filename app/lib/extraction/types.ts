@@ -19,11 +19,14 @@ export interface EvidenceCitation {
   /** 1-based page number. */
   page: number;
   quote: string;
-  /** Opaque session-bound evidence ID (ev-...), resolving server-side to
-   *  this exact passage for citation URLs. Assigned by the extraction path;
-   *  never model-generated. */
-  evidenceId: string;
 }
+
+/** Presentation-time citation: core evidence plus its session-bound opaque
+ *  evidence ID (`ev-...`), assigned at the server/session boundary (never
+ *  by extraction) so citation URLs resolve to the exact passage. */
+export type RegisteredEvidenceCitation = EvidenceCitation & {
+  evidenceId: string;
+};
 
 export interface CellValue {
   documentId: string;
@@ -46,6 +49,21 @@ export interface ComparisonTable {
   factListVersion: string;
   documents: { documentId: string; filename: string; pageCount: number }[];
   rows: TableRow[];
+}
+
+/** Presentation-time table: every cited passage carries its session-bound
+ *  evidence ID. Produced at the server/session boundary by registering a
+ *  validated core table — extraction itself never mints IDs. */
+export interface RegisteredCellValue extends Omit<CellValue, "evidence"> {
+  evidence: RegisteredEvidenceCitation[];
+}
+
+export interface RegisteredTableRow extends Omit<TableRow, "values"> {
+  values: RegisteredCellValue[];
+}
+
+export interface RegisteredComparisonTable extends Omit<ComparisonTable, "rows"> {
+  rows: RegisteredTableRow[];
 }
 
 function fail(msg: string): never {
@@ -111,9 +129,6 @@ export function validateTable(payload: unknown): ComparisonTable {
         if (typeof e.page !== "number" || e.page < 1) fail(`row ${r.factName}: evidence page must be >= 1`);
         if (typeof e.quote !== "string" || !e.quote.trim()) {
           fail(`row ${r.factName}: evidence quote must be non-empty`);
-        }
-        if (typeof e.evidenceId !== "string" || !e.evidenceId.trim()) {
-          fail(`row ${r.factName}: evidence must carry a session-bound evidenceId`);
         }
       }
     }

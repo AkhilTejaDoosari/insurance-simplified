@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { extractViaLlm } from "@/app/lib/extraction/extract";
-import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import { completeJson } from "@/app/lib/llm/client";
 
 vi.mock("@/app/lib/llm/client", () => ({
@@ -134,7 +133,7 @@ describe("extractViaLlm evidence boundary (principle IV)", () => {
     );
     const table = await extractViaLlm(DOCS, {});
     expect(table.rows[0].values[0].evidence).toEqual([
-      { documentId: "doc-2", page: 1, quote: "Emergency copay $250.", evidenceId: evidenceIdFor("doc-2", 1, "Emergency copay $250.") },
+      { documentId: "doc-2", page: 1, quote: "Emergency copay $250." },
     ]);
   });
 });

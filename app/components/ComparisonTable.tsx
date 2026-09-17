@@ -2,9 +2,9 @@
 
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
-  CellValue,
-  ComparisonTable as Table,
-  TableRow,
+  RegisteredCellValue,
+  RegisteredComparisonTable as Table,
+  RegisteredTableRow,
 } from "@/app/lib/extraction/types";
 import { FACTS } from "@/app/lib/extraction/fact-list";
 import { groupRows } from "@/app/lib/extraction/sections";
@@ -31,13 +31,13 @@ function TierCells({
   sessionId,
   filenames,
 }: {
-  row: TableRow;
+  row: RegisteredTableRow;
   group: DocumentGroup;
   sessionId: string;
   filenames: Map<string, string>;
 }) {
   const label = LABELS.get(row.factName) ?? row.factName;
-  const render = (values: CellValue[], key: string, colSpan = 1, first = false) => (
+  const render = (values: RegisteredCellValue[], key: string, colSpan = 1, first = false) => (
     <td key={key} colSpan={colSpan} className={first ? "table__group-start" : undefined}>
       {values.length > 0 ? (
         values.map((v, i) => {

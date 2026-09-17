@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, registerEvidence } from "@/app/lib/session";
+import { withEvidenceId } from "@/app/lib/evidence-ids";
 import {
   answerQuestion,
   answerViaLlm,
@@ -36,10 +37,13 @@ export async function POST(request: NextRequest) {
       : answerQuestion(session.documents, body.question);
     const validated = validateChatResponse(response);
     if (validated.kind === "answer") {
-      registerEvidence(
-        session.sessionId,
-        validated.citations.map((c) => ({ documentId: c.documentId, page: c.page, quote: c.quote }))
-      );
+      // Server/session boundary: register cited passages, then return the
+      // enriched response. The RAG engine stays session-agnostic.
+      registerEvidence(session.sessionId, validated.citations);
+      return NextResponse.json({
+        ...validated,
+        citations: validated.citations.map(withEvidenceId),
+      });
     }
     return NextResponse.json(validated);
   } catch (err) {

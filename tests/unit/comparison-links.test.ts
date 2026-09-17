@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import ComparisonTable from "@/app/components/ComparisonTable";
 import { documentUrl } from "@/app/lib/document-url";
 import { evidenceIdFor } from "@/app/lib/evidence-ids";
-import type { CellValue, ComparisonTable as Table } from "@/app/lib/extraction/types";
+import type { RegisteredCellValue, RegisteredComparisonTable as Table } from "@/app/lib/extraction/types";
 
 const ev = (documentId: string, page: number, quote: string) => ({
   documentId,
@@ -22,7 +22,7 @@ const v = (
   display: string,
   evidence: ReturnType<typeof ev>[] = [],
   planTier?: string,
-): CellValue => ({
+): RegisteredCellValue => ({
   documentId,
   display,
   qualifiers: planTier ? { planTier } : {},
