@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { extractViaLlm } from "@/app/lib/extraction/extract";
 import { validateTable } from "@/app/lib/extraction/types";
+import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import { completeJson } from "@/app/lib/llm/client";
 
 vi.mock("@/app/lib/llm/client", () => ({
@@ -26,7 +27,7 @@ function tierValue(tier: string, display: string) {
     documentId: "doc-1",
     display,
     qualifiers: { planTier: tier },
-    evidence: [{ documentId: "doc-1", page: 1, quote: DEDUCTIBLE_LINE }],
+    evidence: [{ documentId: "doc-1", page: 1, quote: DEDUCTIBLE_LINE, evidenceId: evidenceIdFor("doc-1", 1, DEDUCTIBLE_LINE) }],
   };
 }
 

@@ -66,7 +66,7 @@ export default function ChatPanel({
                       <li key={j}>
                         {c.documentId},{" "}
                         <a
-                          href={documentUrl(sessionId, c.documentId, filename(c.documentId), c.page)}
+                          href={documentUrl(sessionId, c.documentId, filename(c.documentId), c.page, c.evidenceId)}
                           target="_blank"
                           rel="noopener"
                         >

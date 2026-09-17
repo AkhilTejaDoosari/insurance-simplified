@@ -69,7 +69,9 @@ Exactly one of: `SUPPORTED` | `DOES NOT APPEAR TO FIT` | `NOT STATED` |
 
 Proof backing one cell value or chat answer.
 
-- `documentId`, `page` (1-based page number), `quote` (exact source text)
+- `documentId`, `page` (1-based page number), `quote` (exact source text),
+  `evidenceId` (opaque session-bound ID resolving server-side to this exact
+  passage for citation URLs)
 - Validation: `page` within the document's pageCount; `quote` non-empty and
   traceable to the extracted page text
 

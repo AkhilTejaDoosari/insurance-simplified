@@ -10,8 +10,8 @@
 // silently serves a different page than requested.
 
 import { NextRequest, NextResponse } from "next/server";
-import { PDFDocument } from "pdf-lib";
 import { parsePageRequest } from "@/app/lib/citation";
+import { trySinglePage } from "@/app/lib/pdf/single-page";
 import { getSession, readDocumentFile } from "@/app/lib/session";
 
 function pdfHeaders(filename: string): HeadersInit {
@@ -51,14 +51,8 @@ export async function GET(
       { status: 400 }
     );
   }
-  let singlePage: Uint8Array;
-  try {
-    const src = await PDFDocument.load(bytes);
-    const out = await PDFDocument.create();
-    const [copied] = await out.copyPages(src, [requested.page - 1]);
-    out.addPage(copied);
-    singlePage = await out.save();
-  } catch {
+  const singlePage = await trySinglePage(new Uint8Array(bytes), requested.page);
+  if (!singlePage) {
     return NextResponse.json(
       { error: "Could not read the requested PDF page" },
       { status: 422 }

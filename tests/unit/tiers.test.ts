@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { cellValues, documentTiers } from "@/app/lib/extraction/tiers";
+import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import type { CellValue, ComparisonTable } from "@/app/lib/extraction/types";
 
 const value = (documentId: string, display: string, planTier?: string): CellValue => ({
   documentId,
   display,
   qualifiers: planTier ? { planTier } : {},
-  evidence: [{ documentId, page: 1, quote: display }],
+  evidence: [{ documentId, page: 1, quote: display, evidenceId: evidenceIdFor(documentId, 1, display) }],
 });
 
 const table: ComparisonTable = {

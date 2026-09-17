@@ -41,8 +41,7 @@ export function parsePageRequest(
   return { kind: "valid", page };
 }
 
-/** Resolve which page of which document a citation link should show. */
-export function resolveCitationPage(
+/** Resolve which page of which document a citation link should show. */export function resolveCitationPage(
   session: Session | undefined,
   documentId: string,
   pageParam: string | string[] | undefined
@@ -64,5 +63,57 @@ export function resolveCitationPage(
     page,
     pageCount: doc.pageCount,
     text: doc.pages[page - 1] ?? "",
+  };
+}
+
+export interface LocatedPassage {
+  before: string;
+  match: string;
+  after: string;
+}
+
+/** Collapse every whitespace run to one space, remembering for each
+ *  normalized char the original offset it came from. */
+function normalizeSpace(s: string): { text: string; map: number[] } {
+  let text = "";
+  const map: number[] = [];
+  let inSpace = false;
+  for (let i = 0; i < s.length; i++) {
+    if (/\s/.test(s[i])) {
+      if (!inSpace) {
+        text += " ";
+        map.push(i);
+        inSpace = true;
+      }
+    } else {
+      text += s[i];
+      map.push(i);
+      inSpace = false;
+    }
+  }
+  return { text, map };
+}
+
+/** Locate the exact cited passage inside its page text for highlighting.
+ *  Compares the quote's word sequence against whitespace-normalized page
+ *  text with plain substring search (linear — no regex backtracking on
+ *  large pages), then maps the hit back to original offsets. Returns the
+ *  split only when there is EXACTLY one match — zero or several matches
+ *  mean the passage cannot be identified safely, so the caller must fall
+ *  back to showing the quote unhighlighted rather than risk marking the
+ *  wrong passage. */
+export function locatePassage(pageText: string, quote: string): LocatedPassage | null {
+  const normalizedQuote = quote.split(/\s+/).filter(Boolean).join(" ");
+  if (!normalizedQuote || !pageText) return null;
+  const { text: normalizedPage, map } = normalizeSpace(pageText);
+  const first = normalizedPage.indexOf(normalizedQuote);
+  if (first === -1) return null;
+  if (normalizedPage.indexOf(normalizedQuote, first + 1) !== -1) return null;
+  const start = map[first];
+  const end = map[first + normalizedQuote.length - 1] + 1;
+  return {
+    before: pageText.slice(0, start),
+    match: pageText.slice(start, end),
+    after: pageText.slice(end),
   };
 }

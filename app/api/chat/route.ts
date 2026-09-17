@@ -5,7 +5,7 @@
 // `engine` in the body ("llm" | "fallback") is an explicit override for testing.
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/app/lib/session";
+import { getSession, registerEvidence } from "@/app/lib/session";
 import {
   answerQuestion,
   answerViaLlm,
@@ -34,7 +34,14 @@ export async function POST(request: NextRequest) {
     const response = useLlm
       ? await answerViaLlm(session.documents, body.question)
       : answerQuestion(session.documents, body.question);
-    return NextResponse.json(validateChatResponse(response));
+    const validated = validateChatResponse(response);
+    if (validated.kind === "answer") {
+      registerEvidence(
+        session.sessionId,
+        validated.citations.map((c) => ({ documentId: c.documentId, page: c.page, quote: c.quote }))
+      );
+    }
+    return NextResponse.json(validated);
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Chat failed" },

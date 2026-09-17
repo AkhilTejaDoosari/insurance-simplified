@@ -10,6 +10,7 @@ import {
   type Session,
 } from "@/app/lib/session";
 import { resolveCitationPage } from "@/app/lib/citation";
+import { trySinglePage } from "@/app/lib/pdf/single-page";
 import { GET } from "@/app/api/document/[sessionId]/[documentId]/[filename]/route";
 
 const created: string[] = [];
@@ -130,6 +131,30 @@ describe("GET /api/document (uploaded PDF bytes)", () => {
     const res = await get(session.sessionId, "doc-1", null);
     expect(res.status).toBe(404);
   });
+
+  it("fails explicitly when the stored bytes cannot be re-rendered (restricted file)", async () => {
+    const session = createSession(
+      [{ documentId: "doc-1", filename: "plan-a.pdf", pageCount: 2, pages: ["x", "y"] }],
+      {}
+    );
+    created.push(session.sessionId);
+    saveDocumentFile(session.sessionId, "doc-1", new Uint8Array([1, 2, 3, 4]));
+    const res = await get(session.sessionId, "doc-1", "1");
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toMatch(/requested PDF page/);
+  });
+});
+
+describe("trySinglePage (restricted-file fallback)", () => {
+  it("renders one page of a readable PDF", async () => {
+    const out = await trySinglePage(fixtureBytes(), 2);
+    expect(out).not.toBeNull();
+    expect((await PDFDocument.load(out!)).getPageCount()).toBe(1);
+  });
+
+  it("returns null for bytes that cannot be re-rendered", async () => {
+    await expect(trySinglePage(new Uint8Array([1, 2, 3, 4]), 1)).resolves.toBeNull();
+  });
 });
 
 describe("resolveCitationPage (viewer page resolution)", () => {
@@ -140,6 +165,7 @@ describe("resolveCitationPage (viewer page resolution)", () => {
       { documentId: "doc-1", filename: "plan-a.pdf", pageCount: 2, pages: ["page one", "page two"] },
     ],
     userContext: {},
+    evidence: {},
   };
 
   it("resolves the requested page with its text", () => {

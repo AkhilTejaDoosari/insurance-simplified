@@ -7,7 +7,9 @@ vi.mock("@/app/lib/session", () => ({
     createdAt: "",
     documents: [],
     userContext: {},
+    evidence: {},
   })),
+  registerEvidence: vi.fn(),
 }));
 
 const TABLE = { schemaVersion: "v1", factListVersion: "v1", documents: [], rows: [] };

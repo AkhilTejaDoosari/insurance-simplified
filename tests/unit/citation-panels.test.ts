@@ -4,35 +4,18 @@ import { describe, expect, it } from "vitest";
 // Components compile with the classic JSX runtime and read `React` at
 // render time; provide it (node test env has no such global).
 (globalThis as Record<string, unknown>).React ??= React;
-import EvidencePanel from "@/app/components/EvidencePanel";
+
 import ChatPanel from "@/app/components/ChatPanel";
-import type { SelectedCell } from "@/app/components/ComparisonTable";
+import SourceFrame from "@/app/components/SourceFrame";
+import { evidenceIdFor } from "@/app/lib/evidence-ids";
 
 const DOCUMENTS = [{ documentId: "doc-1", filename: "plan-a.pdf" }];
 
-const CELL: SelectedCell = {
-  factName: "annual-deductible",
-  verdict: "SUPPORTED",
-  values: [
-    {
-      documentId: "doc-1",
-      display: "Annual deductible: $250 in-network.",
-      qualifiers: { networkTier: "in-network" },
-      evidence: [{ documentId: "doc-1", page: 2, quote: "Annual deductible: $250 in-network." }],
-    },
-  ],
-};
+const QUOTE = "Annual deductible: $250 in-network.";
+const EVIDENCE_ID = evidenceIdFor("doc-1", 2, QUOTE);
 
-describe("citation links use the working viewer URL", () => {
-  it("EvidencePanel citations point at the viewer with the cited page", () => {
-    const html = renderToStaticMarkup(
-      createElement(EvidencePanel, { cell: CELL, sessionId: "sess-1", documents: DOCUMENTS })
-    );
-    expect(html).toContain('href="/view/sess-1/doc-1/plan-a.pdf?page=2"');
-    expect(html).not.toContain("#page=");
-  });
-
-  it("ChatPanel citations use the same viewer URL", () => {
+describe("chat citation links use the same source viewer", () => {
+  it("points at the viewer with the cited page and opaque evidence ID", () => {
     const html = renderToStaticMarkup(
       createElement(ChatPanel, {
         sessionId: "sess-1",
@@ -44,13 +27,27 @@ describe("citation links use the working viewer URL", () => {
               schemaVersion: "v1",
               kind: "answer",
               answerText: "The deductible is $250.",
-              citations: [{ documentId: "doc-1", page: 2, quote: "Annual deductible: $250." }],
+              citations: [{ documentId: "doc-1", page: 2, quote: QUOTE, evidenceId: EVIDENCE_ID }],
             },
           },
         ],
       })
     );
-    expect(html).toContain('href="/view/sess-1/doc-1/plan-a.pdf?page=2"');
+    expect(html).toContain(`href="/view/sess-1/doc-1/plan-a.pdf?page=2&amp;evidence=${EVIDENCE_ID}"`);
     expect(html).not.toContain("#page=");
+  });
+});
+
+describe("SourceFrame (embedded source page)", () => {
+  it("embeds the single-page source URL immediately", () => {
+    const html = renderToStaticMarkup(
+      createElement(SourceFrame, {
+        pageUrl: "/api/document/sess-1/doc-1/plan-a.pdf?page=2",
+        fullUrl: "/api/document/sess-1/doc-1/plan-a.pdf",
+        title: "plan-a.pdf, page 2",
+      })
+    );
+    expect(html).toContain('src="/api/document/sess-1/doc-1/plan-a.pdf?page=2"');
+    expect(html).toContain("<iframe");
   });
 });

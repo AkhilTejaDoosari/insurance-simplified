@@ -13,10 +13,15 @@ export function documentUrl(
   sessionId: string,
   documentId: string,
   filename: string,
-  page?: number
+  page?: number,
+  evidenceId?: string
 ): string {
   const base = `/view/${encodeURIComponent(sessionId)}/${encodeURIComponent(documentId)}/${encodeURIComponent(filename)}`;
-  return page ? `${base}?page=${page}` : base;
+  const params = new URLSearchParams();
+  if (page !== undefined) params.set("page", String(page));
+  if (evidenceId) params.set("evidence", evidenceId);
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
 }
 
 /** Direct link to the uploaded PDF bytes (app/api/document). No page

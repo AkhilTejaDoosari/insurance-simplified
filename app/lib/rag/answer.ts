@@ -4,6 +4,7 @@
 
 import { wrapDocuments } from "@/app/lib/llm/safe-prompt";
 import { completeJson } from "@/app/lib/llm/client";
+import { evidenceIdFor } from "@/app/lib/evidence-ids";
 
 export interface RagDocument {
   documentId: string;
@@ -16,6 +17,10 @@ export interface ChatCitation {
   documentId: string;
   page: number;
   quote: string;
+  /** Opaque session-bound evidence ID (ev-...), resolving server-side to
+   *  this exact passage for citation URLs. Assigned by the answer path;
+   *  never model-generated. */
+  evidenceId: string;
 }
 
 export type ChatResponse =
@@ -39,7 +44,10 @@ function tokens(text: string): Set<string> {
   );
 }
 
-export interface RetrievedPassage extends ChatCitation {
+export interface RetrievedPassage {
+  documentId: string;
+  page: number;
+  quote: string;
   score: number;
 }
 
@@ -77,6 +85,7 @@ export function answerQuestion(documents: RagDocument[], question: string): Chat
     documentId,
     page,
     quote,
+    evidenceId: evidenceIdFor(documentId, page, quote),
   }));
   const answerText = passages.map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
   return { schemaVersion: "v1", kind: "answer", answerText, citations };
@@ -101,7 +110,23 @@ export async function answerViaLlm(
   if (raw.cantAnswer === true) {
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
   }
-  return validateChatResponse({ schemaVersion: "v1", kind: "answer", ...(raw as object) });
+  const payload = { schemaVersion: "v1", kind: "answer", ...(raw as object) } as Record<string, unknown>;
+  // Evidence IDs are always server-assigned, never model-generated.
+  if (Array.isArray(payload.citations)) {
+    payload.citations = payload.citations.map((c) => {
+      if (typeof c !== "object" || c === null) return c;
+      const citation = { ...(c as Record<string, unknown>) };
+      if (
+        typeof citation.documentId === "string" &&
+        typeof citation.page === "number" &&
+        typeof citation.quote === "string"
+      ) {
+        citation.evidenceId = evidenceIdFor(citation.documentId, citation.page, citation.quote);
+      }
+      return citation;
+    });
+  }
+  return validateChatResponse(payload);
 }
 
 /** Validate a payload against chat-api v1. Throws on violation. */
@@ -127,6 +152,9 @@ export function validateChatResponse(payload: unknown): ChatResponse {
     for (const c of r.citations as Record<string, unknown>[]) {
       if (typeof c.documentId !== "string" || typeof c.page !== "number" || c.page < 1 || typeof c.quote !== "string" || !c.quote.trim()) {
         throw new Error("Invalid chat response: malformed citation");
+      }
+      if (typeof c.evidenceId !== "string" || !c.evidenceId.trim()) {
+        throw new Error("Invalid chat response: citation must carry a session-bound evidenceId");
       }
     }
     return payload as ChatResponse;

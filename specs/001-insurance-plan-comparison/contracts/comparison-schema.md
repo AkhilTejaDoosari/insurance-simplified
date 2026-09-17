@@ -105,7 +105,9 @@ rejected by validation. Contract tests assert rejection.
 
 - One row per comparable fact; exactly one verdict per row (FR-005).
 - Every populated value carries ≥1 evidence entry with document ID,
-  1-based page, and exact quote (FR-007).
+  1-based page, exact quote, and session-bound opaque evidence ID
+  (`evidenceId`, `ev-...`, resolving server-side to the exact passage for
+  citation URLs) (FR-007).
 - `display` MUST include all qualifiers verbatim; `qualifiers` map keys:
   `networkTier`, `period`, `ageBand`, `conditions`, `planTier` (FR-006).
 - `planTier` names the plan tier/option a value belongs to when a single

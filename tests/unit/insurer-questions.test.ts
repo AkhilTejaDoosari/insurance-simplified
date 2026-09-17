@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { suggestQuestions } from "@/app/lib/extraction/insurer-questions";
+import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import type { ComparisonTable } from "@/app/lib/extraction/types";
+
+function cev(documentId: string, page: number, quote: string) {
+  return { documentId, page, quote, evidenceId: evidenceIdFor(documentId, page, quote) };
+}
 
 function table(): ComparisonTable {
   return {
@@ -13,22 +18,22 @@ function table(): ComparisonTable {
         factName: "emergency-copay",
         verdict: "CONFLICTED",
         values: [
-          { documentId: "doc-1", display: "$25 copay", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 2, quote: "Urgent care copay is $25." }] },
-          { documentId: "doc-1", display: "$50 copay", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 9, quote: "Urgent care copay is $50." }] },
+          { documentId: "doc-1", display: "$25 copay", qualifiers: {}, evidence: [cev("doc-1", 2, "Urgent care copay is $25.")] },
+          { documentId: "doc-1", display: "$50 copay", qualifiers: {}, evidence: [cev("doc-1", 9, "Urgent care copay is $50.")] },
         ],
       },
       {
         factName: "prescriptions",
         verdict: "NEEDS VERIFICATION",
         values: [
-          { documentId: "doc-1", display: "covered at a reasonable cost", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 2, quote: "Prescriptions covered at a reasonable cost." }] },
+          { documentId: "doc-1", display: "covered at a reasonable cost", qualifiers: {}, evidence: [cev("doc-1", 2, "Prescriptions covered at a reasonable cost.")] },
         ],
       },
       {
         factName: "annual-deductible",
         verdict: "SUPPORTED",
         values: [
-          { documentId: "doc-1", display: "$250", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 1, quote: "Deductible $250." }] },
+          { documentId: "doc-1", display: "$250", qualifiers: {}, evidence: [cev("doc-1", 1, "Deductible $250.")] },
         ],
       },
     ],
@@ -65,9 +70,9 @@ describe("insurer question suggestions (User Story 4)", () => {
           factName: "annual-deductible",
           verdict: "SUPPORTED",
           values: [
-            { documentId: "doc-1", display: "$250", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 1, quote: "Deductible $250." }] },
-            { documentId: "doc-2", display: "$500", qualifiers: {}, evidence: [{ documentId: "doc-2", page: 1, quote: "Deductible $500." }] },
-            { documentId: "doc-3", display: "$400", qualifiers: {}, evidence: [{ documentId: "doc-3", page: 1, quote: "Deductible $400." }] },
+          { documentId: "doc-1", display: "$250", qualifiers: {}, evidence: [cev("doc-1", 1, "Deductible $250.")] },
+            { documentId: "doc-2", display: "$500", qualifiers: {}, evidence: [cev("doc-2", 1, "Deductible $500.")] },
+            { documentId: "doc-3", display: "$400", qualifiers: {}, evidence: [cev("doc-3", 1, "Deductible $400.")] },
           ],
         },
       ],
@@ -85,8 +90,8 @@ describe("insurer question suggestions (User Story 4)", () => {
           factName: "urgent-care",
           verdict: "CONFLICTED",
           values: [
-            { documentId: "doc-1", display: "$25 copay", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 2, quote: "Urgent care copay is $25." }] },
-            { documentId: "doc-1", display: "$50 copay", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 9, quote: "Urgent care copay is $50." }] },
+            { documentId: "doc-1", display: "$25 copay", qualifiers: {}, evidence: [cev("doc-1", 2, "Urgent care copay is $25.")] },
+            { documentId: "doc-1", display: "$50 copay", qualifiers: {}, evidence: [cev("doc-1", 9, "Urgent care copay is $50.")] },
           ],
         },
       ],

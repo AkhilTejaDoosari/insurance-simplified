@@ -2,8 +2,7 @@
 
 import { useMemo, useState } from "react";
 import UploadDropzone, { type UploadResult } from "@/app/components/UploadDropzone";
-import ComparisonTable, { type SelectedCell } from "@/app/components/ComparisonTable";
-import EvidencePanel from "@/app/components/EvidencePanel";
+import ComparisonTable from "@/app/components/ComparisonTable";
 import ChatPanel from "@/app/components/ChatPanel";
 import InsurerQuestions from "@/app/components/InsurerQuestions";
 import ChecklistFlow from "@/app/components/ChecklistFlow";
@@ -13,7 +12,6 @@ import type { ComparisonTable as Table } from "@/app/lib/extraction/types";
 export default function Home() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [table, setTable] = useState<Table | null>(null);
-  const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const questions = useMemo(() => (table ? suggestQuestions(table) : []), [table]);
@@ -68,13 +66,8 @@ export default function Home() {
       {table && sessionId && (
         <>
           <div className="results">
-            <ComparisonTable table={table} onSelectCell={setSelected} />
+            <ComparisonTable table={table} sessionId={sessionId} />
             <div className="results__tools">
-              <EvidencePanel
-                cell={selected}
-                sessionId={sessionId}
-                documents={table.documents}
-              />
               <ChatPanel sessionId={sessionId} documents={table.documents} />
             </div>
           </div>

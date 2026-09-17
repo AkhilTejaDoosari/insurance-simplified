@@ -23,13 +23,15 @@ documents. Retrieval corpus = session uploads only.
   "kind": "answer",
   "answerText": "<grounded in cited passages>",
   "citations": [
-    { "documentId": "doc-1", "page": 7, "quote": "<exact source text>" }
+    { "documentId": "doc-1", "page": 7, "quote": "<exact source text>", "evidenceId": "ev-<opaque session-bound id>" }
   ]
 }
 ```
 
-Rules: ≥1 citation required; every substantive claim MUST trace to a cited
-passage; no outside knowledge (FR-012, FR-017).
+Rules: ≥1 citation required; every citation carries a session-bound opaque
+`evidenceId` resolving server-side to its exact passage (citation URLs use
+the same app-owned viewer as comparison values); every substantive claim
+MUST trace to a cited passage; no outside knowledge (FR-012, FR-017).
 
 ## Refusal response (no supporting evidence)
 

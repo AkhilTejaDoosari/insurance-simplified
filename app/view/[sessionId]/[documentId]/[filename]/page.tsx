@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { getSession } from "@/app/lib/session";
-import { resolveCitationPage } from "@/app/lib/citation";
+import { getEvidenceRecord, getSession } from "@/app/lib/session";
+import { locatePassage, resolveCitationPage } from "@/app/lib/citation";
 import { documentUrl, rawDocumentUrl, sourcePageUrl } from "@/app/lib/document-url";
+import SourceFrame from "@/app/components/SourceFrame";
 
 type Props = {
   params: Promise<{ sessionId: string; documentId: string; filename: string }>;
@@ -22,7 +23,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function CitationViewer({ params, searchParams }: Props) {
   const { sessionId, documentId } = await params;
-  const { page } = await searchParams;
+  const { page, evidence } = await searchParams;
   const resolved = resolveCitationPage(getSession(sessionId), documentId, page);
 
   if (!resolved.ok) {
@@ -49,22 +50,66 @@ export default async function CitationViewer({ params, searchParams }: Props) {
     );
   }
 
+  // Resolve the opaque evidence ID server-side and validate it against the
+  // URL before highlighting anything. Unknown or mismatched IDs fail
+  // explicitly — a citation never highlights a passage it did not cite.
+  const evidenceParam = Array.isArray(evidence) ? evidence[0] : evidence;
+  const record = evidenceParam ? getEvidenceRecord(sessionId, evidenceParam) : undefined;
+  const evidenceValid =
+    record !== undefined &&
+    record.documentId === documentId &&
+    record.page === resolved.page;
+  const evidenceError =
+    evidenceParam !== undefined && !evidenceValid
+      ? "This citation link is no longer valid: its evidence reference does not match this document and page."
+      : null;
+  const located =
+    evidenceValid && record ? locatePassage(resolved.text, record.quote) : null;
+
   return (
     <main className="panel" aria-label="Citation">
       <p className="text-muted">
         {resolved.filename} — Page {resolved.page} of {resolved.pageCount}
       </p>
-      <iframe
+      <SourceFrame
+        pageUrl={sourcePageUrl(sessionId, documentId, resolved.filename, resolved.page)}
+        fullUrl={rawDocumentUrl(sessionId, documentId, resolved.filename)}
         title={`${resolved.filename}, page ${resolved.page}`}
-        src={sourcePageUrl(sessionId, documentId, resolved.filename, resolved.page)}
-        style={{ width: "100%", height: "70vh", border: "1px solid #ccc" }}
       />
       <blockquote className="quote">
-        <p style={{ whiteSpace: "pre-wrap" }}>{resolved.text}</p>
+        <p style={{ whiteSpace: "pre-wrap" }}>
+          {located ? (
+            <>
+              {located.before}
+              <mark>{located.match}</mark>
+              {located.after}
+            </>
+          ) : (
+            resolved.text
+          )}
+        </p>
         <cite>
           {documentId}, page {resolved.page}
         </cite>
       </blockquote>
+      {evidenceValid && record ? (
+        <div className="stack" style={{ marginTop: 12 }}>
+          <p>
+            <strong>Cited passage:</strong> “{record.quote}”
+          </p>
+          {!located ? (
+            <p className="text-muted">
+              Automatic highlighting is unavailable for this passage — the
+              exact cited quote is shown above.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {evidenceError ? (
+        <p className="text-muted" role="alert">
+          {evidenceError}
+        </p>
+      ) : null}
       <nav style={{ display: "flex", gap: 16, marginTop: 16 }}>
         {resolved.page > 1 ? (
           <a href={documentUrl(sessionId, documentId, resolved.filename, resolved.page - 1)}>

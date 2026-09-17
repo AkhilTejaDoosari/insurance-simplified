@@ -5,7 +5,7 @@
 // Output always validated (contracts/comparison-schema.md).
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/app/lib/session";
+import { getSession, registerEvidence } from "@/app/lib/session";
 import {
   extractFallback,
   extractViaLlm,
@@ -30,10 +30,21 @@ export async function POST(request: NextRequest) {
     body.engine === "llm" || (body.engine !== "fallback" && isLlmConfigured());
 
   try {
-    const table = useLlm
+    const raw = useLlm
       ? await extractViaLlm(session.documents, session.userContext)
       : extractFallback(session.documents, session.userContext);
-    return NextResponse.json(validateTable(table));
+    const table = validateTable(raw);
+    // Persist every cited passage in the session-bound evidence registry so
+    // citation URLs (&evidence=) resolve to their exact quotes server-side.
+    registerEvidence(
+      session.sessionId,
+      table.rows.flatMap((row) =>
+        row.values.flatMap((value) =>
+          value.evidence.map((e) => ({ documentId: e.documentId, page: e.page, quote: e.quote }))
+        )
+      )
+    );
+    return NextResponse.json(table);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed";
     const status = message.startsWith("LLM") ? 503 : 500;

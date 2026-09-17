@@ -19,6 +19,10 @@ export interface EvidenceCitation {
   /** 1-based page number. */
   page: number;
   quote: string;
+  /** Opaque session-bound evidence ID (ev-...), resolving server-side to
+   *  this exact passage for citation URLs. Assigned by the extraction path;
+   *  never model-generated. */
+  evidenceId: string;
 }
 
 export interface CellValue {
@@ -107,6 +111,9 @@ export function validateTable(payload: unknown): ComparisonTable {
         if (typeof e.page !== "number" || e.page < 1) fail(`row ${r.factName}: evidence page must be >= 1`);
         if (typeof e.quote !== "string" || !e.quote.trim()) {
           fail(`row ${r.factName}: evidence quote must be non-empty`);
+        }
+        if (typeof e.evidenceId !== "string" || !e.evidenceId.trim()) {
+          fail(`row ${r.factName}: evidence must carry a session-bound evidenceId`);
         }
       }
     }

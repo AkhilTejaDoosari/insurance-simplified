@@ -108,15 +108,18 @@ app/
 │   └── export/route.ts       # downloadable export file
 ├── components/
 │   ├── UploadDropzone.tsx
-│   ├── ComparisonTable.tsx
-│   ├── EvidencePanel.tsx
+│   ├── ComparisonTable.tsx     # values link straight to citation viewer
 │   ├── ChatPanel.tsx
 │   ├── InsurerQuestions.tsx
 │   └── ChecklistFlow.tsx
+├── view/[sessionId]/[documentId]/[filename]/page.tsx  # app-owned citation viewer
 └── lib/
     ├── extraction/           # fact schema, verdict assignment, prompts v1
     ├── rag/                  # chunking, retrieval, chat prompts v1
     ├── verdicts.ts           # closed five-state enum + guards
+    ├── citation.ts           # citation page resolution + passage locating
+    ├── document-url.ts       # citation viewer / source-page URL builders
+    ├── evidence-ids.ts       # session-bound opaque evidence IDs
     └── session.ts            # in-memory session store + delete-on-close
 
 tests/
