@@ -111,7 +111,7 @@ describe("LLM boundary reconciliation", () => {
     expect(table.rows[0].verdict).toBe("SUPPORTED");
   });
 
-  it("keeps a genuine same-plan/same-scope contradiction as CONFLICTED", async () => {
+  it("keeps a genuine same-document/same-scope contradiction as CONFLICTED", async () => {
     mockedComplete.mockResolvedValue(
       payload([
         {

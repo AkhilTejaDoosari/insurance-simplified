@@ -75,7 +75,7 @@ describe("insurer question suggestions (User Story 4)", () => {
     expect(suggestQuestions(differing)).toEqual([]);
   });
 
-  it("still asks a question for a genuine same-plan/same-scope contradiction", () => {
+  it("still asks a question for a genuine same-document/same-scope contradiction", () => {
     const conflict: ComparisonTable = {
       schemaVersion: "v1",
       factListVersion: "v1",

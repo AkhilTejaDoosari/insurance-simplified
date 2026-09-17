@@ -52,10 +52,13 @@ Exactly one of: `SUPPORTED` | `DOES NOT APPEAR TO FIT` | `NOT STATED` |
 - `DOES NOT APPEAR TO FIT`: user context rules the fact out for them
 - `NOT STATED`: no uploaded document mentions the fact (only when there are
   no supported values for that fact at all)
-- `CONFLICTED`: one plan contradicts itself under the same scope — same
-  document, same fact, same qualifiers scope, two incompatible claims each
-  with its own evidence. Row shows each contradicting value with its source.
-  Cross-plan differences are SUPPORTED, never CONFLICTED.
+- `CONFLICTED`: one document contradicts itself under the same scope —
+  same documentId, same fact, same qualifiers scope, two incompatible
+  claims each with its own evidence. Row shows each contradicting value
+  with its source. Cross-document differences are SUPPORTED, never
+  CONFLICTED. V1 has no document-to-plan identity, so it never infers
+  that two documents describe the same plan; cross-document same-plan
+  conflict detection is a future plan-identity capability.
 - `NEEDS VERIFICATION`: statement vague, partial, or missing qualifiers;
   only when the source statement itself cannot safely support a concrete
   interpretation
@@ -83,7 +86,8 @@ One side-panel round, scoped to the session's documents.
 
 ## Insurer Question
 
-Suggested follow-up derived from a gap, genuine same-scope contradiction,
+Suggested follow-up derived from a gap, genuine same-document/same-scope
+contradiction,
 or ambiguity.
 
 - `questionText`: concrete question for the insurer

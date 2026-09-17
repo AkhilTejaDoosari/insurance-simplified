@@ -20,8 +20,8 @@ prerequisites, steps, and expected outcomes with links to contracts.
 3. **Expect**: ~20–30 rows; every row carries exactly one verdict from the
     closed enum ([comparison-schema](contracts/comparison-schema.md));
     differing plan values show side by side as SUPPORTED; missing facts show
-    NOT STATED. (A CONFLICTED row appears only for a genuine
-    same-plan/same-scope contradiction.)
+    NOT STATED.     (A CONFLICTED row appears only for a genuine
+    same-document/same-scope contradiction.)
 4. **Expect**: qualifier-bearing values display in full, never collapsed.
 
 ## Flow 2 — Cell evidence inspection (P1)

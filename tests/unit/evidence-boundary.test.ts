@@ -116,7 +116,7 @@ describe("extractViaLlm evidence boundary (principle IV)", () => {
     const table = await extractViaLlm(DOCS, {});
     expect(table.rows[0].values.map((v) => v.documentId)).toEqual(["doc-1"]);
     // One surviving value from one document is comparison data, not a
-    // same-plan/same-scope contradiction.
+    // same-document/same-scope contradiction.
     expect(table.rows[0].verdict).toBe("SUPPORTED");
   });
 

@@ -128,7 +128,7 @@ describe("hasSameScopeContradiction", () => {
     ).toBe(false);
   });
 
-  it("is true for incompatible claims in the same plan and scope", () => {
+  it("is true for incompatible claims in the same document and scope", () => {
     expect(
       hasSameScopeContradiction([v("doc-1", "$250"), v("doc-1", "$500")])
     ).toBe(true);
@@ -178,5 +178,14 @@ describe("hasSameScopeContradiction", () => {
 
   it("is false for a single value", () => {
     expect(hasSameScopeContradiction([v("doc-1", "$250")])).toBe(false);
+  });
+
+  it("is false for different documentIds even with identical scope and differing values (V1 has no document-to-plan identity)", () => {
+    expect(
+      hasSameScopeContradiction([
+        v("doc-1", "$250", { planTier: "Lite", networkTier: "in-network" }),
+        v("doc-2", "$500", { planTier: "Lite", networkTier: "in-network" }),
+      ])
+    ).toBe(false);
   });
 });

@@ -63,10 +63,14 @@ function scopeSignature(qualifiers: unknown): string {
   }).join("|");
 }
 
-/** Genuine same-plan/same-scope contradiction: two values from the SAME
- *  document, under the SAME scope, with different normalized readings.
- *  Values from different documents are different products being compared —
- *  never a conflict, no matter how far apart the figures are. */
+/** Genuine same-document/same-scope contradiction: two values from the SAME
+ *  documentId, under the SAME scope, with different normalized readings.
+ *  Values from different documentIds are different comparison inputs —
+ *  never a conflict, no matter how far apart the figures are. V1 has no
+ *  document-to-plan identity, so it confirms CONFLICTED only within one
+ *  documentId and never infers that two documents describe the same plan;
+ *  cross-document same-plan conflict detection is a future plan-identity
+ *  capability. */
 export function hasSameScopeContradiction(
   values: { documentId: unknown; display: unknown; qualifiers: unknown }[]
 ): boolean {
@@ -160,7 +164,7 @@ export function extractFallback(
     // conflict: separate plans are expected to state different figures
     // (different structures too — a range in one plan vs. a fixed amount
     // in another is SUPPORTED). CONFLICTED is reserved for a genuine
-    // same-plan/same-scope contradiction, which the single-match-per-document
+    // same-document/same-scope contradiction, which the single-match-per-document
     // fallback cannot observe, so every cited row here is SUPPORTED.
     return {
       factName: fact.name,
@@ -198,7 +202,7 @@ const EXTRACTION_INSTRUCTIONS = [
   "Rows for facts in no document use NOT STATED with empty values.",
   "Never attach evidence to an absence, and never cite an unrelated passage to fill the evidence requirement — state the absence explicitly.",
   "Use SUPPORTED whenever each value has cited, usable evidence — even when figures differ across documents, plan tiers, or network tiers (e.g. doc-1 deductible $250 vs. doc-2 deductible $500; Lite $250 vs. Platinum $500; in-network vs. out-of-network).",
-  "Use CONFLICTED ONLY for a genuine same-plan/same-scope contradiction: two values from the SAME documentId with the SAME scope (planTier, networkTier, period, ageBand, and conditions all equal) making incompatible claims, each with its own evidence. Two values from different documentIds are NEVER sufficient for CONFLICTED, and values scoped to different tiers are NEVER contradictory merely because the figures differ.",
+  "Use CONFLICTED ONLY for a genuine same-document/same-scope contradiction: two values from the SAME documentId with the SAME scope (planTier, networkTier, period, ageBand, and conditions all equal) making incompatible claims, each with its own evidence. Two values from different documentIds are NEVER sufficient for CONFLICTED — V1 has no document-to-plan identity, so never infer that two documents describe the same plan — and values scoped to different tiers are NEVER contradictory merely because the figures differ.",
   "Use NEEDS VERIFICATION ONLY when the source statement itself is vague, partial, ambiguous, or cannot safely support a concrete interpretation — never merely because different plans structure a benefit differently (a range in one plan vs. a fixed amount in another is SUPPORTED).",
 ].join("\n");
 
@@ -300,11 +304,12 @@ const ABSENCE_DISPLAY = /^\s*(?:not|no)\s+(?:\w+\s+)?(?:stated|specified|mention
  *    evidence), and flip rows left empty to NOT STATED.
  *  - DOES NOT APPEAR TO FIT must name the ruling-out context field; without
  *    one it is NEEDS VERIFICATION (or NOT STATED when there are no values).
- *  - CONFLICTED is kept only for a genuine same-plan/same-scope
+ *  - CONFLICTED is kept only for a genuine same-document/same-scope
  *    contradiction (same documentId, same qualifiers scope, incompatible
- *    readings each with its own evidence). Cross-document or
- *    cross-tier/scope differences are comparison data and are recorded
- *    SUPPORTED. */
+ *    readings each with its own evidence). V1 has no document-to-plan
+ *    identity, so cross-document values are comparison data and are
+ *    recorded SUPPORTED; detecting conflicts across documents that belong
+ *    to one plan is a future plan-identity capability. */
 export function reconcileLlmTable(
   raw: unknown,
   documents: ExtractInputDocument[]
@@ -354,7 +359,7 @@ export function reconcileLlmTable(
         );
         if (!hasSameScopeContradiction(typed)) {
           console.warn(
-            `[extractViaLlm] CONFLICTED on fact "${String(r.factName)}" has no same-plan/same-scope contradiction (cross-plan differences are comparison data); recorded as SUPPORTED`
+            `[extractViaLlm] CONFLICTED on fact "${String(r.factName)}" has no same-document/same-scope contradiction (cross-document differences are comparison data); recorded as SUPPORTED`
           );
           out.verdict = "SUPPORTED";
           delete out.rationale;
