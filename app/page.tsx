@@ -75,7 +75,7 @@ export default function Home() {
                 sessionId={sessionId}
                 documents={table.documents}
               />
-              <ChatPanel sessionId={sessionId} />
+              <ChatPanel sessionId={sessionId} documents={table.documents} />
             </div>
           </div>
           <InsurerQuestions questions={questions} />

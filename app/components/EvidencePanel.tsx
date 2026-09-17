@@ -56,7 +56,7 @@ export default function EvidencePanel({
                 <cite>
                   {e.documentId},{" "}
                   <a
-                    href={documentUrl(sessionId, e.documentId, e.page)}
+                    href={documentUrl(sessionId, e.documentId, filename(e.documentId), e.page)}
                     target="_blank"
                     rel="noopener"
                     title={`Open ${filename(e.documentId)} at page ${e.page}`}

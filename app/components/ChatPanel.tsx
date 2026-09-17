@@ -9,7 +9,15 @@ interface Turn {
   response: ChatResponse;
 }
 
-export default function ChatPanel({ sessionId }: { sessionId: string }) {
+export default function ChatPanel({
+  sessionId,
+  documents,
+}: {
+  sessionId: string;
+  documents: { documentId: string; filename: string }[];
+}) {
+  const filename = (documentId: string) =>
+    documents.find((d) => d.documentId === documentId)?.filename ?? documentId;
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
@@ -55,7 +63,7 @@ export default function ChatPanel({ sessionId }: { sessionId: string }) {
                       <li key={j}>
                         {c.documentId},{" "}
                         <a
-                          href={documentUrl(sessionId, c.documentId, c.page)}
+                          href={documentUrl(sessionId, c.documentId, filename(c.documentId), c.page)}
                           target="_blank"
                           rel="noopener"
                         >

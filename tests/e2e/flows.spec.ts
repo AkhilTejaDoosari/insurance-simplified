@@ -25,6 +25,11 @@ test("upload → table → evidence → chat → export (quickstart Flows 1–4,
     .click();
   const evidence = page.getByLabel("Evidence");
   await expect(evidence.getByText("doc-1, page 1", { exact: false })).toBeVisible();
+  // Citation links end in the filename so the PDF tab is titled after it.
+  await expect(evidence.getByRole("link", { name: "page 1" }).first()).toHaveAttribute(
+    "href",
+    /\/api\/document\/sess-[^/]+\/doc-1\/plan-a\.pdf#page=1$/,
+  );
   await expect(evidence.getByText(/Annual deductible: \$250 in-network/).first()).toBeVisible();
 
   // Flow 3: cited answer, then explicit refusal.
