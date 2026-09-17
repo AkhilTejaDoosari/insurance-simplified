@@ -12,7 +12,9 @@ test("upload → table → evidence → chat → export (quickstart Flows 1–4,
 
   // Flow 1: table with verdicts and full qualifiers.
   await expect(page.getByRole("rowheader", { name: "Annual deductible" })).toBeVisible();
-  await expect(page.getByText("CONFLICTED").first()).toBeVisible();
+  // Cross-plan differences are comparison data: differing values render as
+  // SUPPORTED, never CONFLICTED.
+  await expect(page.getByText("SUPPORTED").first()).toBeVisible();
   await expect(page.getByText("NOT STATED").first()).toBeVisible();
   await expect(
     page.getByRole("button", { name: /\$250 in-network \/ \$500 out-of-network/ }).first()

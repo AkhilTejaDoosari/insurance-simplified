@@ -23,7 +23,8 @@ async function makePdf(pages: string[]): Promise<Uint8Array> {
 async function main() {
   mkdirSync(OUT, { recursive: true });
 
-  // Plan A — agrees with B on deductible, conflicts on emergency copay.
+  // Plan A — agrees with B on deductible, differs on emergency copay
+  // (cross-plan differences are comparison data → SUPPORTED).
   const planA = await makePdf([
     [
       "ACME HEALTH PLAN A - SUMMARY OF BENEFITS",
@@ -38,7 +39,8 @@ async function main() {
     ].join("\n"),
   ]);
 
-  // Plan B — conflicts with A on emergency copay; deductible matches.
+  // Plan B — differs from A on emergency copay and out-of-pocket maximum
+  // (comparison data → SUPPORTED); deductible matches.
   const planB = await makePdf([
     [
       "ACME HEALTH PLAN B - SUMMARY OF BENEFITS",

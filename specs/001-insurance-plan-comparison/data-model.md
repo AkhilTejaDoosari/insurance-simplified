@@ -47,10 +47,18 @@ network; ~20–30 per set).
 Exactly one of: `SUPPORTED` | `DOES NOT APPEAR TO FIT` | `NOT STATED` |
 `CONFLICTED` | `NEEDS VERIFICATION`. No other value is representable.
 
+- `SUPPORTED`: the fact has cited, usable evidence. Different values across
+  different documents/plans are normal comparison data and stay SUPPORTED.
 - `DOES NOT APPEAR TO FIT`: user context rules the fact out for them
-- `NOT STATED`: no uploaded document mentions the fact
-- `CONFLICTED`: documents disagree — row shows each value with its source
-- `NEEDS VERIFICATION`: statement vague, partial, or missing qualifiers
+- `NOT STATED`: no uploaded document mentions the fact (only when there are
+  no supported values for that fact at all)
+- `CONFLICTED`: one plan contradicts itself under the same scope — same
+  document, same fact, same qualifiers scope, two incompatible claims each
+  with its own evidence. Row shows each contradicting value with its source.
+  Cross-plan differences are SUPPORTED, never CONFLICTED.
+- `NEEDS VERIFICATION`: statement vague, partial, or missing qualifiers;
+  only when the source statement itself cannot safely support a concrete
+  interpretation
 - Transitions: verdicts are computed per extraction run; re-extraction
   replaces the full table (no partial updates)
 
@@ -75,7 +83,8 @@ One side-panel round, scoped to the session's documents.
 
 ## Insurer Question
 
-Suggested follow-up derived from a gap, conflict, or ambiguity.
+Suggested follow-up derived from a gap, genuine same-scope contradiction,
+or ambiguity.
 
 - `questionText`: concrete question for the insurer
 - `motivatingFact`: fact name + triggering verdict (NOT STATED, CONFLICTED,

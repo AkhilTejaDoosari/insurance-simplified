@@ -18,7 +18,7 @@ function questionFor(row: TableRow): string {
     case "NOT STATED":
       return `Your documents do not mention ${fact} — what does the plan say about it, and where is it written?`;
     case "CONFLICTED":
-      return `Your documents disagree on ${fact} — which value applies to you, and can the insurer confirm it in writing?`;
+      return `Your documents contain contradictory statements about ${fact} for the same plan and scope — which value is correct for you, and can the insurer confirm it in writing?`;
     case "NEEDS VERIFICATION":
       return `The statement about ${fact} is vague or missing details — what are the exact terms, limits, and conditions?`;
     default:

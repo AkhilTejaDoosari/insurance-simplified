@@ -1,7 +1,7 @@
 import type { Verdict } from "@/app/lib/verdicts";
 
 // Tone is the only saturated color on the page: green = supported, red =
-// documents disagree, gray = nothing found, amber = needs a human check.
+// same-plan/same-scope contradiction, gray = nothing found, amber = needs a human check.
 const TONE: Record<Verdict, "ok" | "bad" | "none" | "warn"> = {
   SUPPORTED: "ok",
   CONFLICTED: "bad",

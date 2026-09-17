@@ -23,13 +23,13 @@ const DOCS = [
 ];
 
 describe("structural benefit differences", () => {
-  it("marks range vs. options vs. fixed amount as NEEDS VERIFICATION, not CONFLICTED", () => {
+  it("marks range vs. options vs. fixed amount across different plans as SUPPORTED, not CONFLICTED", () => {
     const table = extractFallback(DOCS, {});
     const row = table.rows.find((r) => r.factName === "annual-deductible");
 
     expect(row?.values).toHaveLength(3);
-    expect(row?.verdict).toBe("NEEDS VERIFICATION");
+    expect(row?.verdict).toBe("SUPPORTED");
     expect(row?.verdict).not.toBe("CONFLICTED");
-    expect(row?.rationale).toMatch(/structur/i);
+    expect(row?.verdict).not.toBe("NEEDS VERIFICATION");
   });
 });

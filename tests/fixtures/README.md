@@ -12,8 +12,9 @@
 ## plan-b.pdf
 
 - Page 1: same deductible as A (agreement → SUPPORTED); out-of-pocket
-  maximum "$4,500 in-network" (differs from A → CONFLICTED);
-  emergency copay "$250 per visit" (CONFLICTS with A).
+  maximum "$4,500 in-network" (differs from A → SUPPORTED: different plans
+  state different figures);
+  emergency copay "$250 per visit" (differs from A → SUPPORTED).
 - Page 2: pre-existing conditions 6-month wait; same network.
 
 ## Intentionally absent everywhere

@@ -13,7 +13,8 @@ function table(): ComparisonTable {
         factName: "emergency-copay",
         verdict: "CONFLICTED",
         values: [
-          { documentId: "doc-1", display: "$100", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 1, quote: "Emergency copay $100." }] },
+          { documentId: "doc-1", display: "$25 copay", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 2, quote: "Urgent care copay is $25." }] },
+          { documentId: "doc-1", display: "$50 copay", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 9, quote: "Urgent care copay is $50." }] },
         ],
       },
       {
@@ -48,5 +49,51 @@ describe("insurer question suggestions (User Story 4)", () => {
       expect(["NOT STATED", "CONFLICTED", "NEEDS VERIFICATION"]).toContain(s.triggeringVerdict);
       expect(s.documentIds.length).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it("asks no question merely because different plans state different values", () => {
+    const differing: ComparisonTable = {
+      schemaVersion: "v1",
+      factListVersion: "v1",
+      documents: [
+        { documentId: "doc-1", filename: "patriot-travel.pdf", pageCount: 1 },
+        { documentId: "doc-2", filename: "patriot-exchange.pdf", pageCount: 1 },
+        { documentId: "doc-3", filename: "optima.pdf", pageCount: 1 },
+      ],
+      rows: [
+        {
+          factName: "annual-deductible",
+          verdict: "SUPPORTED",
+          values: [
+            { documentId: "doc-1", display: "$250", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 1, quote: "Deductible $250." }] },
+            { documentId: "doc-2", display: "$500", qualifiers: {}, evidence: [{ documentId: "doc-2", page: 1, quote: "Deductible $500." }] },
+            { documentId: "doc-3", display: "$400", qualifiers: {}, evidence: [{ documentId: "doc-3", page: 1, quote: "Deductible $400." }] },
+          ],
+        },
+      ],
+    };
+    expect(suggestQuestions(differing)).toEqual([]);
+  });
+
+  it("still asks a question for a genuine same-plan/same-scope contradiction", () => {
+    const conflict: ComparisonTable = {
+      schemaVersion: "v1",
+      factListVersion: "v1",
+      documents: [{ documentId: "doc-1", filename: "a.pdf", pageCount: 9 }],
+      rows: [
+        {
+          factName: "urgent-care",
+          verdict: "CONFLICTED",
+          values: [
+            { documentId: "doc-1", display: "$25 copay", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 2, quote: "Urgent care copay is $25." }] },
+            { documentId: "doc-1", display: "$50 copay", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 9, quote: "Urgent care copay is $50." }] },
+          ],
+        },
+      ],
+    };
+    const suggestions = suggestQuestions(conflict);
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].motivatingFact).toBe("urgent-care");
+    expect(suggestions[0].triggeringVerdict).toBe("CONFLICTED");
   });
 });
