@@ -25,7 +25,7 @@
 
   --radius-card: 10px;
   --radius-control: 6px;
-  --measure: 1200px;
+  --measure: 1440px;
   --gutter: 24px;
 
   --font: "Instrument Sans", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -119,27 +119,19 @@ a {
 }
 
 .results {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 24px;
-  align-items: start;
-}
-.results__rail {
-  position: sticky;
-  top: 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
+  gap: 18px;
 }
-@media (max-width: 1023px) {
-  .results {
+.results__tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .results__tools {
     grid-template-columns: 1fr;
-  }
-  .results__rail {
-    position: static;
-    max-height: none;
   }
 }
 
@@ -309,8 +301,6 @@ select {
 
 .comparison {
   padding: 0;
-  /* clip (not hidden): rounds the corners without becoming a scroll
-     container, so the sticky header still pins to the viewport. */
   overflow: clip;
 }
 .comparison__intro {
@@ -319,6 +309,47 @@ select {
 .comparison__intro p {
   color: var(--muted);
   margin-top: 4px;
+}
+
+.comparison__tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 24px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.comparison__tab {
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.comparison__tab:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+.comparison__tab[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.comparison__section-summary {
+  padding: 14px 24px;
+  background: var(--surface-tint);
+  border-bottom: 1px solid var(--line);
+}
+.comparison__section-summary p {
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.comparison__table-wrap {
+  width: 100%;
+  overflow-x: auto;
 }
 
 .table {
@@ -335,7 +366,9 @@ select {
   vertical-align: top;
   padding: 10px 14px;
   border-bottom: 1px solid var(--line);
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
 }
 .table thead th {
   position: sticky;
@@ -348,10 +381,10 @@ select {
   padding-bottom: 12px;
 }
 .table col.col-fact {
-  width: 180px;
+  width: 190px;
 }
 .table col.col-verdict {
-  width: 172px;
+  width: 150px;
 }
 
 /* Document header groups: every document's first column gets a divider so
@@ -364,6 +397,7 @@ select {
 }
 .table__group-name {
   display: block;
+  overflow-wrap: anywhere;
 }
 .table__tier-picker {
   display: block;
@@ -395,22 +429,7 @@ select {
   border: 0;
 }
 
-.table__section th {
-  background: var(--surface-tint);
-  box-shadow: inset 3px 0 0 var(--ink);
-  padding: 12px 14px 12px 20px;
-}
-.table__section h3 {
-  font-size: 1rem;
-}
-.table__section p {
-  color: var(--muted);
-  font-weight: 400;
-  font-size: 0.88rem;
-  margin-top: 2px;
-}
-
-.table tbody tr:nth-child(odd):not(.table__section) > * {
+.table tbody tr:nth-child(odd) > * {
   background: #f7f8f6;
 }
 .table__fact {
@@ -446,31 +465,27 @@ select {
   color: var(--action);
 }
 
-/* Many value columns (multi-tier documents): guarantee each a readable
-   width and scroll the card sideways instead of crushing the text. Sticky
-   headers are traded away here, since the card becomes the scroll container. */
-.comparison--wide {
-  overflow-x: auto;
-}
-.comparison--wide .table {
-  min-width: calc(332px + var(--value-columns, 4) * 150px);
-}
-.comparison--wide .table col.col-fact {
-  width: 160px;
-}
-.comparison--wide .table col.col-verdict {
-  width: 172px;
+/* Fit as much as possible in the viewport; if many tier columns are selected,
+   keep each value column readable instead of crushing words. */
+.table {
+  min-width: max(100%, calc(340px + var(--value-columns, 1) * 160px));
 }
 
 @media (max-width: 719px) {
-  .comparison {
-    overflow-x: auto;
+  .comparison__intro,
+  .comparison__section-summary {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .comparison__tabs {
+    padding-left: 16px;
+    padding-right: 16px;
   }
   .table {
-    min-width: 640px;
+    min-width: max(760px, calc(320px + var(--value-columns, 1) * 150px));
   }
   .table col.col-fact {
-    width: 150px;
+    width: 160px;
   }
   .table col.col-verdict {
     width: 140px;
