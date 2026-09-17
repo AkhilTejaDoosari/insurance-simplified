@@ -1,29 +1,19 @@
-// Serves an uploaded PDF back to the browser. Without `?page`, this is the
-// full original file. With `?page=N`, it renders ONLY page N of the
-// original uploaded PDF as a one-page PDF (pdf-lib copy), so citations can
-// point at the actual source page without relying on the browser PDF
-// viewer's `#page=` fragment (see app/lib/document-url.ts sourcePageUrl).
-// The filename segment is display-only; documentId is what selects the
-// file. Files live only as long as the session (see app/lib/session.ts).
-// Every failure is explicit: unknown session / unknown document are
-// distinct 404s, and an invalid `?page` is a 400 — a citation never
-// silently serves a different page than requested.
+// Serves an uploaded PDF back to the browser, BYTE-FOR-BYTE as uploaded.
+// Simple provenance serving: validate session/document, return the original
+// file as application/pdf. No PDF rewriting, no page transformation — page
+// selection belongs entirely to the app-owned citation viewer
+// (app/view/...?page=N&evidence=..., see app/lib/document-url.ts), which
+// renders the cited page itself with PDF.js. The filename segment is
+// display-only; documentId is what selects the file. Files live only as
+// long as the session (see app/lib/session.ts). Unknown sessions and
+// unknown documents fail with distinct explicit 404s, never a silent
+// wrong file.
 
 import { NextRequest, NextResponse } from "next/server";
-import { parsePageRequest } from "@/app/lib/citation";
-import { trySinglePage } from "@/app/lib/pdf/single-page";
 import { getSession, readDocumentFile } from "@/app/lib/session";
 
-function pdfHeaders(filename: string): HeadersInit {
-  return {
-    "content-type": "application/pdf",
-    "content-disposition": `inline; filename="${filename.replace(/["\\\r\n]/g, "_")}"`,
-    "cache-control": "private, no-store",
-  };
-}
-
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ sessionId: string; documentId: string }> }
 ) {
   const { sessionId, documentId } = await params;
@@ -36,29 +26,11 @@ export async function GET(
   if (!doc || !bytes) {
     return NextResponse.json({ error: "Unknown document" }, { status: 404 });
   }
-  const pageParam = new URL(request.url).searchParams.get("page");
-  if (pageParam === null) {
-    return new NextResponse(new Uint8Array(bytes), {
-      headers: pdfHeaders(doc.filename),
-    });
-  }
-  const requested = parsePageRequest(pageParam);
-  if (requested.kind !== "valid" || requested.page > doc.pageCount) {
-    return NextResponse.json(
-      {
-        error: `Invalid page: ?page must be an integer from 1 to ${doc.pageCount}`,
-      },
-      { status: 400 }
-    );
-  }
-  const singlePage = await trySinglePage(new Uint8Array(bytes), requested.page);
-  if (!singlePage) {
-    return NextResponse.json(
-      { error: "Could not read the requested PDF page" },
-      { status: 422 }
-    );
-  }
-  return new NextResponse(Buffer.from(singlePage), {
-    headers: pdfHeaders(doc.filename),
+  return new NextResponse(new Uint8Array(bytes), {
+    headers: {
+      "content-type": "application/pdf",
+      "content-disposition": `inline; filename="${doc.filename.replace(/["\\\r\n]/g, "_")}"`,
+      "cache-control": "private, no-store",
+    },
   });
 }

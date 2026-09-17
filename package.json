@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "next": "15",
-    "pdf-lib": "1",
+    "pdfjs-dist": "^6.3.289",
     "react": "19",
     "react-dom": "19",
     "unpdf": "1"
@@ -25,6 +25,7 @@
     "@types/react-dom": "19",
     "eslint": "9",
     "eslint-config-next": "15",
+    "pdf-lib": "1",
     "prettier": "3",
     "tsx": "4",
     "typescript": "5",

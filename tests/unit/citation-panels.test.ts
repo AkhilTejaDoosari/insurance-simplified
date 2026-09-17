@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 (globalThis as Record<string, unknown>).React ??= React;
 
 import ChatPanel from "@/app/components/ChatPanel";
-import SourceFrame from "@/app/components/SourceFrame";
 import { evidenceIdFor } from "@/app/lib/evidence-ids";
 
 const DOCUMENTS = [{ documentId: "doc-1", filename: "plan-a.pdf" }];
@@ -35,19 +34,5 @@ describe("chat citation links use the same source viewer", () => {
     );
     expect(html).toContain(`href="/view/sess-1/doc-1/plan-a.pdf?page=2&amp;evidence=${EVIDENCE_ID}"`);
     expect(html).not.toContain("#page=");
-  });
-});
-
-describe("SourceFrame (embedded source page)", () => {
-  it("embeds the single-page source URL immediately", () => {
-    const html = renderToStaticMarkup(
-      createElement(SourceFrame, {
-        pageUrl: "/api/document/sess-1/doc-1/plan-a.pdf?page=2",
-        fullUrl: "/api/document/sess-1/doc-1/plan-a.pdf",
-        title: "plan-a.pdf, page 2",
-      })
-    );
-    expect(html).toContain('src="/api/document/sess-1/doc-1/plan-a.pdf?page=2"');
-    expect(html).toContain("<iframe");
   });
 });

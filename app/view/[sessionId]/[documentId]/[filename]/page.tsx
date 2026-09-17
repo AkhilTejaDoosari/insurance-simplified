@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { getEvidenceRecord, getSession } from "@/app/lib/session";
-import { isMatchingEvidence, locatePassage, resolveCitationPage } from "@/app/lib/citation";
-import { documentUrl, rawDocumentUrl, sourcePageUrl } from "@/app/lib/document-url";
-import SourceFrame from "@/app/components/SourceFrame";
+import { isMatchingEvidence, resolveCitationPage } from "@/app/lib/citation";
+import { documentUrl, rawDocumentUrl } from "@/app/lib/document-url";
+import PdfEvidenceViewer from "@/app/components/PdfEvidenceViewer";
 
 type Props = {
   params: Promise<{ sessionId: string; documentId: string; filename: string }>;
@@ -52,7 +52,8 @@ export default async function CitationViewer({ params, searchParams }: Props) {
 
   // Resolve the opaque evidence ID server-side and validate it against the
   // URL before highlighting anything. Unknown or mismatched IDs fail
-  // explicitly — a citation never highlights a passage it did not cite.
+  // explicitly — a citation never highlights a passage it did not cite,
+  // and the quote is never trusted from URL parameters.
   const evidenceParam = Array.isArray(evidence) ? evidence[0] : evidence;
   const record = evidenceParam ? getEvidenceRecord(sessionId, evidenceParam) : undefined;
   const evidenceValid = isMatchingEvidence(record, documentId, resolved.page);
@@ -60,46 +61,22 @@ export default async function CitationViewer({ params, searchParams }: Props) {
     evidenceParam !== undefined && !evidenceValid
       ? "This citation link is no longer valid: its evidence reference does not match this document and page."
       : null;
-  const located =
-    evidenceValid && record ? locatePassage(resolved.text, record.quote) : null;
 
   return (
     <main className="panel" aria-label="Citation">
       <p className="text-muted">
         {resolved.filename} — Page {resolved.page} of {resolved.pageCount}
       </p>
-      <SourceFrame
-        pageUrl={sourcePageUrl(sessionId, documentId, resolved.filename, resolved.page)}
-        fullUrl={rawDocumentUrl(sessionId, documentId, resolved.filename)}
-        title={`${resolved.filename}, page ${resolved.page}`}
+      <PdfEvidenceViewer
+        pdfUrl={rawDocumentUrl(sessionId, documentId, resolved.filename)}
+        page={resolved.page}
+        quote={evidenceValid && record ? record.quote : null}
       />
-      <blockquote className="quote">
-        <p style={{ whiteSpace: "pre-wrap" }}>
-          {located ? (
-            <>
-              {located.before}
-              <mark>{located.match}</mark>
-              {located.after}
-            </>
-          ) : (
-            resolved.text
-          )}
-        </p>
-        <cite>
-          {documentId}, page {resolved.page}
-        </cite>
-      </blockquote>
       {evidenceValid && record ? (
         <div className="stack" style={{ marginTop: 12 }}>
           <p>
             <strong>Cited passage:</strong> “{record.quote}”
           </p>
-          {!located ? (
-            <p className="text-muted">
-              Automatic highlighting is unavailable for this passage — the
-              exact cited quote is shown above.
-            </p>
-          ) : null}
         </div>
       ) : null}
       {evidenceError ? (
