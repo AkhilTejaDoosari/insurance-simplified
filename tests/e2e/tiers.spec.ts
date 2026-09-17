@@ -70,8 +70,13 @@ test("multi-tier document gets one column per tier and a tier picker", async ({ 
   await expect(table.getByRole("columnheader", { name: "plan-a.pdf" })).toBeVisible();
   await expect(table.getByRole("button", { name: "$0 to $25,000" })).toBeVisible();
   await expect(table.getByRole("button", { name: "$0 to $2,500" })).toHaveCount(2);
-  // A tier-agnostic value spans the tier columns once, not three times.
+
+  // Section tabs intentionally hide non-active rows. Verify the tier-agnostic
+  // value in Coverage details, where emergency-care lives, then return to
+  // Must know for the deductible/tier assertions below.
+  await page.getByRole("button", { name: "Coverage details", exact: true }).click();
   await expect(table.getByRole("button", { name: /evacuation/ })).toHaveCount(1);
+  await page.getByRole("button", { name: "Must know", exact: true }).click();
 
   // Picking one tier collapses the group to a single column.
   const picker = page.getByLabel("Tier shown for plan-b.pdf");
