@@ -12,14 +12,17 @@ interface Turn {
 export default function ChatPanel({
   sessionId,
   documents,
+  initialTurns,
 }: {
   sessionId: string;
   documents: { documentId: string; filename: string }[];
+  /** Test seam for rendering citations without driving the chat API. */
+  initialTurns?: Turn[];
 }) {
   const filename = (documentId: string) =>
     documents.find((d) => d.documentId === documentId)?.filename ?? documentId;
   const [question, setQuestion] = useState("");
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [turns, setTurns] = useState<Turn[]>(initialTurns ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

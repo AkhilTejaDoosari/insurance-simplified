@@ -27,11 +27,19 @@ test("upload → table → evidence → chat → export (quickstart Flows 1–4,
     .click();
   const evidence = page.getByLabel("Evidence");
   await expect(evidence.getByText("doc-1, page 1", { exact: false })).toBeVisible();
-  // Citation links end in the filename so the PDF tab is titled after it.
+  // Citation links point at the app-owned viewer (page is app state, not a
+  // browser PDF #page fragment) and end in the filename for a readable tab.
   await expect(evidence.getByRole("link", { name: "page 1" }).first()).toHaveAttribute(
     "href",
-    /\/api\/document\/sess-[^/]+\/doc-1\/plan-a\.pdf#page=1$/,
+    /\/view\/sess-[^/]+\/doc-1\/plan-a\.pdf\?page=1$/,
   );
+  // Clicking opens the viewer on the cited page with its exact text.
+  const [viewer] = await Promise.all([
+    page.waitForEvent("popup"),
+    evidence.getByRole("link", { name: "page 1" }).first().click(),
+  ]);
+  await expect(viewer.getByText("Page 1 of 2")).toBeVisible();
+  await expect(viewer.getByText(/Annual deductible: \$250 in-network/).first()).toBeVisible();
   await expect(evidence.getByText(/Annual deductible: \$250 in-network/).first()).toBeVisible();
 
   // Flow 3: cited answer, then explicit refusal.
