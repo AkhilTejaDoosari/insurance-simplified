@@ -43,7 +43,10 @@ export default function EvidencePanel({
       <div className="stack" style={{ marginTop: 16 }}>
         {cell.values.map((v) => (
           <div key={v.documentId} className="evidence__source">
-            <h4>{filename(v.documentId)}</h4>
+            <h4>
+              {filename(v.documentId)}
+              {v.qualifiers.planTier ? ` — ${v.qualifiers.planTier}` : ""}
+            </h4>
             <p className="evidence__value">{v.display}</p>
             {v.evidence.map((e, i) => (
               <blockquote key={i} className="quote">

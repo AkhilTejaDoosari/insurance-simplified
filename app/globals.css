@@ -354,6 +354,47 @@ select {
   width: 156px;
 }
 
+/* Document header groups: every document's first column gets a divider so
+   a multi-tier document's tier columns visibly belong to one file. */
+.table .table__group-start {
+  border-left: 1px solid var(--line);
+}
+.table__group {
+  vertical-align: top;
+}
+.table__group-name {
+  display: block;
+}
+.table__tier-picker {
+  display: block;
+  margin-top: 6px;
+}
+.select--compact {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  max-width: 100%;
+}
+.table thead .table__tiers th {
+  top: var(--header-row-1, 0px);
+  font-weight: 500;
+  color: var(--muted);
+  padding-top: 6px;
+  padding-bottom: 8px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .table__section th {
   background: var(--surface-tint);
   box-shadow: inset 3px 0 0 var(--ink);
@@ -395,6 +436,10 @@ select {
   cursor: pointer;
   text-decoration: underline dotted var(--line-strong);
   text-underline-offset: 3px;
+}
+.cell-value + .cell-value {
+  display: block;
+  margin-top: 6px;
 }
 .cell-value:hover {
   text-decoration-color: var(--action);

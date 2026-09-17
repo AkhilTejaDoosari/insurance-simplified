@@ -1,6 +1,8 @@
 // Extraction endpoint: session documents + context → comparison table v1.
-// Uses the LLM engine when configured (and ?engine=llm), else the
-// deterministic fallback. Output always validated (contracts/comparison-schema.md).
+// Picks the best available engine: the LLM whenever LLM_BASE_URL and
+// LLM_API_KEY are set, else the deterministic fallback. `engine` in the body
+// ("llm" | "fallback") is an explicit override for testing only.
+// Output always validated (contracts/comparison-schema.md).
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/app/lib/session";
@@ -24,11 +26,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unknown session" }, { status: 404 });
   }
 
+  const useLlm =
+    body.engine === "llm" || (body.engine !== "fallback" && isLlmConfigured());
+
   try {
-    const table =
-      body.engine === "llm"
-        ? await extractViaLlm(session.documents, session.userContext)
-        : extractFallback(session.documents, session.userContext);
+    const table = useLlm
+      ? await extractViaLlm(session.documents, session.userContext)
+      : extractFallback(session.documents, session.userContext);
     return NextResponse.json(validateTable(table));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed";
@@ -39,7 +43,7 @@ export async function POST(request: NextRequest) {
         llmConfigured: isLlmConfigured(),
         hint:
           status === 503
-            ? "Set LLM_BASE_URL and LLM_API_KEY, or omit engine to use the built-in extraction."
+            ? "Set LLM_BASE_URL and LLM_API_KEY, or send engine: \"fallback\" to use the built-in extraction."
             : undefined,
       },
       { status }

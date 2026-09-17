@@ -174,7 +174,9 @@ const EXTRACTION_INSTRUCTIONS = [
   '{"schemaVersion":"v1","factListVersion":"v1","documents":[{documentId,filename,pageCount}],"rows":[{factName,verdict,rationale?,values:[{documentId,display,qualifiers,evidence:[{documentId,page,quote}]}]}]}',
   "Verdict is one of SUPPORTED, DOES NOT APPEAR TO FIT, NOT STATED, CONFLICTED, NEEDS VERIFICATION — never anything else.",
   "display MUST quote values with ALL qualifiers verbatim (network tier, period, age band, conditions) — never collapse them.",
-  "Every value object MUST include a qualifiers object using any of these keys: networkTier, period, ageBand, conditions. When a value has no qualifiers to report, use an empty object {} — never null, and never omit the field.",
+  "Every value object MUST include a qualifiers object using any of these keys: networkTier, period, ageBand, conditions, planTier. When a value has no qualifiers to report, use an empty object {} — never null, and never omit the field.",
+  "When ONE document describes several named plan tiers or options (e.g. Lite, Plus, Platinum) with different figures for the same benefit, emit a SEPARATE value object per tier, each with qualifiers.planTier set to that tier's name exactly as the document names it and display holding only that tier's figure. NEVER concatenate the tiers' figures into one display string. A figure that applies to every tier gets one value with no planTier.",
+  "Tiers within one document differing from each other is NOT a conflict; verdicts compare documents against each other.",
   "Every populated value needs >=1 evidence entry with 1-based page and the exact quote.",
   "Rows for facts in no document use NOT STATED with empty values.",
   "Never attach evidence to an absence, and never cite an unrelated passage to fill the evidence requirement — state the absence explicitly.",
@@ -246,7 +248,7 @@ export function dropEvidenceLessValues(raw: unknown): unknown {
       }
       if (kept.length > 0) return { ...r, values: kept };
       if ((r.values as unknown[]).length === 0) return row;
-      const flipped = { ...r, verdict: "NOT STATED", values: [] as unknown[] };
+      const flipped: Record<string, unknown> = { ...r, verdict: "NOT STATED", values: [] };
       delete flipped.rationale;
       return flipped;
     }),

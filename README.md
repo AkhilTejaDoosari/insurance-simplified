@@ -35,4 +35,7 @@ chat paths are preserved either way):
 LLM_BASE_URL=https://… LLM_API_KEY=… LLM_MODEL=… npm run dev
 ```
 
-Then request `engine: "llm"` on `/api/extract` and `/api/chat`.
+`/api/extract` then uses the LLM automatically (send `engine: "fallback"` to
+force the built-in engine, or `engine: "llm"` to force the LLM even when it
+isn't configured — useful for testing). `/api/chat` still requires an explicit
+`engine: "llm"`.

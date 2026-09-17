@@ -13,3 +13,8 @@ coverage/
 test-results/
 playwright-report/
 next-env.d.ts
+
+# scratch / build cache
+llm-test-output*.json
+*.tsbuildinfo
+.playwright-mcp/

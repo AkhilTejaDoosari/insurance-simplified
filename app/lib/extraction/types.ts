@@ -9,6 +9,9 @@ export interface Qualifiers {
   period?: string;
   ageBand?: string;
   conditions?: string;
+  /** Named plan tier/option when one document describes several (e.g. "Lite",
+   *  "Platinum"). A document may then carry one value per tier in a row. */
+  planTier?: string;
 }
 
 export interface EvidenceCitation {
@@ -91,6 +94,10 @@ export function validateTable(payload: unknown): ComparisonTable {
       }
       if (typeof v.qualifiers !== "object" || v.qualifiers === null) {
         fail(`row ${r.factName}: value qualifiers must be an object`);
+      }
+      const planTier = (v.qualifiers as Record<string, unknown>).planTier;
+      if (planTier !== undefined && (typeof planTier !== "string" || !planTier.trim())) {
+        fail(`row ${r.factName}: qualifiers.planTier must be a non-empty string when present`);
       }
       if (!Array.isArray(v.evidence) || v.evidence.length === 0) {
         fail(`row ${r.factName}: every populated value requires >=1 evidence entry (FR-007)`);
