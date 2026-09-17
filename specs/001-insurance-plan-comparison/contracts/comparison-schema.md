@@ -109,6 +109,12 @@ rejected by validation. Contract tests assert rejection.
   exactly `{documentId, page, quote}` — session-bound opaque evidence IDs
   (`evidenceId`, `ev-...`) are assigned afterwards at the server/session
   boundary for UI citation URLs, never by extraction.
+- Evidence integrity boundary: the API verifies every citation against the
+  session documents before registering it — the quote must occur as a
+  unique contiguous passage on its claimed page (safe ellipsis anchors may
+  recover the verbatim source span; max 600 source chars), otherwise the
+  evidence is dropped. Values left with no verified evidence are removed;
+  rows left with no values flip to `NOT STATED` with empty `values`.
 - `display` MUST include all qualifiers verbatim; `qualifiers` map keys:
   `networkTier`, `period`, `ageBand`, `conditions`, `planTier` (FR-006).
 - `planTier` names the plan tier/option a value belongs to when a single

@@ -7,6 +7,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, registerEvidence } from "@/app/lib/session";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
+import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
+import type { ComparisonTable } from "@/app/lib/extraction/types";
 import {
   extractFallback,
   extractViaLlm,
@@ -35,18 +37,43 @@ export async function POST(request: NextRequest) {
       ? await extractViaLlm(session.documents, session.userContext)
       : extractFallback(session.documents, session.userContext);
     const table = validateTable(raw);
-    // Server/session boundary: register every cited passage, then return
-    // the enriched presentation table. Extraction itself stays
+    // Server/session boundary: verify every cited passage against the
+    // session documents and canonicalize to verbatim source spans.
+    // Fail closed per value — drop unverifiable evidence, drop values left
+    // with none, flip emptied rows to NOT STATED. Extraction itself stays
     // session-agnostic and never mints evidence IDs.
+    const verifiedRows: ComparisonTable["rows"] = [];
+    for (const row of table.rows) {
+      const values = [];
+      for (const value of row.values) {
+        const evidence = [];
+        for (const entry of value.evidence) {
+          const verified = verifyEvidenceCitation(session.documents, entry);
+          if (verified.ok) evidence.push({ ...entry, quote: verified.quote });
+        }
+        if (evidence.length > 0) values.push({ ...value, evidence });
+      }
+      if (values.length === 0) {
+        const flipped: ComparisonTable["rows"][number] = {
+          factName: row.factName,
+          verdict: "NOT STATED",
+          values: [],
+        };
+        verifiedRows.push(flipped);
+      } else {
+        verifiedRows.push({ ...row, values });
+      }
+    }
+    const verified: ComparisonTable = { ...table, rows: verifiedRows };
     registerEvidence(
       session.sessionId,
-      table.rows.flatMap((row) =>
+      verified.rows.flatMap((row) =>
         row.values.flatMap((value) => value.evidence)
       )
     );
     return NextResponse.json({
-      ...table,
-      rows: table.rows.map((row) => ({
+      ...verified,
+      rows: verified.rows.map((row) => ({
         ...row,
         values: row.values.map((value) => ({
           ...value,

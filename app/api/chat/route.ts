@@ -7,6 +7,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, registerEvidence } from "@/app/lib/session";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
+import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
+import { REFUSAL_TEXT } from "@/app/lib/rag/answer";
 import {
   answerQuestion,
   answerViaLlm,
@@ -37,12 +39,32 @@ export async function POST(request: NextRequest) {
       : answerQuestion(session.documents, body.question);
     const validated = validateChatResponse(response);
     if (validated.kind === "answer") {
-      // Server/session boundary: register cited passages, then return the
-      // enriched response. The RAG engine stays session-agnostic.
-      registerEvidence(session.sessionId, validated.citations);
+      // Server/session boundary: verify every citation against the session
+      // documents and canonicalize to verbatim source spans. The answer text
+      // may depend on every citation, so ANY unverifiable citation fails the
+      // whole answer closed — return the existing refusal shape rather than
+      // a partially unsupported answer. No new response states.
+      const canonical = [];
+      let allVerified = true;
+      for (const citation of validated.citations) {
+        const verified = verifyEvidenceCitation(session.documents, citation);
+        if (!verified.ok) {
+          allVerified = false;
+          break;
+        }
+        canonical.push({ ...citation, quote: verified.quote });
+      }
+      if (!allVerified) {
+        return NextResponse.json({
+          schemaVersion: "v1",
+          kind: "refusal",
+          refusalText: REFUSAL_TEXT,
+        });
+      }
+      registerEvidence(session.sessionId, canonical);
       return NextResponse.json({
         ...validated,
-        citations: validated.citations.map(withEvidenceId),
+        citations: canonical.map(withEvidenceId),
       });
     }
     return NextResponse.json(validated);
