@@ -11,7 +11,7 @@ test("upload → table → evidence → chat → export (quickstart Flows 1–4,
   await page.getByRole("button", { name: "Compare documents" }).click();
 
   // Flow 1: table with verdicts and full qualifiers.
-  await expect(page.getByText("annual-deductible")).toBeVisible();
+  await expect(page.getByRole("rowheader", { name: "Annual deductible" })).toBeVisible();
   await expect(page.getByText("CONFLICTED").first()).toBeVisible();
   await expect(page.getByText("NOT STATED").first()).toBeVisible();
   await expect(

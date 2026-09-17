@@ -79,6 +79,16 @@ export function validateTable(payload: unknown): ComparisonTable {
       if (typeof v.display !== "string" || !v.display.trim()) {
         fail(`row ${r.factName}: value display must be non-empty`);
       }
+      const displayIsAbsence = v.display.trim().toLowerCase() === "not stated";
+      if (
+        (r.verdict === "NOT STATED" || displayIsAbsence) &&
+        Array.isArray(v.evidence) &&
+        v.evidence.length > 0
+      ) {
+        fail(
+          `row ${r.factName}: absence must not carry evidence — never backfill citations for unstated facts (principle IV)`
+        );
+      }
       if (typeof v.qualifiers !== "object" || v.qualifiers === null) {
         fail(`row ${r.factName}: value qualifiers must be an object`);
       }

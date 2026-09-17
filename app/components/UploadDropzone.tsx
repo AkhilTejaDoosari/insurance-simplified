@@ -63,24 +63,39 @@ export default function UploadDropzone({
   }
 
   return (
-    <section aria-label="Upload insurance documents">
+    <section className="card" aria-label="Upload insurance documents">
       <h2>Upload 2–4 insurance PDFs</h2>
+      <p className="text-muted">
+        Plan summaries, benefit schedules or brochures. Nothing is stored after
+        you close the page.
+      </p>
       <input
         type="file"
         accept="application/pdf,.pdf"
         multiple
+        style={{ marginTop: 12 }}
         onChange={(e) => setFiles([...(e.target.files ?? [])])}
       />
-      <ul>
-        {files.map((f) => (
-          <li key={f.name}>{f.name}</li>
-        ))}
-      </ul>
-      <ContextInputs context={context} onChange={setContext} />
-      {error && <p role="alert">{error}</p>}
-      <button onClick={submit} disabled={busy} style={{ marginTop: 12 }}>
-        {busy ? "Processing…" : "Compare documents"}
-      </button>
+      {files.length > 0 && (
+        <ul className="file-list">
+          {files.map((f) => (
+            <li key={f.name}>{f.name}</li>
+          ))}
+        </ul>
+      )}
+      <div style={{ marginTop: 20 }}>
+        <ContextInputs context={context} onChange={setContext} />
+      </div>
+      {error && (
+        <p role="alert" className="alert" style={{ marginTop: 16 }}>
+          {error}
+        </p>
+      )}
+      <div className="actions">
+        <button className="btn" onClick={submit} disabled={busy}>
+          {busy ? "Processing…" : "Compare documents"}
+        </button>
+      </div>
     </section>
   );
 }

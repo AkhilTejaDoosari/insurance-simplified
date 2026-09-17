@@ -1,0 +1,511 @@
+/* Insurance Simplified — global styles.
+   One family (Instrument Sans), one action color, and verdict colors as the
+   only saturated hues on the page so the comparison table scans at a glance. */
+
+:root {
+  --bg: #f5f6f3;
+  --surface: #ffffff;
+  --surface-tint: #eef2ee;
+  --ink: #1c2833;
+  --muted: #5b6770;
+  --line: #dce1de;
+  --line-strong: #c3cac6;
+  --action: #255f99;
+  --action-ink: #ffffff;
+  --focus: #1f4f80;
+
+  --ok-ink: #1c6b45;
+  --ok-bg: #ddf2e6;
+  --bad-ink: #a8271b;
+  --bad-bg: #fbe5e2;
+  --none-ink: #4f5b64;
+  --none-bg: #e9ecee;
+  --warn-ink: #8a5a00;
+  --warn-bg: #fcefcf;
+
+  --radius-card: 10px;
+  --radius-control: 6px;
+  --measure: 1200px;
+  --gutter: 24px;
+
+  --font: "Instrument Sans", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: 1.75rem;
+}
+h2 {
+  font-size: 1.2rem;
+}
+h3 {
+  font-size: 1rem;
+}
+h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+}
+p + p {
+  margin-top: 0.6em;
+}
+
+a {
+  color: var(--action);
+  text-underline-offset: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ---- Layout ------------------------------------------------------------ */
+
+.site-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.site-header__inner {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 20px var(--gutter);
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.site-header__tagline {
+  color: var(--muted);
+}
+
+.page {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 28px var(--gutter) 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.results {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 24px;
+  align-items: start;
+}
+.results__rail {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+@media (max-width: 1023px) {
+  .results {
+    grid-template-columns: 1fr;
+  }
+  .results__rail {
+    position: static;
+    max-height: none;
+  }
+}
+
+/* ---- Surfaces ---------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 24px;
+}
+.card > h2 + p,
+.card > h2 + fieldset {
+  margin-top: 8px;
+}
+
+/* Rail panels sit on tint rather than a border so they read as secondary. */
+.panel {
+  background: var(--surface-tint);
+  border-radius: var(--radius-card);
+  padding: 20px;
+}
+
+.notice {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.notice a {
+  font-weight: 600;
+}
+
+.alert {
+  color: var(--bad-ink);
+  background: var(--bad-bg);
+  border-radius: var(--radius-control);
+  padding: 10px 12px;
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+/* ---- Controls ---------------------------------------------------------- */
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--action);
+  background: var(--action);
+  color: var(--action-ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn:hover {
+  filter: brightness(1.08);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.btn--secondary {
+  background: var(--surface);
+  color: var(--action);
+}
+.btn--link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--action);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.input,
+.select {
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  min-width: 0;
+}
+.input:hover,
+.select:hover {
+  border-color: var(--muted);
+}
+
+/* Context inputs: label above control, laid out in a responsive grid. */
+.fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.fields > legend {
+  padding: 0;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.fields__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px 16px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.field .input,
+.field .select {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.file-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.file-list li {
+  background: var(--surface-tint);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.list li + li {
+  margin-top: 6px;
+}
+
+/* ---- Comparison table -------------------------------------------------- */
+
+.comparison {
+  padding: 0;
+  /* clip (not hidden): rounds the corners without becoming a scroll
+     container, so the sticky header still pins to the viewport. */
+  overflow: clip;
+}
+.comparison__intro {
+  padding: 20px 24px 12px;
+}
+.comparison__intro p {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line-strong);
+  font-weight: 600;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.table col.col-fact {
+  width: 180px;
+}
+.table col.col-verdict {
+  width: 156px;
+}
+
+.table__section th {
+  background: var(--surface-tint);
+  box-shadow: inset 3px 0 0 var(--ink);
+  padding: 12px 14px 12px 20px;
+}
+.table__section h3 {
+  font-size: 1rem;
+}
+.table__section p {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.88rem;
+  margin-top: 2px;
+}
+
+.table tbody tr:nth-child(odd):not(.table__section) > * {
+  background: #f7f8f6;
+}
+.table__fact {
+  font-weight: 600;
+}
+.table__rationale {
+  display: block;
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 4px;
+}
+.table__empty {
+  color: var(--muted);
+}
+
+/* Cell value: a button that opens the evidence panel; styled as text. */
+.cell-value {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: underline dotted var(--line-strong);
+  text-underline-offset: 3px;
+}
+.cell-value:hover {
+  text-decoration-color: var(--action);
+  color: var(--action);
+}
+
+@media (max-width: 719px) {
+  .comparison {
+    overflow-x: auto;
+  }
+  .table {
+    min-width: 640px;
+  }
+  .table col.col-fact {
+    width: 150px;
+  }
+  .table col.col-verdict {
+    width: 140px;
+  }
+}
+
+/* ---- Verdict badges ---------------------------------------------------- */
+
+.verdict {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.verdict--ok {
+  color: var(--ok-ink);
+  background: var(--ok-bg);
+}
+.verdict--bad {
+  color: var(--bad-ink);
+  background: var(--bad-bg);
+}
+.verdict--none {
+  color: var(--none-ink);
+  background: var(--none-bg);
+}
+.verdict--warn {
+  color: var(--warn-ink);
+  background: var(--warn-bg);
+}
+
+/* ---- Evidence / chat --------------------------------------------------- */
+
+.evidence__source + .evidence__source {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.evidence__value {
+  margin-top: 4px;
+}
+.quote {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--line-strong);
+  background: var(--surface);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  font-size: 0.92rem;
+}
+.quote cite {
+  display: block;
+  margin-top: 6px;
+  font-style: normal;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.chat__turns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 12px;
+}
+.chat__q {
+  font-weight: 600;
+}
+.chat__a {
+  margin-top: 4px;
+}
+.chat__refusal {
+  margin-top: 4px;
+  color: var(--muted);
+  font-style: italic;
+}
+.chat__form {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.chat__form .input {
+  flex: 1;
+}
+
+/* ---- Insurer questions ------------------------------------------------- */
+
+.questions__meta {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .btn {
+    transition: filter 120ms ease;
+  }
+}

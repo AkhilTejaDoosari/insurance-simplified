@@ -9,16 +9,16 @@ export default function InsurerQuestions({
 }) {
   if (questions.length === 0) return null;
   return (
-    <section aria-label="Questions to ask your insurer">
+    <section className="card" aria-label="Questions to ask your insurer">
       <h2>Questions to ask your insurer</h2>
-      <p>Based on gaps and ambiguities found in your documents:</p>
-      <ul>
+      <p className="text-muted">Based on gaps and ambiguities found in your documents.</p>
+      <ul className="list">
         {questions.map((q) => (
           <li key={q.motivatingFact}>
-            {q.questionText}{" "}
-            <small>
-              (about {q.motivatingFact}: {q.triggeringVerdict}
-              {q.documentIds.length > 0 ? ` in ${q.documentIds.join(", ")}` : ""})
+            {q.questionText}
+            <small className="questions__meta">
+              About {q.motivatingFact}: {q.triggeringVerdict}
+              {q.documentIds.length > 0 ? ` in ${q.documentIds.join(", ")}` : ""}
             </small>
           </li>
         ))}

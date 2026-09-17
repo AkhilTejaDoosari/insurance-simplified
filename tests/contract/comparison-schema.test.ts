@@ -80,6 +80,34 @@ describe("comparison-schema v1 contract", () => {
     ).toThrow();
   });
 
+  it("rejects 'Not stated' values carrying backfilled evidence (principle IV)", () => {
+    expect(() =>
+      validateTable({
+        ...base(),
+        rows: [
+          {
+            factName: "out-of-pocket-maximum",
+            verdict: "SUPPORTED",
+            values: [
+              {
+                documentId: "doc-1",
+                display: "Not stated",
+                qualifiers: {},
+                evidence: [
+                  {
+                    documentId: "doc-1",
+                    page: 3,
+                    quote: "This plan is not designed to cover US residents and citizens.",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    ).toThrow(/absence must not carry evidence/);
+  });
+
   it("requires a rationale on DOES NOT APPEAR TO FIT rows", () => {
     expect(() =>
       validateTable({ ...base(), rows: [{ factName: "x", verdict: "DOES NOT APPEAR TO FIT", values: [] }] })

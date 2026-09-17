@@ -40,43 +40,53 @@ export default function Home() {
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
-      <h1>Insurance Simplified</h1>
+    <main className="page">
       {!table && mode === "upload" && (
         <>
           <UploadDropzone onUploaded={handleUploaded} />
-          <button onClick={() => setMode("checklist")}>
-            I don&apos;t have documents yet
-          </button>
+          <p className="notice">
+            Still waiting on your plan documents?{" "}
+            <button className="btn--link" onClick={() => setMode("checklist")}>
+              I don&apos;t have documents yet
+            </button>
+          </p>
         </>
       )}
       {!table && mode === "checklist" && (
         <ChecklistFlow onHaveDocuments={() => setMode("upload")} />
       )}
-      {busy && <p>Extracting comparison…</p>}
-      {error && <p role="alert">{error}</p>}
+      {busy && (
+        <p className="notice" role="status">
+          Extracting comparison…
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="alert">
+          {error}
+        </p>
+      )}
       {table && sessionId && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24 }}>
-            <div>
-              <ComparisonTable table={table} onSelectCell={setSelected} />
-            </div>
-            <div>
-              <EvidencePanel cell={selected} />
+          <div className="results">
+            <ComparisonTable table={table} onSelectCell={setSelected} />
+            <div className="results__rail">
+              <EvidencePanel
+                cell={selected}
+                sessionId={sessionId}
+                documents={table.documents}
+              />
               <ChatPanel sessionId={sessionId} />
             </div>
           </div>
           <InsurerQuestions questions={questions} />
+          <p className="notice">
+            This session is temporary. Closing this page deletes your documents
+            unless you download an export.{" "}
+            <a href={`/api/export?sessionId=${sessionId}`} download>
+              Download export (JSON)
+            </a>
+          </p>
         </>
-      )}
-      {sessionId && table && (
-        <p>
-          Session {sessionId} is temporary. Closing this page deletes your
-          documents unless you download an export.{" "}
-          <a href={`/api/export?sessionId=${sessionId}`} download>
-            Download export (JSON)
-          </a>
-        </p>
       )}
     </main>
   );

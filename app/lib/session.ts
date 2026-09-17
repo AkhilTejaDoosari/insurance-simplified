@@ -35,8 +35,36 @@ function pathFor(sessionId: string): string {
   return join(sessionsDir(), `${sessionId}.json`);
 }
 
+/** Directory holding a session's raw uploaded PDFs (served back for page links). */
+function filesDirFor(sessionId: string): string {
+  return join(sessionsDir(), sessionId);
+}
+
 function isSafeId(sessionId: string): boolean {
   return /^[A-Za-z0-9-]+$/.test(sessionId);
+}
+
+/** Keep the original PDF bytes so citations can open the source at a page. */
+export function saveDocumentFile(
+  sessionId: string,
+  documentId: string,
+  bytes: Uint8Array
+): void {
+  if (!isSafeId(sessionId) || !isSafeId(documentId)) return;
+  mkdirSync(filesDirFor(sessionId), { recursive: true });
+  writeFileSync(join(filesDirFor(sessionId), `${documentId}.pdf`), bytes);
+}
+
+export function readDocumentFile(
+  sessionId: string,
+  documentId: string
+): Buffer | undefined {
+  if (!isSafeId(sessionId) || !isSafeId(documentId)) return undefined;
+  try {
+    return readFileSync(join(filesDirFor(sessionId), `${documentId}.pdf`));
+  } catch {
+    return undefined;
+  }
 }
 
 export function createSession(
@@ -70,10 +98,11 @@ export function deleteSession(sessionId: string): boolean {
   if (!isSafeId(sessionId)) return false;
   try {
     rmSync(pathFor(sessionId));
-    return true;
   } catch {
     return false;
   }
+  rmSync(filesDirFor(sessionId), { recursive: true, force: true });
+  return true;
 }
 
 export function sessionCount(): number {

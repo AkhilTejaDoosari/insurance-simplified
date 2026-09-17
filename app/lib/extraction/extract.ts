@@ -38,6 +38,32 @@ function isVague(line: string): boolean {
   return VAGUE_PATTERNS.some((p) => lower.includes(p));
 }
 
+type MonetaryShape = "fixed" | "range" | "options" | "non-monetary";
+
+/** Classify monetary displays so structurally different presentations of one
+ *  benefit (range vs. enumerated options vs. fixed amount) are not read as
+ *  insurers contradicting the same figure. */
+function monetaryShape(display: string): MonetaryShape {
+  const amounts = display.match(/\$\s*[\d,]+(?:\.\d{1,2})?/g) ?? [];
+  if (amounts.length === 0) return "non-monetary";
+  if (
+    /\$\s*[\d,]+(?:\.\d{1,2})?\s*(?:-|–|—|to)\s*\$?\s*[\d,]+(?:\.\d{1,2})?/i.test(display)
+  ) {
+    return "range";
+  }
+  return amounts.length > 1 ? "options" : "fixed";
+}
+
+function describeMonetaryShapes(shapes: MonetaryShape[]): string {
+  const labels = {
+    range: "a range",
+    options: "enumerated options",
+    fixed: "a fixed amount",
+    "non-monetary": "a non-monetary statement",
+  } as const;
+  return [...new Set(shapes)].map((shape) => labels[shape]).join(" vs. ");
+}
+
 /** Find the first matching line per fact per document (line = sentence-ish unit). */
 function findMatches(
   factPatterns: string[],
@@ -111,6 +137,17 @@ export function extractFallback(
       return { factName: fact.name, verdict: "NEEDS VERIFICATION", values };
     }
     const distinct = new Set(values.map((v) => normalize(v.display)));
+    if (distinct.size > 1) {
+      const shapes = values.map((v) => monetaryShape(v.display));
+      if (shapes.every((shape) => shape !== "non-monetary") && new Set(shapes).size > 1) {
+        return {
+          factName: fact.name,
+          verdict: "NEEDS VERIFICATION",
+          rationale: `The documents structure this benefit differently (${describeMonetaryShapes(shapes)}); verify which presentation applies.`,
+          values,
+        };
+      }
+    }
     return {
       factName: fact.name,
       verdict: distinct.size === 1 ? "SUPPORTED" : "CONFLICTED",
@@ -137,10 +174,84 @@ const EXTRACTION_INSTRUCTIONS = [
   '{"schemaVersion":"v1","factListVersion":"v1","documents":[{documentId,filename,pageCount}],"rows":[{factName,verdict,rationale?,values:[{documentId,display,qualifiers,evidence:[{documentId,page,quote}]}]}]}',
   "Verdict is one of SUPPORTED, DOES NOT APPEAR TO FIT, NOT STATED, CONFLICTED, NEEDS VERIFICATION — never anything else.",
   "display MUST quote values with ALL qualifiers verbatim (network tier, period, age band, conditions) — never collapse them.",
+  "Every value object MUST include a qualifiers object using any of these keys: networkTier, period, ageBand, conditions. When a value has no qualifiers to report, use an empty object {} — never null, and never omit the field.",
   "Every populated value needs >=1 evidence entry with 1-based page and the exact quote.",
   "Rows for facts in no document use NOT STATED with empty values.",
+  "Never attach evidence to an absence, and never cite an unrelated passage to fill the evidence requirement — state the absence explicitly.",
   "Differing values across documents use CONFLICTED; vague/partial statements use NEEDS VERIFICATION.",
+  "When values differ in KIND rather than contradicting each other — a range vs. enumerated options vs. one fixed amount — prefer NEEDS VERIFICATION with a rationale explaining the structural difference, not CONFLICTED.",
 ].join("\n");
+
+/** Boundary normalization for LLM output (defense in depth: the prompt
+ *  requires qualifiers, but models still omit or null it). Coerce missing,
+ *  null, or non-object qualifiers on any value to {} before validation. */
+export function normalizeLlmTable(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const table = raw as Record<string, unknown>;
+  if (!Array.isArray(table.rows)) return raw;
+  return {
+    ...table,
+    rows: (table.rows as unknown[]).map((row) => {
+      if (typeof row !== "object" || row === null) return row;
+      const r = row as Record<string, unknown>;
+      if (!Array.isArray(r.values)) return row;
+      return {
+        ...r,
+        values: (r.values as unknown[]).map((value) => {
+          if (typeof value !== "object" || value === null) return value;
+          const v = value as Record<string, unknown>;
+          const q = v.qualifiers;
+          if (typeof q !== "object" || q === null || Array.isArray(q)) {
+            return { ...v, qualifiers: {} };
+          }
+          return value;
+        }),
+      };
+    }),
+  };
+}
+
+/** Boundary cleanup for LLM output (principle IV): a value without evidence
+ *  is a claim without support, so it cannot enter the table. Drop such
+ *  values — warning loudly, since dropped values are a model-reliability
+ *  signal — and flip rows left with no cited values to NOT STATED instead
+ *  of failing the whole table. NOT STATED rows carrying values are left
+ *  untouched so validation still rejects that contract violation. */
+export function dropEvidenceLessValues(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const table = raw as Record<string, unknown>;
+  if (!Array.isArray(table.rows)) return raw;
+  return {
+    ...table,
+    rows: (table.rows as unknown[]).map((row) => {
+      if (typeof row !== "object" || row === null) return row;
+      const r = row as Record<string, unknown>;
+      if (!Array.isArray(r.values)) return row;
+      if (r.verdict === "NOT STATED") return row;
+      const kept: unknown[] = [];
+      for (const value of r.values as unknown[]) {
+        if (typeof value !== "object" || value === null) {
+          kept.push(value);
+          continue;
+        }
+        const v = value as Record<string, unknown>;
+        if (Array.isArray(v.evidence) && v.evidence.length > 0) {
+          kept.push(value);
+          continue;
+        }
+        console.warn(
+          `[extractViaLlm] dropped evidence-less value for fact "${String(r.factName)}" ` +
+            `from document "${String(v.documentId)}" — claims without citations are treated as unstated (principle IV)`
+        );
+      }
+      if (kept.length > 0) return { ...r, values: kept };
+      if ((r.values as unknown[]).length === 0) return row;
+      const flipped = { ...r, verdict: "NOT STATED", values: [] as unknown[] };
+      delete flipped.rationale;
+      return flipped;
+    }),
+  };
+}
 
 export async function extractViaLlm(
   documents: ExtractInputDocument[],
@@ -151,7 +262,7 @@ export async function extractViaLlm(
     documents.map(({ documentId, pages }) => ({ documentId, pages }))
   );
   const raw = await completeJson([{ role: "user", content: prompt }]);
-  return validateTable(raw);
+  return validateTable(dropEvidenceLessValues(normalizeLlmTable(raw)));
 }
 
 export function extractComparison(

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ChatResponse } from "@/app/lib/rag/answer";
+import { documentUrl } from "@/app/lib/document-url";
 
 interface Turn {
   question: string;
@@ -36,38 +37,62 @@ export default function ChatPanel({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <aside aria-label="Chat about your plans">
+    <aside className="panel" aria-label="Chat about your plans">
       <h2>Ask about your plans</h2>
-      {turns.map((t, i) => (
-        <div key={i}>
-          <p><strong>You:</strong> {t.question}</p>
-          {t.response.kind === "answer" ? (
-            <div>
-              <p>{t.response.answerText}</p>
-              <ul>
-                {t.response.citations.map((c, j) => (
-                  <li key={j}>
-                    {c.documentId}, page {c.page}: “{c.quote}”
-                  </li>
-                ))}
-              </ul>
+      <p className="text-muted">
+        Answers only come from your documents, with page references.
+      </p>
+      {turns.length > 0 && (
+        <div className="chat__turns">
+          {turns.map((t, i) => (
+            <div key={i}>
+              <p className="chat__q">{t.question}</p>
+              {t.response.kind === "answer" ? (
+                <div className="chat__a">
+                  <p>{t.response.answerText}</p>
+                  <ul className="list">
+                    {t.response.citations.map((c, j) => (
+                      <li key={j}>
+                        {c.documentId},{" "}
+                        <a
+                          href={documentUrl(sessionId, c.documentId, c.page)}
+                          target="_blank"
+                          rel="noopener"
+                        >
+                          page {c.page}
+                        </a>
+                        : “{c.quote}”
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="chat__refusal">{t.response.refusalText}</p>
+              )}
             </div>
-          ) : (
-            <p><em>{t.response.refusalText}</em></p>
-          )}
+          ))}
         </div>
-      ))}
-      <input
-        aria-label="Your question"
-        value={question}
-        onChange={(e) => setQuestion(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") void ask(); }}
-        placeholder="e.g. What is the emergency copay?"
-      />
-      <button onClick={() => void ask()} disabled={busy}>
-        {busy ? "…" : "Ask"}
-      </button>
-      {error && <p role="alert">{error}</p>}
+      )}
+      <div className="chat__form">
+        <input
+          className="input"
+          aria-label="Your question"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void ask();
+          }}
+          placeholder="e.g. What is the emergency copay?"
+        />
+        <button className="btn" onClick={() => void ask()} disabled={busy}>
+          {busy ? "…" : "Ask"}
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="alert" style={{ marginTop: 12 }}>
+          {error}
+        </p>
+      )}
     </aside>
   );
 }

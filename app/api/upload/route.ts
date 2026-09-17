@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { extractPages } from "@/app/lib/pdf/extract-pages";
-import { createSession } from "@/app/lib/session";
+import { createSession, saveDocumentFile } from "@/app/lib/session";
 
 const MIN_FILES = 2;
 const MAX_FILES = 4;
@@ -46,6 +46,8 @@ export async function POST(request: NextRequest) {
     pageCount: number;
     pages: string[];
   }[] = [];
+  // Raw bytes are kept with the session so citations can open the PDF at a page.
+  const rawFiles = new Map<string, Uint8Array>();
   const failures: { filename: string; reason: string }[] = [];
 
   await Promise.all(
@@ -55,6 +57,7 @@ export async function POST(request: NextRequest) {
         const buffer = await file.arrayBuffer();
         const { pageCount, pages } = await extractPages(buffer, file.name);
         documents.push({ documentId, filename: file.name, pageCount, pages });
+        rawFiles.set(documentId, new Uint8Array(buffer));
       } catch (err) {
         failures.push({
           filename: file.name,
@@ -74,6 +77,9 @@ export async function POST(request: NextRequest) {
 
   documents.sort((a, b) => a.documentId.localeCompare(b.documentId));
   const session = createSession(documents, userContext);
+  for (const [documentId, bytes] of rawFiles) {
+    saveDocumentFile(session.sessionId, documentId, bytes);
+  }
 
   return NextResponse.json(
     {

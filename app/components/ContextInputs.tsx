@@ -97,9 +97,6 @@ export function resolveVisaOrStatus(context: Record<string, string>): string {
   return selected;
 }
 
-const labelStyle = { display: "block", marginTop: 8 } as const;
-const controlStyle = { marginLeft: 6 } as const;
-
 export default function ContextInputs({
   context,
   onChange,
@@ -114,89 +111,91 @@ export default function ContextInputs({
   const visaSelected = context.visaOrStatus ?? VISA_NOT_APPLICABLE;
 
   return (
-    <fieldset>
+    <fieldset className="fields">
       <legend>Your context (used only when documents make it relevant)</legend>
-      <label style={labelStyle}>
-        Age{" "}
-        <input
-          value={context.age ?? ""}
-          onChange={(e) => set("age", e.target.value)}
-          style={controlStyle}
-        />
-      </label>
-      <label style={labelStyle}>
-        Country / residency{" "}
-        <select
-          value={context.countryOrResidency ?? DEFAULT_COUNTRY}
-          onChange={(e) => set("countryOrResidency", e.target.value)}
-          style={controlStyle}
-        >
-          {COUNTRIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label style={labelStyle}>
-        {visaLabel}{" "}
-        <select
-          value={visaSelected}
-          onChange={(e) => set("visaOrStatus", e.target.value)}
-          style={controlStyle}
-        >
-          {VISA_OPTIONS.map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
-      </label>
-      {visaSelected === VISA_OTHER && (
-        <label style={labelStyle}>
-          Please specify{" "}
+      <div className="fields__grid">
+        <label className="field">
+          Age
           <input
-            value={context.visaOrStatusOther ?? ""}
-            onChange={(e) => set("visaOrStatusOther", e.target.value)}
-            style={controlStyle}
+            className="input"
+            value={context.age ?? ""}
+            onChange={(e) => set("age", e.target.value)}
           />
         </label>
-      )}
-      <label style={labelStyle}>
-        City{" "}
-        <input
-          value={context.city ?? ""}
-          onChange={(e) => set("city", e.target.value)}
-          style={controlStyle}
-        />
-      </label>
-      <label style={labelStyle}>
-        ZIP / postal code{" "}
-        <input
-          maxLength={ZIP_MAX_LENGTH}
-          value={context.zip ?? ""}
-          onChange={(e) => set("zip", e.target.value)}
-          style={controlStyle}
-        />
-      </label>
-      <label style={labelStyle}>
-        Coverage start date{" "}
-        <input
-          type="date"
-          value={context.coverageStart ?? ""}
-          onChange={(e) => set("coverageStart", e.target.value)}
-          style={controlStyle}
-        />
-      </label>
-      <label style={labelStyle}>
-        Coverage end date{" "}
-        <input
-          type="date"
-          value={context.coverageEnd ?? ""}
-          onChange={(e) => set("coverageEnd", e.target.value)}
-          style={controlStyle}
-        />
-      </label>
+        <label className="field">
+          Country / residency
+          <select
+            className="select"
+            value={context.countryOrResidency ?? DEFAULT_COUNTRY}
+            onChange={(e) => set("countryOrResidency", e.target.value)}
+          >
+            {COUNTRIES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          {visaLabel}
+          <select
+            className="select"
+            value={visaSelected}
+            onChange={(e) => set("visaOrStatus", e.target.value)}
+          >
+            {VISA_OPTIONS.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </label>
+        {visaSelected === VISA_OTHER && (
+          <label className="field">
+            Please specify
+            <input
+              className="input"
+              value={context.visaOrStatusOther ?? ""}
+              onChange={(e) => set("visaOrStatusOther", e.target.value)}
+            />
+          </label>
+        )}
+        <label className="field">
+          City
+          <input
+            className="input"
+            value={context.city ?? ""}
+            onChange={(e) => set("city", e.target.value)}
+          />
+        </label>
+        <label className="field">
+          ZIP / postal code
+          <input
+            className="input"
+            maxLength={ZIP_MAX_LENGTH}
+            value={context.zip ?? ""}
+            onChange={(e) => set("zip", e.target.value)}
+          />
+        </label>
+        <label className="field">
+          Coverage start date
+          <input
+            type="date"
+            className="input"
+            value={context.coverageStart ?? ""}
+            onChange={(e) => set("coverageStart", e.target.value)}
+          />
+        </label>
+        <label className="field">
+          Coverage end date
+          <input
+            type="date"
+            className="input"
+            value={context.coverageEnd ?? ""}
+            onChange={(e) => set("coverageEnd", e.target.value)}
+          />
+        </label>
+      </div>
     </fieldset>
   );
 }
