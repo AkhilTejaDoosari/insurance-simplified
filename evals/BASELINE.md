@@ -387,3 +387,32 @@ bm25 overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
   bm25 subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
 bm25 test: 10 items FROZEN, unscored until F1 (todo 49)
 ```
+
+## R3 semantic leg — SKIPPED/BLOCKED, no embedding runtime (todo 24)
+
+Status: SEMANTIC MEASUREMENT SKIPPED — NO VERIFIED EMBEDDING CONFIG.
+
+Verified 2026-09-18 on `feat/rag-core`: no `EMBEDDING_*` configuration
+exists in the process environment or `.env.local` (which holds only
+`LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`, generation/Q&A only).
+`gpt-oss-120b` is a generation model and was never treated, probed, or
+assumed as an embedding model; no paid provider was selected or guessed.
+Per the plan, no semantic numbers are recorded here — every metric below
+would be fabricated, so none is.
+
+What WAS proven instead (measured, not claimed):
+- Embedding abstraction (`app/lib/rag/embeddings.ts`): OpenAI-compatible
+  `POST /embeddings`, batching, `DimensionError`, retry/backoff mirroring
+  `llm/client.ts`, clean unconfigured skip — 6/6 mocked-fetch tests.
+- In-memory cosine index (`app/lib/rag/cosine-index.ts`): normalized
+  exhaustive cosine, deterministic tie-break, dim-mismatch throws,
+  session-scoped, no persistence — 7/7 synthetic-vector tests.
+- Degradation (`app/api/chat/route.ts`): unconfigured/bad-key provider →
+  line-overlap lexical path with identical contract, never 500, never
+  whole-document fallback — 7/7 engine tests incl. E2E refusal flow.
+
+To unblock semantic measurement, configure (OpenAI-compatible):
+`EMBEDDING_BASE_URL` + `EMBEDDING_API_KEY` + `EMBEDDING_MODEL`, then record
+provider, model, dimensions, batch/retry settings, corpus/chunk/retrieval
+hashes, and DEV+VALIDATION per-subset tables here. TEST stays frozen and
+unscored regardless.
