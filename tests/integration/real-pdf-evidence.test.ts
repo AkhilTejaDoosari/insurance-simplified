@@ -8,10 +8,24 @@ import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
 // points at a directory containing patriot-exchange-brochure.pdf and
 // OPTima_26_27_A.pdf (e.g. local validation); skipped in CI.
 const DIR = process.env.REAL_PDFS_DIR ?? "";
-const enabled =
-  DIR !== "" &&
-  existsSync(join(DIR, "patriot-exchange-brochure.pdf")) &&
-  existsSync(join(DIR, "OPTima_26_27_A.pdf"));
+const REQUIRED = ["patriot-exchange-brochure.pdf", "OPTima_26_27_A.pdf"];
+const missing =
+  DIR !== "" ? REQUIRED.filter((f) => !existsSync(join(DIR, f))) : [];
+const enabled = DIR !== "" && missing.length === 0;
+
+// Set-but-incomplete DIR is a misconfiguration: fail loudly naming the DIR
+// and the missing file(s) instead of silently skipping. Unset DIR still
+// skips cleanly via describe.runIf(enabled) above.
+if (DIR !== "" && missing.length > 0) {
+  describe("real-PDF ellipsis repair (misconfigured REAL_PDFS_DIR)", () => {
+    it(`REAL_PDFS_DIR="${DIR}" is missing: ${missing.join(", ")}`, () => {
+      expect(
+        missing,
+        `REAL_PDFS_DIR="${DIR}" is missing required PDF(s): ${missing.join(", ")}`,
+      ).toEqual([]);
+    });
+  });
+}
 
 async function pagesOf(filename: string): Promise<string[]> {
   const buf = readFileSync(join(DIR, filename));
