@@ -5,7 +5,9 @@ import {
   CHUNK_TARGET_TOKENS,
   chunkDocument,
   chunkPage,
+  chunksForSession,
   countTokens,
+  sliceForChunk,
 } from "@/app/lib/rag/chunks";
 
 function words(n: number, prefix = "w"): string {
@@ -97,5 +99,54 @@ describe("deterministic page-preserving chunker", () => {
     expect(short.length).toBe(1);
     expect(short[0].text).toBe("hello world");
     expect(chunkPage("doc-1", 1, "   \n ")).toEqual([]);
+  });
+});
+
+describe("chunk metadata completeness (todo 13)", () => {
+  it("every chunk carries doc/page/order/charOffsets tracing to its page", () => {
+    const pages = [words(1200), words(300, "p")];
+    const chunks = chunkDocument("doc-meta", pages);
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const c of chunks) {
+      expect(c.documentId).toBe("doc-meta");
+      expect(Number.isInteger(c.page) && c.page >= 1 && c.page <= pages.length).toBe(
+        true,
+      );
+      expect(Number.isInteger(c.order) && c.order >= 0).toBe(true);
+      expect(Number.isInteger(c.charOffsets.start)).toBe(true);
+      expect(Number.isInteger(c.charOffsets.end)).toBe(true);
+      expect(c.charOffsets.start).toBeGreaterThanOrEqual(0);
+      expect(c.charOffsets.end).toBeGreaterThan(c.charOffsets.start);
+      expect(c.charOffsets.end).toBeLessThanOrEqual(pages[c.page - 1].length);
+    }
+  });
+
+  it("offsets round-trip: sampled chunkId maps to its exact page slice", () => {
+    const pages = [words(1200), words(300, "p")];
+    const chunks = chunkDocument("doc-meta", pages);
+    const sampled = chunks.find((c) => c.page === 1 && c.order === 1) ?? chunks[0];
+    const slice = pages[sampled.page - 1].slice(
+      sampled.charOffsets.start,
+      sampled.charOffsets.end,
+    );
+    expect(slice).toBe(sampled.text);
+    expect(sliceForChunk(sampled, pages)).toBe(sampled.text);
+    const viaCache = chunksForSession("sess-red", [
+      { documentId: "doc-meta", pages },
+    ]).find((c) => c.chunkId === sampled.chunkId);
+    expect(viaCache).toBeDefined();
+    expect(
+      pages[viaCache!.page - 1].slice(
+        viaCache!.charOffsets.start,
+        viaCache!.charOffsets.end,
+      ),
+    ).toBe(viaCache!.text);
+  });
+
+  it("bad-page case throws on out-of-range page index", () => {
+    const pages = [words(50)];
+    const chunks = chunkDocument("doc-meta", pages);
+    const bad = { ...chunks[0], page: 99 };
+    expect(() => sliceForChunk(bad, pages)).toThrow(/out-of-range|page/i);
   });
 });
