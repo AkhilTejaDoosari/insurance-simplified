@@ -1,12 +1,37 @@
-// R0 eval loader (provisional; todo 8 builds the real metric runner).
+// R0 metric runner (todo 8): Recall@5/10, MRR@5/10, refusal accuracy for the
+// CURRENT line-overlap retriever (app/lib/rag/answer.ts:60-82).
+//
 // SPLIT RULE (deterministic, stratified): the 30 golden items form 5 subsets
 // (answerable / paraphrase / multi-doc / distractor / must-refuse) x 6 items.
 // Within each subset, items sorted by id: first 2 -> dev, next 2 ->
 // validation, last 2 -> test. Each partition therefore holds all five
 // subsets (2 items each = 10 items per file).
+// FROZEN DATASET SHAS (todo 7; any later change = versioned files + re-baseline):
+//   dev        40bd26510a6e75e7cd08918a1f2eaa18470bd2a26e4e4a181a566942b84ecdfc
+//   validation d401f9d377f376bb7a9f0785c5ebd0b2c0330bd49c22319d1cc3169569929341
+//   test       4224d90c6d936089da8fedf3a793be761f65a34263784aa1f52ea4bcad9a09d5
 // HARD INVARIANT: TEST is loadable/listable but EXCLUDED from default
-// scoring output. First TEST scoring happens at F1 (todo 49). R0 records
-// DEV + VALIDATION only.
+// scoring output. First TEST scoring happens at F1 (todo 49).
+// --partition=test exists ONLY as the F1 escape hatch and is FORBIDDEN
+// during R0. R0 records DEV + VALIDATION only, reported SEPARATELY with
+// partition labels; VALIDATION/TEST items never leak into tuning output
+// beyond these aggregate gate metrics.
+//
+// RETRIEVER MIRROR: run.mjs is dependency-free plain node, so it cannot
+// import the TS retriever. tokens()/retrieveCorpus() below replicate the
+// EXACT call path of retrieve() in app/lib/rag/answer.ts:60-82 (same
+// stopwords, same token filter len>2, same overlap count, same
+// sort-desc + slice). app/lib/rag/* is NEVER modified by this runner.
+// CORPUS: fixture truth lines from scripts/gen-fixtures.ts (recorded in
+// tests/fixtures/README.md); golden expected passages quote these lines
+// verbatim, so every table value below is computed from retriever output.
+//
+// METRIC SEMANTICS (sentence-transformers InformationRetrievalEvaluator):
+//   recall@K = |relevant hits in top-K| / |relevant|
+//   MRR@K   = 1 / rank-of-first-relevant-hit-in-top-K (0 when no hit)
+// Refusal: an item "refuses" iff retrieval is empty (zero overlap lines),
+// exactly the answerQuestion() empty-passages branch. Refusal accuracy is
+// computed over ALL items; recall/MRR over answerable items only.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +39,82 @@ import { fileURLToPath } from "node:url";
 const DIR = dirname(fileURLToPath(import.meta.url));
 const SUBSETS = ["answerable", "paraphrase", "multi-doc", "distractor", "must-refuse"];
 const PARTITIONS = ["dev", "validation", "test"];
+const KS = [5, 10];
 
+// ---------------------------------------------------------------- corpus
+// Fixture truth (scripts/gen-fixtures.ts). documentId doubles as filename,
+// matching golden `doc` fields.
+const CORPUS = [
+  {
+    documentId: "plan-a.pdf",
+    pages: [
+      [
+        "ACME HEALTH PLAN A - SUMMARY OF BENEFITS",
+        "Annual deductible: $250 in-network / $500 out-of-network.",
+        "Annual out-of-pocket maximum: $3,000 in-network.",
+        "Emergency care copay: $100, waived if admitted.",
+      ].join("\n"),
+      [
+        "Prescription coverage: covered at a reasonable cost.",
+        "International student eligibility: must hold a valid F-1 visa.",
+        "Network: Acme Preferred Provider Network applies.",
+      ].join("\n"),
+    ],
+  },
+  {
+    documentId: "plan-b.pdf",
+    pages: [
+      [
+        "ACME HEALTH PLAN B - SUMMARY OF BENEFITS",
+        "Annual deductible: $250 in-network / $500 out-of-network.",
+        "Annual out-of-pocket maximum: $4,500 in-network.",
+        "Emergency care copay: $250 per visit.",
+      ].join("\n"),
+      [
+        "Pre-existing conditions: covered after a 6-month waiting period.",
+        "Network: Acme Preferred Provider Network applies.",
+      ].join("\n"),
+    ],
+  },
+];
+
+// ------------------------------------------------------- retriever mirror
+// Verbatim mirror of app/lib/rag/answer.ts:39-82 (STOPWORDS, tokens,
+// retrieve). Keep in sync by eye; never import TS here (no dependencies).
+const STOPWORDS = new Set(
+  "a,an,the,of,in,on,for,to,is,are,was,were,be,been,do,does,did,what,which,who,how,much,many,my,our,your,this,that,these,those,and,or,with,by,at,from,as,it,its,plan,coverage,cover,covered".split(",")
+);
+
+function tokens(text) {
+  return new Set(
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !STOPWORDS.has(w))
+  );
+}
+
+function retrieveCorpus(documents, question, maxPassages = 3) {
+  const q = tokens(question);
+  if (q.size === 0) return [];
+  const scored = [];
+  for (const doc of documents) {
+    doc.pages.forEach((pageText, i) => {
+      for (const line of pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean)) {
+        const lt = tokens(line);
+        let overlap = 0;
+        for (const w of q) if (lt.has(w)) overlap++;
+        if (overlap > 0) {
+          scored.push({ documentId: doc.documentId, page: i + 1, quote: line, score: overlap });
+        }
+      }
+    });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, maxPassages);
+}
+
+// ---------------------------------------------------------------- loader
 function loadPartition(name) {
   const file = join(DIR, `golden-${name}.json`);
   let raw;
@@ -58,17 +158,221 @@ function subsetCounts(items) {
   return c;
 }
 
+// ---------------------------------------------------------------- metrics
+function norm(s) {
+  return s.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function passageKey(doc, page, passage) {
+  return `${doc}#${page}#${norm(passage)}`;
+}
+
+function expectedKeys(it) {
+  return it.expected.map((ex) => passageKey(ex.doc, ex.page, ex.passage));
+}
+
+function retrievedKeys(question, k) {
+  return retrieveCorpus(CORPUS, question, k).map((p) =>
+    passageKey(p.documentId, p.page, p.quote)
+  );
+}
+
+// recall@K = |relevant hits in top-K| / |relevant|.
+function computeRecallAtK(ranked, relevant, k) {
+  if (relevant.length === 0) return 0;
+  const rel = new Set(relevant);
+  let hits = 0;
+  for (const key of ranked.slice(0, k)) if (rel.has(key)) hits++;
+  return hits / relevant.length;
+}
+
+// MRR@K = 1 / rank-of-first-relevant-hit-in-top-K (0 when no hit).
+function computeMrrAtK(ranked, relevant, k) {
+  const rel = new Set(relevant);
+  const top = ranked.slice(0, k);
+  for (let i = 0; i < top.length; i++) {
+    if (rel.has(top[i])) return 1 / (i + 1);
+  }
+  return 0;
+}
+
+// Pure refusal roll-up for self-test + partition scoring.
+function refusalStats(pairs) {
+  // pairs: [{ refused: boolean, mustRefuse: boolean }]
+  let correct = 0;
+  let falseRefusals = 0;
+  let falseAcceptances = 0;
+  for (const p of pairs) {
+    if (p.mustRefuse && p.refused) correct++;
+    else if (!p.mustRefuse && !p.refused) correct++;
+    else if (!p.mustRefuse && p.refused) falseRefusals++;
+    else falseAcceptances++;
+  }
+  return {
+    accuracy: pairs.length === 0 ? 0 : correct / pairs.length,
+    falseRefusals,
+    falseAcceptances,
+  };
+}
+
+function scorePartition(items) {
+  const perSubset = {};
+  for (const s of SUBSETS) perSubset[s] = { n: 0, answerable: 0, recall5: 0, recall10: 0, mrr5: 0, mrr10: 0 };
+  let answerable = 0;
+  let sumR5 = 0;
+  let sumR10 = 0;
+  let sumM5 = 0;
+  let sumM10 = 0;
+  const pairs = [];
+  for (const it of items) {
+    const mustRefuse = it.mustRefuse === true;
+    const ranked10 = retrievedKeys(it.question, 10);
+    const refused = ranked10.length === 0;
+    pairs.push({ refused, mustRefuse });
+    const cell = perSubset[it.subset];
+    cell.n++;
+    if (!mustRefuse) {
+      const rel = expectedKeys(it);
+      const r5 = computeRecallAtK(ranked10, rel, 5);
+      const r10 = computeRecallAtK(ranked10, rel, 10);
+      const m5 = computeMrrAtK(ranked10, rel, 5);
+      const m10 = computeMrrAtK(ranked10, rel, 10);
+      answerable++;
+      sumR5 += r5;
+      sumR10 += r10;
+      sumM5 += m5;
+      sumM10 += m10;
+      cell.answerable++;
+      cell.recall5 += r5;
+      cell.recall10 += r10;
+      cell.mrr5 += m5;
+      cell.mrr10 += m10;
+    }
+  }
+  const refusal = refusalStats(pairs);
+  const mean = (s) => (answerable === 0 ? 0 : s / answerable);
+  const cellMean = (cell) => ({
+    n: cell.n,
+    answerable: cell.answerable,
+    recall5: cell.answerable === 0 ? 0 : cell.recall5 / cell.answerable,
+    recall10: cell.answerable === 0 ? 0 : cell.recall10 / cell.answerable,
+    mrr5: cell.answerable === 0 ? 0 : cell.mrr5 / cell.answerable,
+    mrr10: cell.answerable === 0 ? 0 : cell.mrr10 / cell.answerable,
+  });
+  return {
+    n: items.length,
+    answerable,
+    recall5: mean(sumR5),
+    recall10: mean(sumR10),
+    mrr5: mean(sumM5),
+    mrr10: mean(sumM10),
+    refusalAccuracy: refusal.accuracy,
+    falseRefusals: refusal.falseRefusals,
+    falseAcceptances: refusal.falseAcceptances,
+    perSubset: Object.fromEntries(Object.entries(perSubset).map(([s, c]) => [s, cellMean(c)])),
+  };
+}
+
+function fmt(x) {
+  return x.toFixed(4);
+}
+
+function printTable(partition, r) {
+  console.log(`partition=${partition} n=${r.n} answerable=${r.answerable}`);
+  console.log(`overall recall@5=${fmt(r.recall5)} recall@10=${fmt(r.recall10)} mrr@5=${fmt(r.mrr5)} mrr@10=${fmt(r.mrr10)}`);
+  console.log(
+    `overall refusal-accuracy=${fmt(r.refusalAccuracy)} false-refusals=${r.falseRefusals} false-acceptances=${r.falseAcceptances}`
+  );
+  for (const s of SUBSETS) {
+    const c = r.perSubset[s];
+    // must-refuse subsets have no answerable items: recall/MRR are n/a, never 0.
+    const m = (x) => (c.answerable === 0 ? "n/a" : fmt(x));
+    console.log(
+      `  subset=${s} n=${c.n} answerable=${c.answerable} recall@5=${m(c.recall5)} recall@10=${m(c.recall10)} mrr@5=${m(c.mrr5)} mrr@10=${m(c.mrr10)}`
+    );
+  }
+}
+
+// -------------------------------------------------------------- self-test
+function approx(a, b, tol = 1e-9) {
+  return Math.abs(a - b) <= tol;
+}
+
+function runSelfTest() {
+  const checks = [];
+  const check = (name, actual, want) => {
+    const ok = approx(actual, want);
+    checks.push({ name, actual, want, ok });
+    console.log(`${ok ? "PASS" : "FAIL"} ${name}: got=${actual} want=${want}`);
+  };
+
+  // Perfect ranking scores 1.0.
+  const rel2 = ["A", "B"];
+  const perfect = ["A", "B", "C"];
+  check("perfect recall@5", computeRecallAtK(perfect, rel2, 5), 1.0);
+  check("perfect recall@10", computeRecallAtK(perfect, rel2, 10), 1.0);
+  check("perfect mrr@5", computeMrrAtK(perfect, rel2, 5), 1.0);
+  check("perfect mrr@10", computeMrrAtK(perfect, rel2, 10), 1.0);
+
+  // Empty ranking scores 0.0 without crash.
+  check("empty recall@5", computeRecallAtK([], ["A"], 5), 0.0);
+  check("empty recall@10", computeRecallAtK([], ["A"], 10), 0.0);
+  check("empty mrr@5", computeMrrAtK([], ["A"], 5), 0.0);
+  check("empty mrr@10", computeMrrAtK([], ["A"], 10), 0.0);
+
+  // Mixed ranking, hand-computed: relevant={A,B,C}, ranked=[X,B,Y,A].
+  // Recall@5 = 2/3, MRR@5 = 1/2 (first hit B at rank 2).
+  // Recall@2 = 1/3, MRR@2 = 1/2.
+  const rel3 = ["A", "B", "C"];
+  const mixed = ["X", "B", "Y", "A"];
+  check("mixed recall@5", computeRecallAtK(mixed, rel3, 5), 2 / 3);
+  check("mixed mrr@5", computeMrrAtK(mixed, rel3, 5), 1 / 2);
+  check("mixed recall@2", computeRecallAtK(mixed, rel3, 2), 1 / 3);
+  check("mixed mrr@2", computeMrrAtK(mixed, rel3, 2), 1 / 2);
+
+  // Miss within K: first hit beyond K scores 0 for MRR@K and is cut from recall@K.
+  check("beyond-K recall@2", computeRecallAtK(["X", "Y", "A"], ["A"], 2), 0.0);
+  check("beyond-K mrr@2", computeMrrAtK(["X", "Y", "A"], ["A"], 2), 0.0);
+  check("beyond-K recall@3", computeRecallAtK(["X", "Y", "A"], ["A"], 3), 1.0);
+  check("beyond-K mrr@3", computeMrrAtK(["X", "Y", "A"], ["A"], 3), 1 / 3);
+
+  // Refusal roll-up: 1 true-refusal, 1 true-answer, 1 false-refusal, 1 false-acceptance.
+  const rs = refusalStats([
+    { refused: true, mustRefuse: true },
+    { refused: false, mustRefuse: false },
+    { refused: true, mustRefuse: false },
+    { refused: false, mustRefuse: true },
+  ]);
+  check("refusal accuracy", rs.accuracy, 0.5);
+  check("refusal false-refusals", rs.falseRefusals, 1);
+  check("refusal false-acceptances", rs.falseAcceptances, 1);
+
+  const failed = checks.filter((c) => !c.ok).length;
+  console.log(`self-test: ${checks.length - failed}/${checks.length} passed`);
+  if (failed > 0) {
+    console.error(`self-test FAILED (${failed} checks)`);
+    process.exitCode = 1;
+  }
+  return { checks, failed };
+}
+
+// ------------------------------------------------------------------ cli
 const args = process.argv.slice(2);
 const all = Object.fromEntries(PARTITIONS.map((p) => [p, loadPartition(p)]));
 
-if (args.includes("--list")) {
+if (args.includes("--self-test")) {
+  runSelfTest();
+} else if (args.includes("--list")) {
   for (const p of PARTITIONS) {
     console.log(`${p}: ${all[p].length} items ${JSON.stringify(subsetCounts(all[p]))}`);
   }
+} else if (args.includes("--partition=test")) {
+  // ESCAPE HATCH FOR F1 (todo 49) ONLY — FORBIDDEN during R0.
+  console.log("WARNING: TEST scoring is forbidden during R0; this hatch exists for F1 (todo 49) only.");
+  printTable("test", scorePartition(all.test));
 } else {
   // Default output: DEV + VALIDATION only. TEST is frozen and unscored until F1.
-  for (const p of ["dev", "validation"]) {
-    console.log(`${p}: ${all[p].length} items ${JSON.stringify(subsetCounts(all[p]))} (scoring lands in todo 8)`);
-  }
+  printTable("dev", scorePartition(all.dev));
+  printTable("validation", scorePartition(all.validation));
   console.log(`test: ${all.test.length} items FROZEN, unscored until F1 (todo 49)`);
 }
