@@ -102,4 +102,13 @@ describe("verifyEvidenceCitation", () => {
     expect(verifyEvidenceCitation(DOCS, cite("doc-1", 0, quote))).toEqual({ ok: false });
     expect(verifyEvidenceCitation(DOCS, cite("doc-1", 99, quote))).toEqual({ ok: false });
   });
+
+  it("12. rejects empty text (empty/whitespace quote, empty page)", () => {
+    expect(verifyEvidenceCitation(DOCS, cite("doc-1", 1, ""))).toEqual({ ok: false });
+    expect(verifyEvidenceCitation(DOCS, cite("doc-1", 1, "   \n  "))).toEqual({ ok: false });
+    const blankPage = [{ documentId: "doc-1", pageCount: 1, pages: ["   \n  "] }];
+    expect(
+      verifyEvidenceCitation(blankPage, cite("doc-1", 1, "Annual deductible: $250 in-network."))
+    ).toEqual({ ok: false });
+  });
 });
