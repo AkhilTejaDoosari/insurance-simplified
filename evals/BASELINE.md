@@ -211,3 +211,47 @@ chunk overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
   chunk subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
 chunk test: 10 items FROZEN, unscored until F1 (todo 49)
 ```
+
+## R2 tuning-guard decision — RETAIN k1=1.2 / b=0.75 (todo 19)
+
+Analysis-only todo (todo 17 owns the BM25 code; todo 20 owns the
+keep/revert survivor call on gated partitions). Diagnosis used DEV ONLY —
+no gated partition influenced this decision in any way (their numbers are
+recorded verbatim by the runner but were not consulted for tuning).
+
+DEV BM25 (`node evals/run.mjs --retriever=bm25`): recall@5=1.0000,
+recall@10=1.0000, mrr@5=0.9375, mrr@10=0.9375,
+refusal-accuracy=0.9000 (false-refusals=0, false-acceptances=1).
+Per-subset DEV: answerable 1.0/1.0, paraphrase 1.0/1.0, multi-doc
+1.0/1.0, distractor recall 1.0 / MRR 0.75. The single non-rank-1 DEV case
+is dis-02 (expected plan-b.pdf p1, ranked 2nd behind plan-a.pdf p1).
+
+Length-penalty probe (DEV chunks only): the 4 fixture chunks span 13–23
+indexed tokens (avgdl 18.75, max/min ratio 1.77x) — far too narrow a
+spread for the b length-norm to cause systematic demotion, so a
+length-penalty symptom is unobservable at this scale. Synthetic check:
+padding the relevant chunk to 143 tokens demotes it 2.19 -> 1.21 behind
+its identical-length twin, proving the b=0.75 norm responds correctly
+when real length variance exists. No over- or under-penalty evidence.
+
+TF-saturation probe: max term frequency in any fixture chunk is 3, so the
+saturation regime is never approached. Synthetic repeat-term check
+(tf 1/2/6/12 -> term scores 0.146/0.176/0.191/0.195) shows the expected
+strongly sublinear k1=1.2 curve — no runaway TF. Additionally,
+`retrieve()` builds the query side as a token Set, so repeated query
+terms cannot inflate scores by construction.
+
+dis-02 root cause (not tunable): the query text itself contains "$3,000"
+(token `000`, idf 1.204 — the single largest term contribution, +1.102),
+which appears only in plan-a.pdf p1. Both top chunks have identical
+length (dl=23) and near-identical TF profiles, so the gap is pure
+query-wording overlap with the distractor figure. A 20-point b/k1 sweep
+(b in {0, 0.25, 0.5, 0.75, 1.0} x k1 in {0.3, 0.6, 1.2, 2.0}) keeps
+plan-a.pdf#1 ranked above plan-b.pdf#1 in all 20 cells — no parameter
+choice fixes this case, confirming it is not a BM25 parameter problem.
+
+DECISION: RETAIN k1=1.2, b=0.75. No demonstrated length-penalty or
+TF-saturation problem on DEV; tuning to lift numbers without a measured
+problem is explicitly out of scope. `app/lib/rag/answer.ts` untouched by
+this todo. Probe scripts and full outputs: `.omo/evidence/task-19-insurance-simplified-flagship.log`
+(untracked).
