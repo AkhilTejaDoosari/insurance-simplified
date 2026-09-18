@@ -3,6 +3,20 @@
 // other source (FR-017). Picks the best available engine: the LLM whenever
 // LLM_BASE_URL and LLM_API_KEY are set, else the deterministic fallback.
 // `engine` in the body ("llm" | "fallback") is an explicit override for testing.
+//
+// R3 DEGRADATION (graceful, hybrid -> lexical-only -> refusal):
+// - Embeddings are a separate concern with SEPARATE keys: EMBEDDING_BASE_URL
+//   + EMBEDDING_API_KEY (+ optional EMBEDDING_MODEL). They are NEVER read from
+//   LLM_* — a chat/generation endpoint is not an embedding endpoint, and the
+//   generation model is never a valid embedding model. See
+//   app/lib/rag/embeddings.ts resolveEmbeddingConfig() for the clean-skip
+//   signal (null when unconfigured). While embeddings are absent the
+//   deterministic line-overlap lexical path serves every request with the
+//   IDENTICAL ChatResponse contract and refusal semantics.
+// - An unhealthy generation provider (bad key, 401/5xx, timeout) degrades to
+//   the same lexical path instead of surfacing a 500. There is deliberately
+//   NO whole-document LLM fallback: runtime degradation is hybrid ->
+//   lexical-only -> fixed refusal, nothing else.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, registerEvidence } from "@/app/lib/session";
@@ -34,9 +48,19 @@ export async function POST(request: NextRequest) {
     body.engine === "llm" || (body.engine !== "fallback" && isLlmConfigured());
 
   try {
-    const response = useLlm
-      ? await answerViaLlm(session.documents, body.question)
-      : answerQuestion(session.documents, body.question);
+    let response;
+    if (useLlm) {
+      try {
+        response = await answerViaLlm(session.documents, body.question);
+      } catch (err) {
+        console.warn(
+          `[chat] llm engine failed; degrading to lexical: ${err instanceof Error ? err.message : "unknown"}`
+        );
+        response = answerQuestion(session.documents, body.question);
+      }
+    } else {
+      response = answerQuestion(session.documents, body.question);
+    }
     const validated = validateChatResponse(response);
     if (validated.kind === "answer") {
       // Server/session boundary: verify every citation against the session
