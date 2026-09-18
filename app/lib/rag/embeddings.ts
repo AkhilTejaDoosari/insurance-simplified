@@ -72,6 +72,24 @@ export interface VectorStore extends VectorIndex {
   clear(): void;
 }
 
+// ---- pgvector-future seam (todo 25, doc/type only, no runtime) ----
+// A future pgvector adapter satisfies `VectorStore` with zero consumer
+// changes — retrieval code depends only on this interface:
+//
+//   export class PgVectorIndex implements VectorStore {
+//     readonly dimension: number | null = null;
+//     readonly size = 0; // or SELECT count(*) WHERE session = ...
+//     add(record: VectorRecord): void { /* INSERT INTO chunk_vectors ... */ }
+//     search(query: number[], topK: number): RankedPassage[] {
+//       /* SELECT ... ORDER BY embedding <=> query LIMIT topK */
+//       throw new Error("not provisioned");
+//     }
+//     clear(): void { /* DELETE FROM chunk_vectors WHERE session = ... */ }
+// }
+//
+// No DB, no migration, no dependency, no provisioning here — this comment
+// is the seam proof. Consumers stay unchanged by construction.
+
 /** Thrown when embedding vectors disagree on dimensionality. */
 export class DimensionError extends Error {
   readonly expected: number;
