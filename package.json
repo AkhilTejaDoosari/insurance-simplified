@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "eval": "node evals/run.mjs",
     "gen-fixtures": "tsx scripts/gen-fixtures.ts"
   },
   "dependencies": {
