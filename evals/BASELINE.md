@@ -92,3 +92,122 @@ overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
   subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
 test: 10 items FROZEN, unscored until F1 (todo 49)
 ```
+
+## R1 note — flattened brochure-table limitation (todo 15, docs only)
+
+Brochure comparison tables arrive flattened by page extraction (header line
+naming tiers + one figure per tier per benefit line in the same order), so
+positional tier-mapping is a prompt-level workaround in
+`app/lib/extraction/extract.ts` EXTRACTION_INSTRUCTIONS, not structure.
+R1 chunks (`app/lib/rag/chunks.ts`) preserve page token order verbatim and
+do NOT reconstruct table rows — table-aware chunking is follow-up context
+for later work (see `docs/RAG-GAP-ANALYSIS.md` Layer 3). No behavior changed
+in this todo; todo 14 appends the chunk baseline below as a separate section.
+
+## R1 chunk baseline — chunk-granularity view of the SAME ranker (todo 14)
+
+Measurement only. `retrieve()` ranking in `app/lib/rag/answer.ts` is
+UNCHANGED (still line-based at runtime; R2 owns any ranker change). The
+harness flag `node evals/run.mjs --granularity=chunk` re-uses the exact same
+`tokens()` / overlap-count / sort-desc scoring, only the retrieval unit
+changes from lines to page-preserving chunks (plain-node mirror of
+`app/lib/rag/chunks.ts` `chunkDocument`, 512/64 whitespace tokens, never
+crossing page boundaries).
+
+What the chunk numbers mean vs the line numbers: a line hit needs the exact
+expected line ranked top-K; a chunk hit needs any chunk CONTAINING the
+expected passage (normalized containment) ranked top-K. Chunk units are
+coarser, so chunk scores are an upper-envelope view of the same ranking
+behavior, not a new ranker. Refusal is identical by construction (chunk
+tokens = union of line tokens, so empty chunk retrieval <=> empty line
+retrieval). Default `node evals/run.mjs` output is byte-identical to R0
+(sha256 `a4834507da2cd69667f0f3c4b5905a8d34fefdf3cafc8c5a7885f2c8e3526d1d`
+before and after this todo; diff empty).
+
+Chunk inventory on the fixture corpus: 4 pages -> 4 chunks (1 per page;
+every fixture page is far below the 512-token target, so no page splits and
+no 64-token overlap windows materialize here). Chunk identity is
+`doc#page#order`; each expected passage maps to the same-doc+page chunk(s)
+containing it.
+
+### Provenance
+
+- git sha: `21ae5297e12484985e2543b01b117ccc3ce33711`
+- branch: `feat/rag-core`
+- runner: `evals/run.mjs` sha256 `3087afe3b61dbef0ce9afaa216560f13ebeb5e2f09abcf48f58dc4b8f0c34d70`
+- retriever source: `app/lib/rag/answer.ts` sha256 `6f440aa2083c07ba02bdea29e1ab2f63c80a82f2d501f483dbc9816d07ec87e1` (UNCHANGED from R0)
+- chunker source: `app/lib/rag/chunks.ts` sha256 `6c18792d4f94f4f787d33961d53f97ce8f40e1321d104d86ffc2a6c1fdb62787`
+- chunk config: target 512 whitespace tokens (`\S+` runs), overlap 64, no cross-page
+- golden-dev.json / golden-validation.json / golden-test.json: same frozen shas as R0 above (datasets untouched)
+- split rule: same as R0 (stratified, 10 items per partition)
+- date: 2026-09-18
+
+### DEV chunks (n=10, answerable=8)
+
+Overall: recall@5=1.0000 recall@10=1.0000 mrr@5=0.9375 mrr@10=0.9375 refusal-accuracy=0.9000 false-refusals=0 false-acceptances=1
+
+| subset | n | answerable | recall@5 | recall@10 | mrr@5 | mrr@10 |
+| --- | --- | --- | --- | --- | --- | --- |
+| answerable | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| paraphrase | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| multi-doc | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| distractor | 2 | 2 | 1.0000 | 1.0000 | 0.7500 | 0.7500 |
+| must-refuse | 2 | 0 | n/a | n/a | n/a | n/a |
+
+Line -> chunk delta (DEV): recall unchanged (1.0000); MRR 0.8750 -> 0.9375,
+entirely from paraphrase MRR 0.7500 -> 1.0000 (par-02's expected Plan B
+out-of-pocket line outranks its Plan A twin at chunk granularity because the
+page-chunk aggregates more query tokens than the single line does). No
+ranking code changed — this is the granularity effect being measured.
+
+### VALIDATION chunks (n=10, answerable=8)
+
+Overall: recall@5=0.7500 recall@10=0.7500 mrr@5=0.6250 mrr@10=0.6250 refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+
+| subset | n | answerable | recall@5 | recall@10 | mrr@5 | mrr@10 |
+| --- | --- | --- | --- | --- | --- | --- |
+| answerable | 2 | 2 | 1.0000 | 1.0000 | 0.7500 | 0.7500 |
+| paraphrase | 2 | 2 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| multi-doc | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| distractor | 2 | 2 | 1.0000 | 1.0000 | 0.7500 | 0.7500 |
+| must-refuse | 2 | 0 | n/a | n/a | n/a | n/a |
+
+Line -> chunk delta (VALIDATION): zero across every cell — the paraphrase
+drop (0.0000) and all other per-subset values are identical at both
+granularities, so the R0 anti-overfitting note still holds verbatim.
+
+### TEST
+
+10 items FROZEN, UNSCORED (same as R0; first scored at F1, todo 49). The
+chunk flag prints the frozen line only and never scores TEST.
+
+### Determinism
+
+Two consecutive `node evals/run.mjs --granularity=chunk` runs produce
+byte-identical output (sha256
+`7768424dcff803dba2168e0f13503c4aeb186faef98f8fb4b1d98213ee95ae10`
+both runs). Full outputs of both runs are captured in
+`.omo/evidence/task-14-insurance-simplified-flagship.json` (untracked).
+
+### Raw chunk-runner output (run 1 == run 2)
+
+```
+chunkconfig target=512 overlap=64 chunks=4 pages=4
+chunk partition=dev n=10 answerable=8
+chunk overall recall@5=1.0000 recall@10=1.0000 mrr@5=0.9375 mrr@10=0.9375
+chunk overall refusal-accuracy=0.9000 false-refusals=0 false-acceptances=1
+  chunk subset=answerable n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  chunk subset=paraphrase n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  chunk subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  chunk subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  chunk subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+chunk partition=validation n=10 answerable=8
+chunk overall recall@5=0.7500 recall@10=0.7500 mrr@5=0.6250 mrr@10=0.6250
+chunk overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+  chunk subset=answerable n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  chunk subset=paraphrase n=2 answerable=2 recall@5=0.0000 recall@10=0.0000 mrr@5=0.0000 mrr@10=0.0000
+  chunk subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  chunk subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  chunk subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+chunk test: 10 items FROZEN, unscored until F1 (todo 49)
+```

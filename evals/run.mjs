@@ -485,6 +485,177 @@ async function runRealBench() {
   printRealbench(scoreRealbench(documents, questions, expected));
 }
 
+// ------------------------------------------------- chunk baseline
+// R1 chunk-based second baseline (todo 14): MEASUREMENT ONLY. retrieve()
+// ranking in app/lib/rag/answer.ts is UNCHANGED — this flag re-uses the
+// EXACT same tokens()/overlap/sort-desc scoring, only the retrieval UNIT
+// changes from lines to page-preserving chunks (mirror of
+// app/lib/rag/chunks.ts chunkDocument with 512/64 whitespace tokens, never
+// crossing page boundaries). Fixture pages are tiny, so every page yields
+// exactly one chunk (4 chunks total); the inventory line proves it.
+//
+// WHAT THE CHUNK NUMBERS MEAN vs THE LINE NUMBERS: line recall/MRR score
+// exact-line units (a hit needs the expected line ranked top-K); chunk
+// recall/MRR score page-chunk units (a hit needs any chunk CONTAINING the
+// expected passage ranked top-K — normalized containment, same norm()).
+// Chunk units are coarser, so chunk scores are an upper-envelope view of the
+// same ranking behavior, NOT a new ranker. Refusal is identical by
+// construction (chunk tokens = union of line tokens, so empty chunk
+// retrieval <=> empty line retrieval). Default output (no flag) is
+// byte-identical to R0; this path only runs with --granularity=chunk and
+// never scores TEST (DEV + VALIDATION only).
+
+const CHUNK_TARGET_TOKENS = 512;
+const CHUNK_OVERLAP_TOKENS = 64;
+
+function chunkPageMirror(documentId, page, pageText, target = CHUNK_TARGET_TOKENS, overlap = CHUNK_OVERLAP_TOKENS) {
+  const spans = [];
+  const re = /\S+/g;
+  let m;
+  while ((m = re.exec(pageText)) !== null) {
+    spans.push({ start: m.index, end: m.index + m[0].length });
+  }
+  if (spans.length === 0) return [];
+  const chunks = [];
+  const step = target - overlap;
+  let order = 0;
+  for (let start = 0; start < spans.length; start += step, order++) {
+    const window = spans.slice(start, start + target);
+    const begin = window[0].start;
+    const end = window[window.length - 1].end;
+    chunks.push({
+      documentId,
+      page,
+      order,
+      text: pageText.slice(begin, end),
+    });
+    if (start + target >= spans.length) break;
+  }
+  return chunks;
+}
+
+function chunkCorpusMirror(documents) {
+  return documents.flatMap((doc) =>
+    doc.pages.flatMap((pageText, i) => chunkPageMirror(doc.documentId, i + 1, pageText))
+  );
+}
+
+function chunkKey(c) {
+  return `${c.documentId}#${c.page}#${c.order}`;
+}
+
+// Same ranking behavior as retrieveCorpus: same tokens(), same overlap
+// count, same sort-desc + slice. Only the unit differs (chunk vs line).
+function retrieveChunks(chunks, question, maxPassages = 10) {
+  const q = tokens(question);
+  if (q.size === 0) return [];
+  const scored = [];
+  for (const c of chunks) {
+    const ct = tokens(c.text);
+    let overlap = 0;
+    for (const w of q) if (ct.has(w)) overlap++;
+    if (overlap > 0) {
+      scored.push({ ...c, score: overlap });
+    }
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, maxPassages);
+}
+
+// An expected passage maps to every same-doc+page chunk whose normalized
+// text contains it (with 1 chunk/page this is exactly one chunk).
+function expectedChunkKeys(item, chunks) {
+  return item.expected.flatMap((ex) => {
+    const anchor = norm(ex.passage);
+    return chunks
+      .filter((c) => c.documentId === ex.doc && c.page === ex.page && norm(c.text).includes(anchor))
+      .map(chunkKey);
+  });
+}
+
+function scorePartitionChunks(items, chunks) {
+  const perSubset = {};
+  for (const s of SUBSETS) perSubset[s] = { n: 0, answerable: 0, recall5: 0, recall10: 0, mrr5: 0, mrr10: 0 };
+  let answerable = 0;
+  let sumR5 = 0;
+  let sumR10 = 0;
+  let sumM5 = 0;
+  let sumM10 = 0;
+  const pairs = [];
+  for (const it of items) {
+    const mustRefuse = it.mustRefuse === true;
+    const ranked10 = retrieveChunks(chunks, it.question, 10).map(chunkKey);
+    const refused = ranked10.length === 0;
+    pairs.push({ refused, mustRefuse });
+    const cell = perSubset[it.subset];
+    cell.n++;
+    if (!mustRefuse) {
+      const rel = expectedChunkKeys(it, chunks);
+      const r5 = computeRecallAtK(ranked10, rel, 5);
+      const r10 = computeRecallAtK(ranked10, rel, 10);
+      const m5 = computeMrrAtK(ranked10, rel, 5);
+      const m10 = computeMrrAtK(ranked10, rel, 10);
+      answerable++;
+      sumR5 += r5;
+      sumR10 += r10;
+      sumM5 += m5;
+      sumM10 += m10;
+      cell.answerable++;
+      cell.recall5 += r5;
+      cell.recall10 += r10;
+      cell.mrr5 += m5;
+      cell.mrr10 += m10;
+    }
+  }
+  const refusal = refusalStats(pairs);
+  const mean = (s) => (answerable === 0 ? 0 : s / answerable);
+  const cellMean = (cell) => ({
+    n: cell.n,
+    answerable: cell.answerable,
+    recall5: cell.answerable === 0 ? 0 : cell.recall5 / cell.answerable,
+    recall10: cell.answerable === 0 ? 0 : cell.recall10 / cell.answerable,
+    mrr5: cell.answerable === 0 ? 0 : cell.mrr5 / cell.answerable,
+    mrr10: cell.answerable === 0 ? 0 : cell.mrr10 / cell.answerable,
+  });
+  return {
+    n: items.length,
+    answerable,
+    recall5: mean(sumR5),
+    recall10: mean(sumR10),
+    mrr5: mean(sumM5),
+    mrr10: mean(sumM10),
+    refusalAccuracy: refusal.accuracy,
+    falseRefusals: refusal.falseRefusals,
+    falseAcceptances: refusal.falseAcceptances,
+    perSubset: Object.fromEntries(Object.entries(perSubset).map(([s, c]) => [s, cellMean(c)])),
+  };
+}
+
+function printChunkTable(partition, r) {
+  console.log(`chunk partition=${partition} n=${r.n} answerable=${r.answerable}`);
+  console.log(`chunk overall recall@5=${fmt(r.recall5)} recall@10=${fmt(r.recall10)} mrr@5=${fmt(r.mrr5)} mrr@10=${fmt(r.mrr10)}`);
+  console.log(
+    `chunk overall refusal-accuracy=${fmt(r.refusalAccuracy)} false-refusals=${r.falseRefusals} false-acceptances=${r.falseAcceptances}`
+  );
+  for (const s of SUBSETS) {
+    const c = r.perSubset[s];
+    const m = (x) => (c.answerable === 0 ? "n/a" : fmt(x));
+    console.log(
+      `  chunk subset=${s} n=${c.n} answerable=${c.answerable} recall@5=${m(c.recall5)} recall@10=${m(c.recall10)} mrr@5=${m(c.mrr5)} mrr@10=${m(c.mrr10)}`
+    );
+  }
+}
+
+function runChunkBaseline(parts) {
+  const chunks = chunkCorpusMirror(CORPUS);
+  const pages = CORPUS.reduce((n, d) => n + d.pages.length, 0);
+  console.log(
+    `chunkconfig target=${CHUNK_TARGET_TOKENS} overlap=${CHUNK_OVERLAP_TOKENS} chunks=${chunks.length} pages=${pages}`
+  );
+  printChunkTable("dev", scorePartitionChunks(parts.dev, chunks));
+  printChunkTable("validation", scorePartitionChunks(parts.validation, chunks));
+  console.log(`chunk test: ${parts.test.length} items FROZEN, unscored until F1 (todo 49)`);
+}
+
 // ------------------------------------------------------------------ cli
 const args = process.argv.slice(2);
 const all = Object.fromEntries(PARTITIONS.map((p) => [p, loadPartition(p)]));
@@ -501,6 +672,9 @@ if (args.includes("--bench=real")) {
   // ESCAPE HATCH FOR F1 (todo 49) ONLY — FORBIDDEN during R0.
   console.log("WARNING: TEST scoring is forbidden during R0; this hatch exists for F1 (todo 49) only.");
   printTable("test", scorePartition(all.test));
+} else if (args.includes("--granularity=chunk")) {
+  // R1 chunk baseline (todo 14): DEV + VALIDATION only, TEST stays frozen.
+  runChunkBaseline(all);
 } else {
   // Default output: DEV + VALIDATION only. TEST is frozen and unscored until F1.
   printTable("dev", scorePartition(all.dev));
