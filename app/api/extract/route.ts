@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, registerEvidence } from "@/app/lib/session";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
-import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
+import { verifyEvidenceCitation, checkDisplayGrounding } from "@/app/lib/evidence-verification";
 import type { ComparisonTable } from "@/app/lib/extraction/types";
 import {
   extractFallback,
@@ -45,13 +45,23 @@ export async function POST(request: NextRequest) {
     const verifiedRows: ComparisonTable["rows"] = [];
     for (const row of table.rows) {
       const values = [];
+      const groundingRationales: string[] = [];
       for (const value of row.values) {
         const evidence = [];
         for (const entry of value.evidence) {
           const verified = verifyEvidenceCitation(session.documents, entry);
           if (verified.ok) evidence.push({ ...entry, quote: verified.quote });
         }
-        if (evidence.length > 0) values.push({ ...value, evidence });
+        if (evidence.length === 0) continue;
+        const grounding = checkDisplayGrounding(
+          value.display,
+          row.factName,
+          evidence.map((e) => e.quote)
+        );
+        if (!grounding.supported && grounding.rationale) {
+          groundingRationales.push(grounding.rationale);
+        }
+        values.push({ ...value, evidence });
       }
       if (values.length === 0) {
         const flipped: ComparisonTable["rows"][number] = {
@@ -60,6 +70,14 @@ export async function POST(request: NextRequest) {
           values: [],
         };
         verifiedRows.push(flipped);
+      } else if (groundingRationales.length > 0) {
+        const prior = typeof row.rationale === "string" ? `${row.rationale} ` : "";
+        verifiedRows.push({
+          ...row,
+          verdict: "NEEDS VERIFICATION",
+          rationale: `${prior}${[...new Set(groundingRationales)].join(" ")}`.trim(),
+          values,
+        });
       } else {
         verifiedRows.push({ ...row, values });
       }

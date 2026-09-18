@@ -163,4 +163,59 @@ describe("POST /api/extract evidence verification boundary", () => {
       quote: canonical,
     });
   });
+
+  it("19. adversarial display with unsupported material token flips to NEEDS VERIFICATION, keeps evidence", async () => {
+    const session = seedSession();
+    mockedFallback.mockReturnValue(
+      tableWith([
+        {
+          factName: "annual-deductible",
+          verdict: "SUPPORTED",
+          values: [
+            {
+              documentId: "doc-1",
+              display: "$999",
+              qualifiers: {},
+              evidence: [{ documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network." }],
+            },
+          ],
+        },
+      ]) as never
+    );
+    const res = await post(session.sessionId);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.rows[0].verdict).toBe("NEEDS VERIFICATION");
+    expect(body.rows[0].values).toHaveLength(1);
+    expect(body.rows[0].values[0].evidence).toHaveLength(1);
+    expect(body.rows[0].values[0].evidence[0].quote).toBe(
+      "Annual deductible: $250 in-network."
+    );
+    expect(typeof body.rows[0].rationale).toBe("string");
+  });
+
+  it("20. fully supported numeric display retains its verdict", async () => {
+    const session = seedSession();
+    mockedFallback.mockReturnValue(
+      tableWith([
+        {
+          factName: "annual-deductible",
+          verdict: "SUPPORTED",
+          values: [
+            {
+              documentId: "doc-1",
+              display: "$250",
+              qualifiers: {},
+              evidence: [{ documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network." }],
+            },
+          ],
+        },
+      ]) as never
+    );
+    const res = await post(session.sessionId);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.rows[0].verdict).toBe("SUPPORTED");
+    expect(body.rows[0].values).toHaveLength(1);
+  });
 });

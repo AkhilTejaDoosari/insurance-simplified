@@ -199,3 +199,67 @@ export function verifyEvidenceCitation(
   }
   return { ok: false };
 }
+
+export interface DisplayGrounding {
+  supported: boolean;
+  unsupportedTokens: string[];
+  rationale: string | null;
+}
+
+const SURROUNDING_PUNCT = /^[.,;:"'()[\]{}]+|[.,;:"'()[\]{}]+$/g;
+
+/** Coverage normalization: Unicode punctuation via normalizeForMatch, then
+ *  lowercase, comma-stripped currency figures ("$3,000" -> "$3000"),
+ *  collapsed "$ 250" -> "$250", single-spaced. Case, whitespace, Unicode
+ *  punctuation, hyphens, and currency formatting ONLY — no synonyms. */
+function normalizeForCoverage(s: string): string {
+  return normalizeForMatch(s)
+    .toLowerCase()
+    .replace(/,/g, "")
+    .replace(/\$\s+/g, "$")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Material tokens of a CellValue display: every token containing a digit is
+ *  material (numeric, currency, percentage, date, and code figures all carry
+ *  digits). Tokens without digits are stopwords, qualifiers, or generic
+ *  insurance words — including words already represented by factName — and
+ *  carry no checkable claim. Numeric tokens are ALWAYS material, never
+ *  excused by factName. */
+export function materialDisplayTokens(display: string, factName: string): string[] {
+  const factTokens = new Set(factName.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+  const out: string[] = [];
+  for (const raw of normalizeForMatch(display).split(/\s+/)) {
+    const cleaned = normalizeForCoverage(raw.replace(SURROUNDING_PUNCT, ""));
+    if (!cleaned || !/[0-9]/.test(cleaned)) continue;
+    if (factTokens.has(cleaned)) continue;
+    out.push(cleaned);
+  }
+  return out;
+}
+
+/** Locked display material-token rule: every material token of display must
+ *  appear in the UNION of the value's verified canonical citations (same
+ *  coverage normalization on both sides). Deterministic substring check —
+ *  no semantic, embedding, fuzzy, or LLM repair. Returns the concise
+ *  NEEDS VERIFICATION rationale when unsupported, else null. */
+export function checkDisplayGrounding(
+  display: string,
+  factName: string,
+  canonicalQuotes: string[]
+): DisplayGrounding {
+  const tokens = materialDisplayTokens(display, factName);
+  if (tokens.length === 0) return { supported: true, unsupportedTokens: [], rationale: null };
+  const union = canonicalQuotes.map(normalizeForCoverage).join("\n");
+  const unsupported = [...new Set(tokens.filter((t) => !union.includes(t)))];
+  if (unsupported.length === 0) {
+    return { supported: true, unsupportedTokens: [], rationale: null };
+  }
+  const listed = unsupported.map((t) => `"${t}"`).join(", ");
+  return {
+    supported: false,
+    unsupportedTokens: unsupported,
+    rationale: `Display material token(s) ${listed} not supported by verified citations for fact "${factName}".`,
+  };
+}
