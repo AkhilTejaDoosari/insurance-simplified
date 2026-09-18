@@ -356,11 +356,142 @@ function runSelfTest() {
   return { checks, failed };
 }
 
+// ------------------------------------------------- real-doc benchmark
+// R0 real-document benchmark (todo 52): SECOND optional benchmark over the
+// three local PDFs (patriot-exchange-brochure.pdf,
+// patriot-travel-brochure-2026-dynamic.pdf, OPTima_26_27_A.pdf). Scores ONLY
+// when REAL_PDFS_DIR contains all three files, else prints SKIP (never fake
+// zeros, never fails). PDFs are never committed; only questions/metadata in
+// evals/realbench/ are tracked. Retrieval mirror (tokens/retrieveCorpus) is
+// shared with the fixture path above; matching is normalized containment of
+// the verified anchor inside a retrieved line (anchors are verbatim
+// single-line substrings of extractPages() output).
+
+const REAL_FILES = [
+  "patriot-exchange-brochure.pdf",
+  "patriot-travel-brochure-2026-dynamic.pdf",
+  "OPTima_26_27_A.pdf",
+];
+
+function loadRealbench(name) {
+  const file = join(DIR, "realbench", name);
+  let raw;
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch (err) {
+    throw new Error(`eval: cannot read ${file}: ${err.message}`);
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`eval: ${file} is not valid JSON: ${err.message}`);
+  }
+}
+
+async function extractRealCorpus(dir) {
+  const { extractText, getDocumentProxy } = await import("unpdf");
+  const docs = [];
+  for (const f of REAL_FILES) {
+    const buf = readFileSync(join(dir, f));
+    const pdf = await getDocumentProxy(new Uint8Array(buf));
+    const { text } = await extractText(pdf, { mergePages: false });
+    const pages = (Array.isArray(text) ? text : [text]).map((t) =>
+      typeof t === "string" ? t : String(t ?? "")
+    );
+    docs.push({ documentId: f, pages });
+  }
+  return docs;
+}
+
+function scoreRealbench(documents, questions, expected) {
+  const byId = new Map();
+  for (const ex of expected) {
+    if (!ex || typeof ex.id !== "string" || typeof ex.file !== "string" ||
+        typeof ex.page !== "number" || typeof ex.anchor !== "string" || !ex.anchor.trim())
+      throw new Error(`eval: corrupt realbench expected entry ${JSON.stringify(ex)}`);
+    if (!byId.has(ex.id)) byId.set(ex.id, []);
+    byId.get(ex.id).push(ex);
+  }
+  const perQuestion = [];
+  let sumR5 = 0;
+  let sumR10 = 0;
+  let sumM5 = 0;
+  let sumM10 = 0;
+  let answerable = 0;
+  for (const q of questions) {
+    const exs = byId.get(q.id) ?? [];
+    if (exs.length === 0) throw new Error(`eval: realbench question ${q.id} has no expected entries`);
+    const ranked = retrieveCorpus(documents, q.question, 10);
+    const norms = ranked.map((p) => norm(p.quote));
+    const anchorNorms = exs.map((e) => norm(e.anchor));
+    // recall@K = fraction of expected anchors contained in top-K lines.
+    const recallAt = (k) => {
+      const top = norms.slice(0, k);
+      let hits = 0;
+      for (const a of anchorNorms) if (top.some((line) => line.includes(a))) hits++;
+      return anchorNorms.length === 0 ? 0 : hits / anchorNorms.length;
+    };
+    // MRR@K = 1 / rank of first line containing any expected anchor.
+    const mrrAt = (k) => {
+      const top = norms.slice(0, k);
+      for (let i = 0; i < top.length; i++) {
+        if (anchorNorms.some((a) => top[i].includes(a))) return 1 / (i + 1);
+      }
+      return 0;
+    };
+    const r = { id: q.id, r5: recallAt(5), r10: recallAt(10), m5: mrrAt(5), m10: mrrAt(10) };
+    perQuestion.push(r);
+    answerable++;
+    sumR5 += r.r5;
+    sumR10 += r.r10;
+    sumM5 += r.m5;
+    sumM10 += r.m10;
+  }
+  const mean = (s) => (answerable === 0 ? 0 : s / answerable);
+  return { n: questions.length, recall5: mean(sumR5), recall10: mean(sumR10), mrr5: mean(sumM5), mrr10: mean(sumM10), perQuestion };
+}
+
+function printRealbench(r) {
+  console.log(`realbench partition=real n=${r.n}`);
+  console.log(`realbench overall recall@5=${fmt(r.recall5)} recall@10=${fmt(r.recall10)} mrr@5=${fmt(r.mrr5)} mrr@10=${fmt(r.mrr10)}`);
+  for (const q of r.perQuestion) {
+    console.log(`  realbench question=${q.id} recall@5=${fmt(q.r5)} recall@10=${fmt(q.r10)} mrr@5=${fmt(q.m5)} mrr@10=${fmt(q.m10)}`);
+  }
+}
+
+async function runRealBench() {
+  const dir = process.env.REAL_PDFS_DIR;
+  if (!dir) {
+    console.log("realbench: SKIP (REAL_PDFS_DIR unset; supply a dir containing all three PDFs to score)");
+    return;
+  }
+  const missing = [];
+  for (const f of REAL_FILES) {
+    try {
+      readFileSync(join(dir, f));
+    } catch {
+      missing.push(f);
+    }
+  }
+  if (missing.length > 0) {
+    console.log(`realbench: SKIP (missing ${missing.join(", ")} in REAL_PDFS_DIR=${dir})`);
+    return;
+  }
+  const questions = loadRealbench("questions.json");
+  const expected = loadRealbench("expected.json");
+  const documents = await extractRealCorpus(dir);
+  const pages = documents.reduce((n, d) => n + d.pages.length, 0);
+  console.log(`realbench: corpus=${documents.length} files pages=${pages} dir=${dir}`);
+  printRealbench(scoreRealbench(documents, questions, expected));
+}
+
 // ------------------------------------------------------------------ cli
 const args = process.argv.slice(2);
 const all = Object.fromEntries(PARTITIONS.map((p) => [p, loadPartition(p)]));
 
-if (args.includes("--self-test")) {
+if (args.includes("--bench=real")) {
+  await runRealBench();
+} else if (args.includes("--self-test")) {
   runSelfTest();
 } else if (args.includes("--list")) {
   for (const p of PARTITIONS) {
