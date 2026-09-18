@@ -1,25 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import type { ChatResponse } from "@/app/lib/rag/answer";
+import type { RegisteredChatResponse } from "@/app/lib/rag/answer";
 import { documentUrl } from "@/app/lib/document-url";
 
 interface Turn {
   question: string;
-  response: ChatResponse;
+  response: RegisteredChatResponse;
 }
 
 export default function ChatPanel({
   sessionId,
   documents,
+  initialTurns,
 }: {
   sessionId: string;
   documents: { documentId: string; filename: string }[];
+  /** Test seam for rendering citations without driving the chat API. */
+  initialTurns?: Turn[];
 }) {
   const filename = (documentId: string) =>
     documents.find((d) => d.documentId === documentId)?.filename ?? documentId;
   const [question, setQuestion] = useState("");
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [turns, setTurns] = useState<Turn[]>(initialTurns ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +38,7 @@ export default function ChatPanel({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Chat failed");
-      setTurns([...turns, { question, response: data as ChatResponse }]);
+      setTurns([...turns, { question, response: data as RegisteredChatResponse }]);
       setQuestion("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chat failed");
@@ -63,7 +66,7 @@ export default function ChatPanel({
                       <li key={j}>
                         {c.documentId},{" "}
                         <a
-                          href={documentUrl(sessionId, c.documentId, filename(c.documentId), c.page)}
+                          href={documentUrl(sessionId, c.documentId, filename(c.documentId), c.page, c.evidenceId)}
                           target="_blank"
                           rel="noopener"
                         >

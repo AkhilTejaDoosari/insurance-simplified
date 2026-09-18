@@ -65,7 +65,7 @@ describe("insurer question suggestions (User Story 4)", () => {
           factName: "annual-deductible",
           verdict: "SUPPORTED",
           values: [
-            { documentId: "doc-1", display: "$250", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 1, quote: "Deductible $250." }] },
+          { documentId: "doc-1", display: "$250", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 1, quote: "Deductible $250." }] },
             { documentId: "doc-2", display: "$500", qualifiers: {}, evidence: [{ documentId: "doc-2", page: 1, quote: "Deductible $500." }] },
             { documentId: "doc-3", display: "$400", qualifiers: {}, evidence: [{ documentId: "doc-3", page: 1, quote: "Deductible $400." }] },
           ],

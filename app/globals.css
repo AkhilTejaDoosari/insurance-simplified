@@ -445,7 +445,7 @@ select {
   color: var(--muted);
 }
 
-/* Cell value: a button that opens the evidence panel; styled as text. */
+/* Cell value: a source link opening the citation viewer; styled as text. */
 .cell-value {
   background: none;
   border: 0;

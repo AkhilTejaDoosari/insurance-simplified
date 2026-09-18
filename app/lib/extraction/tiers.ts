@@ -22,8 +22,9 @@ export function documentTiers(table: ComparisonTable): Map<string, string[]> {
 }
 
 /** A document's values for one cell. With a tier, values tagged for that tier
- *  plus untagged values (which apply to the whole document). */
-export function cellValues(values: CellValue[], documentId: string, tier?: string): CellValue[] {
+ *  plus untagged values (which apply to the whole document). Generic over
+ *  the value type so enriched (registered) tables keep their evidence IDs. */
+export function cellValues<T extends CellValue>(values: T[], documentId: string, tier?: string): T[] {
   return values.filter((v) => {
     if (v.documentId !== documentId) return false;
     if (!tier) return true;

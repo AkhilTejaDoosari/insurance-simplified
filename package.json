@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "next": "15",
+    "pdfjs-dist": "^6.3.289",
     "react": "19",
     "react-dom": "19",
     "unpdf": "1"

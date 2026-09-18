@@ -2,20 +2,15 @@
 
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
-  CellValue,
-  ComparisonTable as Table,
-  TableRow,
+  RegisteredCellValue,
+  RegisteredComparisonTable as Table,
+  RegisteredTableRow,
 } from "@/app/lib/extraction/types";
 import { FACTS } from "@/app/lib/extraction/fact-list";
 import { groupRows } from "@/app/lib/extraction/sections";
 import { cellValues, documentTiers } from "@/app/lib/extraction/tiers";
+import { documentUrl } from "@/app/lib/document-url";
 import VerdictBadge from "@/app/components/VerdictBadge";
-
-export interface SelectedCell {
-  factName: string;
-  verdict: string;
-  values: CellValue[];
-}
 
 const LABELS = new Map(FACTS.map((f) => [f.name, f.label]));
 const ALL_TIERS = "__all__";
@@ -33,25 +28,46 @@ interface DocumentGroup {
 function TierCells({
   row,
   group,
-  onSelect,
+  sessionId,
+  filenames,
 }: {
-  row: TableRow;
+  row: RegisteredTableRow;
   group: DocumentGroup;
-  onSelect: () => void;
+  sessionId: string;
+  filenames: Map<string, string>;
 }) {
-  const render = (values: CellValue[], key: string, colSpan = 1, first = false) => (
+  const label = LABELS.get(row.factName) ?? row.factName;
+  const render = (values: RegisteredCellValue[], key: string, colSpan = 1, first = false) => (
     <td key={key} colSpan={colSpan} className={first ? "table__group-start" : undefined}>
       {values.length > 0 ? (
-        values.map((v, i) => (
-          <button
-            key={i}
-            className="cell-value"
-            onClick={onSelect}
-            title="Show source evidence"
-          >
-            {v.display}
-          </button>
-        ))
+        values.map((v, i) => {
+          // Each value links to ITS OWN primary evidence (the first cited
+          // passage — deterministic); never the whole row's evidence. A
+          // value with no evidence renders as plain text: the contract
+          // forbids inventing a citation.
+          const primary = v.evidence[0];
+          if (!primary) {
+            return (
+              <span key={i} className="cell-value">
+                {v.display}
+              </span>
+            );
+          }
+          const filename = filenames.get(v.documentId) ?? v.documentId;
+          return (
+            <a
+              key={i}
+              className="cell-value"
+              href={documentUrl(sessionId, v.documentId, filename, primary.page, primary.evidenceId)}
+              target="_blank"
+              rel="noopener"
+              title={`View source evidence for ${label} — ${filename}, page ${primary.page}`}
+              aria-label={`View source evidence for ${label} — ${filename}, page ${primary.page}`}
+            >
+              {v.display}
+            </a>
+          );
+        })
       ) : (
         <span className="table__empty" aria-label="Not found">
           —
@@ -82,16 +98,20 @@ function TierCells({
 
 export default function ComparisonTable({
   table,
-  onSelectCell,
+  sessionId,
 }: {
   table: Table;
-  onSelectCell: (cell: SelectedCell) => void;
+  sessionId: string;
 }) {
   const groups = groupRows(table.rows);
   const [activeSection, setActiveSection] = useState(groups[0]?.section.title ?? "");
   const activeGroup = groups.find(({ section }) => section.title === activeSection) ?? groups[0];
   const tiersByDoc = useMemo(() => documentTiers(table), [table]);
   const [selection, setSelection] = useState<Record<string, string>>({});
+  const filenames = useMemo(
+    () => new Map(table.documents.map((d) => [d.documentId, d.filename] as const)),
+    [table],
+  );
 
   const docGroups: DocumentGroup[] = table.documents.map((d) => {
     const tiers = tiersByDoc.get(d.documentId) ?? [];
@@ -120,9 +140,6 @@ export default function ComparisonTable({
     return () => observer.disconnect();
   }, [hasTierRow, valueColumns]);
 
-  const select = (row: TableRow) => () =>
-    onSelectCell({ factName: row.factName, verdict: row.verdict, values: row.values });
-
   return (
     <section
       className="card comparison"
@@ -131,7 +148,7 @@ export default function ComparisonTable({
     >
       <div className="comparison__intro">
         <h2>Your plans, side by side</h2>
-        <p>Select any value to see the exact wording it came from.</p>
+        <p>Open any value to see the exact source page it came from.</p>
       </div>
 
       <div className="comparison__tabs" role="group" aria-label="Comparison sections">
@@ -245,7 +262,7 @@ export default function ComparisonTable({
                   ) : null}
                 </td>
                 {docGroups.map((g) => (
-                  <TierCells key={g.documentId} row={row} group={g} onSelect={select(row)} />
+                  <TierCells key={g.documentId} row={row} group={g} sessionId={sessionId} filenames={filenames} />
                 ))}
               </tr>
             ))}

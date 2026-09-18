@@ -26,9 +26,11 @@ prerequisites, steps, and expected outcomes with links to contracts.
 
 ## Flow 2 — Cell evidence inspection (P1)
 
-1. Click several populated cells, including one multi-value SUPPORTED row.
-2. **Expect**: evidence panel shows source document, page, and exact quote
-   matching the fixture (SC-002: 100% of populated cells).
+1. Click any comparison value.
+2. **Expect**: the app-owned citation viewer opens immediately on the actual
+    cited source page (one click, no intermediate panel), with the exact
+    cited passage highlighted where it can be located safely (SC-002: 100%
+    of populated cells).
 
 ## Flow 3 — Chat answers and refusals (P2)
 

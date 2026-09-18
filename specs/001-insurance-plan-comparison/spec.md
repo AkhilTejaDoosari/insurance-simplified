@@ -58,9 +58,11 @@ verdicts and citations. Delivers standalone comparison value without chat.
 
 ### User Story 2 - Inspect evidence behind any cell (Priority: P1)
 
-A user clicks any comparison-table cell to reveal the source document, page
-reference, and exact quote the value was drawn from, so they can verify
-accuracy themselves.
+A user clicks any comparison-table value and lands immediately in the
+app-owned citation viewer on the actual cited source page from the
+uploaded original file, with the exact cited passage highlighted where it
+can be located safely — one click, no intermediate panel. Each value links
+to its own evidence via a session-bound opaque evidence ID.
 
 **Why this priority**: Trust in the comparison depends entirely on
 verifiability. Citations are a constitutional non-negotiable.
@@ -72,10 +74,12 @@ quote. Delivers verification value independently of chat.
 **Acceptance Scenarios**:
 
 1. **Given** a completed comparison table, **When** the user clicks any
-   populated cell, **Then** an evidence view shows the source document, page
-   reference, and exact quote.
-2. **Given** a CONFLICTED row, **When** the user inspects evidence, **Then**
-    both contradicting values appear, each with its own source and quote.
+    populated value, **Then** the citation viewer opens directly on the
+    actual cited source page with the exact cited passage highlighted where
+    safely locatable.
+2. **Given** a CONFLICTED row, **When** the user clicks either contradicting
+    value, **Then** the viewer opens on that value's own source page and
+    quote — never the other value's evidence.
 
 ---
 

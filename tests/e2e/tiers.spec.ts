@@ -68,14 +68,17 @@ test("multi-tier document gets one column per tier and a tier picker", async ({ 
     await expect(table.getByRole("columnheader", { name: t, exact: true })).toBeVisible();
   }
   await expect(table.getByRole("columnheader", { name: "plan-a.pdf" })).toBeVisible();
-  await expect(table.getByRole("button", { name: "$0 to $25,000" })).toBeVisible();
-  await expect(table.getByRole("button", { name: "$0 to $2,500" })).toHaveCount(2);
+  // Values are direct source links (accessible name carries fact/file/page;
+  // visible text is the figure, which the mocked table fixes).
+  const valueLink = (text: string) => table.getByRole("link").filter({ hasText: text });
+  await expect(valueLink("$0 to $25,000")).toBeVisible();
+  await expect(valueLink("$0 to $2,500")).toHaveCount(2);
 
   // Section tabs intentionally hide non-active rows. Verify the tier-agnostic
   // value in Coverage details, where emergency-care lives, then return to
   // Must know for the deductible/tier assertions below.
   await page.getByRole("button", { name: "Coverage details", exact: true }).click();
-  await expect(table.getByRole("button", { name: /evacuation/ })).toHaveCount(1);
+  await expect(table.getByRole("link").filter({ hasText: /evacuation/ })).toHaveCount(1);
   await page.getByRole("button", { name: "Must know", exact: true }).click();
 
   // Picking one tier collapses the group to a single column.
@@ -84,18 +87,27 @@ test("multi-tier document gets one column per tier and a tier picker", async ({ 
   await picker.selectOption("Platinum");
   await expect(table.getByRole("columnheader", { name: "Platinum", exact: true })).toBeVisible();
   await expect(table.getByRole("columnheader", { name: "Lite", exact: true })).toHaveCount(0);
-  await expect(table.getByRole("button", { name: "$0 to $2,500" })).toHaveCount(0);
-  await expect(table.getByRole("button", { name: "$0 to $25,000" })).toBeVisible();
+  await expect(valueLink("$0 to $2,500")).toHaveCount(0);
+  await expect(valueLink("$0 to $25,000")).toBeVisible();
 
   await picker.selectOption("__all__");
   await expect(table.getByRole("columnheader", { name: "Lite", exact: true })).toBeVisible();
 
-  // Evidence lists one source per value, labelled with its tier, with no
-  // duplicate-key warnings (one document now yields several values).
-  await table.getByRole("button", { name: "$0 to $25,000" }).click();
-  const evidence = page.getByLabel("Evidence");
-  await expect(evidence.getByRole("heading", { name: "plan-b.pdf — Platinum" })).toBeVisible();
-  await expect(evidence.locator(".evidence__source")).toHaveCount(4);
+  // Each tier value links straight to its own citation (mocked extract output
+  // carries no evidence IDs, so links carry the page without an evidence ID),
+  // with no duplicate-key warnings (one document now yields several values).
+  const tierValue = valueLink("$0 to $25,000");
+  await expect(tierValue).toHaveAttribute(
+    "href",
+    /\/view\/sess-[^/]+\/doc-2\/plan-b\.pdf\?page=1$/,
+  );
+  const [viewer] = await Promise.all([
+    page.waitForEvent("popup"),
+    tierValue.click(),
+  ]);
+  // The viewer resolves against the real uploaded session (only /api/extract
+  // is mocked), so it shows the actual plan-b.pdf page.
+  await expect(viewer.getByText("Page 1 of 2")).toBeVisible();
   expect(consoleErrors).toEqual([]);
   // The tier sub-header sticks below the measured document header row.
   const tierTop = await table

@@ -28,8 +28,16 @@ documents. Retrieval corpus = session uploads only.
 }
 ```
 
-Rules: ≥1 citation required; every substantive claim MUST trace to a cited
-passage; no outside knowledge (FR-012, FR-017).
+Rules: ≥1 citation required; core citations are exactly
+`{documentId, page, quote}` — the chat API boundary verifies each citation
+against the session documents (unique contiguous occurrence on the claimed
+page, with safe ellipsis-span recovery), canonicalizes quotes to verbatim
+source spans, registers them, and returns enriched citations carrying a
+session-bound opaque `evidenceId` (citation URLs use the same app-owned
+viewer as comparison values). ANY unverifiable citation fails the answer
+closed into the refusal shape below — never a partially supported answer.
+Every substantive claim MUST trace to a cited passage;
+no outside knowledge (FR-012, FR-017).
 
 ## Refusal response (no supporting evidence)
 

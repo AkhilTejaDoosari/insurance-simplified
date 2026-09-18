@@ -22,6 +22,17 @@ export type ChatResponse =
   | { schemaVersion: "v1"; kind: "answer"; answerText: string; citations: ChatCitation[] }
   | { schemaVersion: "v1"; kind: "refusal"; refusalText: string };
 
+/** Presentation-time citation: core citation plus its session-bound opaque
+ *  evidence ID (`ev-...`), assigned at the chat API boundary (never by the
+ *  RAG engine or the model) so citation URLs resolve to the exact passage. */
+export type RegisteredChatCitation = ChatCitation & {
+  evidenceId: string;
+};
+
+export type RegisteredChatResponse =
+  | { schemaVersion: "v1"; kind: "answer"; answerText: string; citations: RegisteredChatCitation[] }
+  | { schemaVersion: "v1"; kind: "refusal"; refusalText: string };
+
 export const REFUSAL_TEXT =
   "The uploaded documents contain no supporting evidence for this question.";
 
@@ -39,7 +50,10 @@ function tokens(text: string): Set<string> {
   );
 }
 
-export interface RetrievedPassage extends ChatCitation {
+export interface RetrievedPassage {
+  documentId: string;
+  page: number;
+  quote: string;
   score: number;
 }
 

@@ -21,6 +21,13 @@ export interface EvidenceCitation {
   quote: string;
 }
 
+/** Presentation-time citation: core evidence plus its session-bound opaque
+ *  evidence ID (`ev-...`), assigned at the server/session boundary (never
+ *  by extraction) so citation URLs resolve to the exact passage. */
+export type RegisteredEvidenceCitation = EvidenceCitation & {
+  evidenceId: string;
+};
+
 export interface CellValue {
   documentId: string;
   /** Full value text with ALL qualifiers verbatim (FR-006). */
@@ -42,6 +49,21 @@ export interface ComparisonTable {
   factListVersion: string;
   documents: { documentId: string; filename: string; pageCount: number }[];
   rows: TableRow[];
+}
+
+/** Presentation-time table: every cited passage carries its session-bound
+ *  evidence ID. Produced at the server/session boundary by registering a
+ *  validated core table — extraction itself never mints IDs. */
+export interface RegisteredCellValue extends Omit<CellValue, "evidence"> {
+  evidence: RegisteredEvidenceCitation[];
+}
+
+export interface RegisteredTableRow extends Omit<TableRow, "values"> {
+  values: RegisteredCellValue[];
+}
+
+export interface RegisteredComparisonTable extends Omit<ComparisonTable, "rows"> {
+  rows: RegisteredTableRow[];
 }
 
 function fail(msg: string): never {

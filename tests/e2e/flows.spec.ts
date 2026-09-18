@@ -16,23 +16,44 @@ test("upload → table → evidence → chat → export (quickstart Flows 1–4,
   // SUPPORTED, never CONFLICTED.
   await expect(page.getByText("SUPPORTED").first()).toBeVisible();
   await expect(page.getByText("NOT STATED").first()).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /\$250 in-network \/ \$500 out-of-network/ }).first()
-  ).toBeVisible();
-
-  // Flow 2: cell click reveals document, page, exact quote.
-  await page
-    .getByRole("button", { name: /\$250 in-network \/ \$500 out-of-network/ })
-    .first()
-    .click();
-  const evidence = page.getByLabel("Evidence");
-  await expect(evidence.getByText("doc-1, page 1", { exact: false })).toBeVisible();
-  // Citation links end in the filename so the PDF tab is titled after it.
-  await expect(evidence.getByRole("link", { name: "page 1" }).first()).toHaveAttribute(
+  // Each value is a direct source link (one click → viewer). Labels name the
+  // fact, file, and page; the LLM engine may split or combine the display
+  // text, so match the stable label rather than the figure.
+  const valueLink = page
+    .getByRole("link", { name: /View source evidence for Annual deductible — plan-a\.pdf, page 1/ })
+    .first();
+  await expect(valueLink).toBeVisible();
+  // Each value links to its OWN evidence: document, page, opaque evidence ID.
+  await expect(valueLink).toHaveAttribute(
     "href",
-    /\/api\/document\/sess-[^/]+\/doc-1\/plan-a\.pdf#page=1$/,
+    /\/view\/sess-[^/]+\/doc-1\/plan-a\.pdf\?page=1&evidence=ev-[0-9a-f]{16}$/,
   );
-  await expect(evidence.getByText(/Annual deductible: \$250 in-network/).first()).toBeVisible();
+  const [viewer] = await Promise.all([
+    page.waitForEvent("popup"),
+    valueLink.click(),
+  ]);
+  await expect(viewer.getByText("Page 1 of 2")).toBeVisible();
+  await expect(viewer.getByText(/Annual deductible/).first()).toBeVisible();
+  // The viewer renders the ACTUAL cited source page (PDF.js canvas, not an
+  // iframe of a rewritten file), with the full original reachable separately.
+  await expect(viewer.locator("canvas").first()).toBeVisible();
+  // The evidence highlight overlays the rendered PDF page itself.
+  await expect(viewer.getByTestId("evidence-highlight").first()).toBeVisible();
+  await expect(viewer.getByRole("link", { name: "Open full original PDF" })).toHaveAttribute(
+    "href",
+    /\/api\/document\/sess-[^/]+\/doc-1\/plan-a\.pdf$/,
+  );
+  // An invalid citation page fails explicitly instead of showing another page.
+  await viewer.goto(viewer.url().replace(/page=1(&|$)/, "page=99$1"));
+  await expect(viewer.getByText(/does not exist/)).toBeVisible();
+  // The cited passage highlight sits on the rendered PDF page.
+  await viewer.goto(viewer.url().replace(/page=99(&|$)/, "page=1$1"));
+  await expect(viewer.getByTestId("evidence-highlight").first()).toBeVisible();
+  // A tampered/unknown evidence ID fails explicitly instead of highlighting
+  // a passage it did not cite.
+  await viewer.goto(viewer.url().replace(/evidence=ev-[0-9a-f]{16}/, "evidence=ev-0000000000000000"));
+  await expect(viewer.getByText(/evidence reference does not match/)).toBeVisible();
+  await expect(viewer.getByTestId("evidence-highlight")).toHaveCount(0);
 
   // Flow 3: cited answer, then explicit refusal.
   await page.getByLabel("Your question").fill("What is the emergency copay?");

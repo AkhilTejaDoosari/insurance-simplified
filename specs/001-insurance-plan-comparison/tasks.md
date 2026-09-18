@@ -80,8 +80,8 @@ one allowed verdict per row, qualifiers intact, and citations present
 **Independent Test**: Click cells (including a CONFLICTED row) and confirm
 the evidence panel matches recorded fixtures
 
-- [X] T021 [P] [US2] Integration test for cell→evidence flow in tests/integration/evidence.test.ts (populated cell shows document, page, exact quote; CONFLICTED shows both sources)
-- [X] T022 [US2] Build evidence panel in app/components/EvidencePanel.tsx (renders documentId, 1-based page, exact quote; both sides for CONFLICTED; depends on T019)
+- [X] T021 [P] [US2] Integration test for cell→evidence flow in tests/integration/evidence.test.ts (populated cell shows document, page, exact quote; each value carries its own session-bound evidence)
+- [X] T022 [US2] Direct citation links from comparison values to the app-owned viewer (replaced the EvidencePanel intermediate step; each value links to its own evidence via a session-bound evidence ID; depends on T019)
 
 **Checkpoint**: User Stories 1 AND 2 both work independently
 
