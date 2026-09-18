@@ -656,6 +656,156 @@ function runChunkBaseline(parts) {
   console.log(`chunk test: ${parts.test.length} items FROZEN, unscored until F1 (todo 49)`);
 }
 
+// ------------------------------------------------- BM25 baseline
+// R2 BM25-over-chunks measurement (todo 17): MEASUREMENT ONLY. Mirrors the
+// EXACT ranking of retrieve() in app/lib/rag/answer.ts (same stopwords, same
+// token filter len>2, k1=1.2 b=0.75 fixed, natural-log IDF floored at 0,
+// same deterministic tie-break documentId/page/order, same empty->[]
+// contract), only re-implemented dependency-free in plain node. Retrieval
+// unit is the R1 chunk (chunkPageMirror 512/64, never crossing pages).
+// Chunk-unit scoring (containment, same norm()) matches the R1 chunk
+// baseline; refusal is empty BM25 retrieval. Default output (no flag) is
+// byte-identical to R0/R1; this path only runs with --retriever=bm25 and
+// never scores TEST (DEV + VALIDATION only). Keep/revert SURVIVOR decision
+// is todo 20's job, NOT this todo's.
+
+const BM25_K1 = 1.2;
+const BM25_B = 0.75;
+
+function termFreqsMirror(text) {
+  const tf = new Map();
+  for (const w of text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 2 && !STOPWORDS.has(t))) {
+    tf.set(w, (tf.get(w) ?? 0) + 1);
+  }
+  return tf;
+}
+
+// Same ranking behavior as retrieve() in app/lib/rag/answer.ts. Only the
+// chunk identity differs (mirror chunks lack content-hash IDs; ordering by
+// documentId/page/order is identical and deterministic).
+function retrieveBm25(chunks, question, maxPassages = 10) {
+  const q = tokens(question);
+  if (q.size === 0) return [];
+  if (chunks.length === 0) return [];
+  const tfs = chunks.map((c) => termFreqsMirror(c.text));
+  const dls = tfs.map((tf) => [...tf.values()].reduce((n, v) => n + v, 0));
+  const avgdl = dls.reduce((n, v) => n + v, 0) / dls.length;
+  if (avgdl === 0) return [];
+  const df = new Map();
+  for (const term of q) {
+    let n = 0;
+    for (const tf of tfs) if (tf.has(term)) n++;
+    df.set(term, n);
+  }
+  const scored = [];
+  chunks.forEach((c, i) => {
+    let score = 0;
+    for (const term of q) {
+      const tf = tfs[i].get(term) ?? 0;
+      if (tf === 0) continue;
+      const idf = Math.max(0, Math.log(1 + (chunks.length - (df.get(term) ?? 0) + 0.5) / ((df.get(term) ?? 0) + 0.5)));
+      score += (idf * tf * (BM25_K1 + 1)) / (tf + BM25_K1 * (1 - BM25_B + (BM25_B * dls[i]) / avgdl));
+    }
+    if (score > 0) scored.push({ ...c, score });
+  });
+  return scored
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        (a.documentId < b.documentId ? -1 : a.documentId > b.documentId ? 1 : 0) ||
+        a.page - b.page ||
+        a.order - b.order
+    )
+    .slice(0, maxPassages);
+}
+
+function scorePartitionBm25(items, chunks) {
+  const perSubset = {};
+  for (const s of SUBSETS) perSubset[s] = { n: 0, answerable: 0, recall5: 0, recall10: 0, mrr5: 0, mrr10: 0 };
+  let answerable = 0;
+  let sumR5 = 0;
+  let sumR10 = 0;
+  let sumM5 = 0;
+  let sumM10 = 0;
+  const pairs = [];
+  for (const it of items) {
+    const mustRefuse = it.mustRefuse === true;
+    const ranked10 = retrieveBm25(chunks, it.question, 10).map(chunkKey);
+    const refused = ranked10.length === 0;
+    pairs.push({ refused, mustRefuse });
+    const cell = perSubset[it.subset];
+    cell.n++;
+    if (!mustRefuse) {
+      const rel = expectedChunkKeys(it, chunks);
+      const r5 = computeRecallAtK(ranked10, rel, 5);
+      const r10 = computeRecallAtK(ranked10, rel, 10);
+      const m5 = computeMrrAtK(ranked10, rel, 5);
+      const m10 = computeMrrAtK(ranked10, rel, 10);
+      answerable++;
+      sumR5 += r5;
+      sumR10 += r10;
+      sumM5 += m5;
+      sumM10 += m10;
+      cell.answerable++;
+      cell.recall5 += r5;
+      cell.recall10 += r10;
+      cell.mrr5 += m5;
+      cell.mrr10 += m10;
+    }
+  }
+  const refusal = refusalStats(pairs);
+  const mean = (s) => (answerable === 0 ? 0 : s / answerable);
+  const cellMean = (cell) => ({
+    n: cell.n,
+    answerable: cell.answerable,
+    recall5: cell.answerable === 0 ? 0 : cell.recall5 / cell.answerable,
+    recall10: cell.answerable === 0 ? 0 : cell.recall10 / cell.answerable,
+    mrr5: cell.answerable === 0 ? 0 : cell.mrr5 / cell.answerable,
+    mrr10: cell.answerable === 0 ? 0 : cell.mrr10 / cell.answerable,
+  });
+  return {
+    n: items.length,
+    answerable,
+    recall5: mean(sumR5),
+    recall10: mean(sumR10),
+    mrr5: mean(sumM5),
+    mrr10: mean(sumM10),
+    refusalAccuracy: refusal.accuracy,
+    falseRefusals: refusal.falseRefusals,
+    falseAcceptances: refusal.falseAcceptances,
+    perSubset: Object.fromEntries(Object.entries(perSubset).map(([s, c]) => [s, cellMean(c)])),
+  };
+}
+
+function printBm25Table(partition, r) {
+  console.log(`bm25 partition=${partition} n=${r.n} answerable=${r.answerable}`);
+  console.log(`bm25 overall recall@5=${fmt(r.recall5)} recall@10=${fmt(r.recall10)} mrr@5=${fmt(r.mrr5)} mrr@10=${fmt(r.mrr10)}`);
+  console.log(
+    `bm25 overall refusal-accuracy=${fmt(r.refusalAccuracy)} false-refusals=${r.falseRefusals} false-acceptances=${r.falseAcceptances}`
+  );
+  for (const s of SUBSETS) {
+    const c = r.perSubset[s];
+    const m = (x) => (c.answerable === 0 ? "n/a" : fmt(x));
+    console.log(
+      `  bm25 subset=${s} n=${c.n} answerable=${c.answerable} recall@5=${m(c.recall5)} recall@10=${m(c.recall10)} mrr@5=${m(c.mrr5)} mrr@10=${m(c.mrr10)}`
+    );
+  }
+}
+
+function runBm25Baseline(parts) {
+  const chunks = chunkCorpusMirror(CORPUS);
+  console.log(
+    `bm25config k1=${BM25_K1} b=${BM25_B} target=${CHUNK_TARGET_TOKENS} overlap=${CHUNK_OVERLAP_TOKENS} chunks=${chunks.length}`
+  );
+  printBm25Table("dev", scorePartitionBm25(parts.dev, chunks));
+  printBm25Table("validation", scorePartitionBm25(parts.validation, chunks));
+  console.log(`bm25 test: ${parts.test.length} items FROZEN, unscored until F1 (todo 49)`);
+}
+
 // ------------------------------------------------------------------ cli
 const args = process.argv.slice(2);
 const all = Object.fromEntries(PARTITIONS.map((p) => [p, loadPartition(p)]));
@@ -675,6 +825,9 @@ if (args.includes("--bench=real")) {
 } else if (args.includes("--granularity=chunk")) {
   // R1 chunk baseline (todo 14): DEV + VALIDATION only, TEST stays frozen.
   runChunkBaseline(all);
+} else if (args.includes("--retriever=bm25")) {
+  // R2 BM25 measurement (todo 17): DEV + VALIDATION only, TEST stays frozen.
+  runBm25Baseline(all);
 } else {
   // Default output: DEV + VALIDATION only. TEST is frozen and unscored until F1.
   printTable("dev", scorePartition(all.dev));
