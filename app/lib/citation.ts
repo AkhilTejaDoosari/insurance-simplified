@@ -102,7 +102,14 @@ function normalizeSpace(s: string): { text: string; map: number[] } {
  *  split only when there is EXACTLY one match — zero or several matches
  *  mean the passage cannot be identified safely, so the caller must fall
  *  back to showing the quote unhighlighted rather than risk marking the
- *  wrong passage. */
+ *  wrong passage.
+ *
+ *  @deprecated Hard-deprecated out of the viewer path. The canonical
+ *  highlight matcher is `matchEvidencePassage` in
+ *  `app/lib/pdf/text-match.ts` (used by PdfEvidenceViewer); this helper
+ *  must not be imported from `app/components` or `app/view`. It remains
+ *  exported for explicit non-viewer uses only (parity tests), so the two
+ *  uniqueness rules cannot silently diverge again. */
 export function locatePassage(pageText: string, quote: string): LocatedPassage | null {
   const normalizedQuote = quote.split(/\s+/).filter(Boolean).join(" ");
   if (!normalizedQuote || !pageText) return null;

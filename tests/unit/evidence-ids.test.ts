@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createSession, deleteSession, getEvidenceRecord, registerEvidence } from "@/app/lib/session";
 import { evidenceIdFor, withEvidenceId } from "@/app/lib/evidence-ids";
+// locatePassage below is an explicit non-viewer legacy use (parity pin only);
+// the viewer path must use matchEvidencePassage from app/lib/pdf/text-match.ts.
 import { isMatchingEvidence, locatePassage } from "@/app/lib/citation";
 import { extractFallback } from "@/app/lib/extraction/extract";
 
