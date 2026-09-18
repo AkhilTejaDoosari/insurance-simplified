@@ -255,3 +255,135 @@ TF-saturation problem on DEV; tuning to lift numbers without a measured
 problem is explicitly out of scope. `app/lib/rag/answer.ts` untouched by
 this todo. Probe scripts and full outputs: `.omo/evidence/task-19-insurance-simplified-flagship.log`
 (untracked).
+
+## R2 BM25 lexical retrieval — uplift record + SURVIVOR decision (todo 20)
+
+SURVIVOR: `bm25-reverted`
+
+Applied criterion (plan todo 20, verbatim): "uplift proven -> BM25 stays
+and R3 proceeds; NO uplift -> BM25 change REVERTED (restore overlap
+internals, contract unchanged) and plan proceeds on line-baseline with
+the decision recorded". The decision is made on FROZEN VALIDATION (DEV
+for diagnosis only). VALIDATION BM25 is cell-identical to both the R0
+line baseline and the R1 chunk baseline (recall@5/10 0.7500, MRR@5/10
+0.6250, refusal-accuracy 0.8000, FA 2, FR 0 — zero delta in every
+per-subset cell), so NO uplift is proven and the BM25 retrieval behavior
+is REVERTED. The selected lexical retriever for downstream todos is
+`line-overlap`. R2 numbers below are retained as the permanent record.
+
+### Provenance
+
+- git sha: `0ddb142e104ee35ce48fe819c52c4b510db4b779`
+- branch: `feat/rag-core`
+- runner: `evals/run.mjs` sha256 `1d9c6940cc4573d2e0984e46cffd113ec1225ba72f324f8d61032943de95b242`
+- measured retriever source: `app/lib/rag/answer.ts` (BM25) sha256 `74de940ae53c287a3c539db65657b034e417024f379488985ac98f393ba622c3`
+- restored retriever source: pre-BM25 overlap internals from `cadc6e9:app/lib/rag/answer.ts`
+  (`retrieve()` signature + empty->`[]` contract unchanged; BM25-only
+  `chunkId`/`order` provenance fields removed with the revert)
+- chunk config: target 512 whitespace tokens (`\S+` runs), overlap 64, no cross-page
+- chunk-config hash: `app/lib/rag/chunks.ts` sha256 `6c18792d4f94f4f787d33961d53f97ce8f40e1321d104d86ffc2a6c1fdb62787` + params 512/64
+- retrieval-config hash: measured `app/lib/rag/answer.ts` sha256 `74de940ae53c287a3c539db65657b034e417024f379488985ac98f393ba622c3` + k1=1.2/b=0.75 (todo 19 RETAIN)
+- golden-dev.json / golden-validation.json / golden-test.json: same frozen shas as R0 above (datasets untouched)
+- split rule: same as R0 (stratified, 10 items per partition)
+- date: 2026-09-18
+
+### DEV BM25 (n=10, answerable=8) — DIAGNOSIS ONLY, never decisive
+
+Overall: recall@5=1.0000 recall@10=1.0000 mrr@5=0.9375 mrr@10=0.9375 refusal-accuracy=0.9000 false-refusals=0 false-acceptances=1
+
+| subset | n | answerable | recall@5 | recall@10 | mrr@5 | mrr@10 |
+| --- | --- | --- | --- | --- | --- | --- |
+| answerable | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| paraphrase | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| multi-doc | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| distractor | 2 | 2 | 1.0000 | 1.0000 | 0.7500 | 0.7500 |
+| must-refuse | 2 | 0 | n/a | n/a | n/a | n/a |
+
+DEV deltas (diagnosis only): vs R0 line (1.0000/0.8750/0.90): recall
+unchanged, MRR 0.8750 -> 0.9375 (paraphrase MRR 0.7500 -> 1.0000 — the
+same granularity effect R1 measured, not a ranker win); vs R1 chunk
+(1.0000/0.9375/0.90): zero delta in every cell. None of this decides
+anything.
+
+### VALIDATION BM25 (n=10, answerable=8) — DECISIVE
+
+Overall: recall@5=0.7500 recall@10=0.7500 mrr@5=0.6250 mrr@10=0.6250 refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+
+| subset | n | answerable | recall@5 | recall@10 | mrr@5 | mrr@10 |
+| --- | --- | --- | --- | --- | --- | --- |
+| answerable | 2 | 2 | 1.0000 | 1.0000 | 0.7500 | 0.7500 |
+| paraphrase | 2 | 2 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| multi-doc | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| distractor | 2 | 2 | 1.0000 | 1.0000 | 0.7500 | 0.7500 |
+| must-refuse | 2 | 0 | n/a | n/a | n/a | n/a |
+
+VALIDATION deltas (decisive): vs R0 line (0.7500/0.6250/0.8000, FA 2,
+FR 0): ZERO in every overall and per-subset cell. Vs R1 chunk
+(0.7500/0.6250/0.8000, FA 2, FR 0): ZERO in every overall and
+per-subset cell, including the paraphrase 0.0000 drop which BM25 does
+not move. No uplift on any metric, any subset, or refusal behavior.
+
+### Decision
+
+NO uplift on FROZEN VALIDATION -> `bm25-reverted` per the plan rule.
+`app/lib/rag/answer.ts` restored to the pre-BM25 overlap internals
+(`cadc6e9`), `retrieve()` signature + empty->`[]` contract unchanged.
+`tests/unit/bm25.test.ts` (BM25-specific: TF-reward, length-norm,
+BM25 tie-break cases) fails against restored overlap behavior and was
+removed; refusal/contract coverage remains via `tests/unit/refusal.test.ts`
+and the harness. Selected lexical retriever for downstream todos:
+`line-overlap`. R3 proceeds on the line baseline.
+
+### Realbench observation (NON-DECISIVE, never overriding VALIDATION)
+
+The harness cannot combine the BM25 retriever with the real-document
+benchmark: `evals/run.mjs` dispatches `--bench=real` before (and
+ignoring) `--retriever=bm25`, and `runRealBench`/`scoreRealbench` use
+the line-based `tokens`/`retrieveCorpus` mirror only, so
+`node evals/run.mjs --bench=real --retriever=bm25` scores the LINE leg,
+not BM25. No BM25 realbench leg was forced. For context only, the
+line-leg realbench under `REAL_PDFS_DIR=/Users/akhiltejadoosari/Repositories`
+(corpus 3 files, 36 pages): recall@5=0.7500 recall@10=0.8125
+mrr@5=0.6500 mrr@10=0.6639 (per-question: rb-exchange-crisis
+1.0/0.2, rb-exchange-repatriation 0.0/0.0, rb-exchange-eligibility
+1.0/1.0, rb-travel-urgent-care 1.0/1.0, rb-travel-add 1.0/1.0,
+rb-optima-limits 1.0/1.0, rb-optima-eligibility 1.0/1.0,
+rb-compare-repatriation r@5 0.0 / r@10 0.5 / mrr@10 0.1111). Without
+`REAL_PDFS_DIR` the benchmark prints SKIP. This subsection is
+observation only and did not enter the survivor decision.
+
+### TEST
+
+10 items FROZEN, UNSCORED (same as R0/R1; first scored at F1, todo 49).
+The BM25 flag prints the frozen line only and never scores TEST.
+
+### Determinism
+
+Two consecutive `node evals/run.mjs --retriever=bm25` runs produce
+byte-identical output (sha256
+`35db48b3cdf9676ebdb27344b30bc5a7013bb089c28ba01c77b74f7afd3e6eaf`
+both runs). Full outputs of both runs are captured in
+`.omo/evidence/task-20-insurance-simplified-flagship.json` (untracked).
+
+### Raw BM25-runner output (run 1 == run 2)
+
+```
+bm25config k1=1.2 b=0.75 target=512 overlap=64 chunks=4
+bm25 partition=dev n=10 answerable=8
+bm25 overall recall@5=1.0000 recall@10=1.0000 mrr@5=0.9375 mrr@10=0.9375
+bm25 overall refusal-accuracy=0.9000 false-refusals=0 false-acceptances=1
+  bm25 subset=answerable n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  bm25 subset=paraphrase n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  bm25 subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  bm25 subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  bm25 subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+bm25 partition=validation n=10 answerable=8
+bm25 overall recall@5=0.7500 recall@10=0.7500 mrr@5=0.6250 mrr@10=0.6250
+bm25 overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+  bm25 subset=answerable n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  bm25 subset=paraphrase n=2 answerable=2 recall@5=0.0000 recall@10=0.0000 mrr@5=0.0000 mrr@10=0.0000
+  bm25 subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  bm25 subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  bm25 subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+bm25 test: 10 items FROZEN, unscored until F1 (todo 49)
+```

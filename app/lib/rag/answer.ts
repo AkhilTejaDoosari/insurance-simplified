@@ -4,7 +4,6 @@
 
 import { wrapDocuments } from "@/app/lib/llm/safe-prompt";
 import { completeJson } from "@/app/lib/llm/client";
-import { chunkDocument } from "@/app/lib/rag/chunks";
 
 export interface RagDocument {
   documentId: string;
@@ -51,71 +50,35 @@ function tokens(text: string): Set<string> {
   );
 }
 
-function termFreqs(text: string): Map<string, number> {
-  const tf = new Map<string, number>();
-  for (const w of text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length > 2 && !STOPWORDS.has(t))) {
-    tf.set(w, (tf.get(w) ?? 0) + 1);
-  }
-  return tf;
-}
-
 export interface RetrievedPassage {
   documentId: string;
   page: number;
   quote: string;
   score: number;
-  chunkId: string;
-  order: number;
 }
 
-/** BM25 (k1=1.2, b=0.75) over R1 page-preserving chunks. Zero overlap → []. */
+/** Keyword-overlap retrieval over document lines. Zero overlap → no evidence. */
 export function retrieve(
   documents: RagDocument[],
   question: string,
   maxPassages = 3
 ): RetrievedPassage[] {
-  const K1 = 1.2;
-  const B = 0.75;
   const q = tokens(question);
   if (q.size === 0) return [];
-  const chunks = documents.flatMap((d) => chunkDocument(d.documentId, d.pages));
-  if (chunks.length === 0) return [];
-  const tfs = chunks.map((c) => termFreqs(c.text));
-  const dls = tfs.map((tf) => [...tf.values()].reduce((n, v) => n + v, 0));
-  const avgdl = dls.reduce((n, v) => n + v, 0) / dls.length;
-  if (avgdl === 0) return [];
-  const df = new Map<string, number>();
-  for (const term of q) {
-    let n = 0;
-    for (const tf of tfs) if (tf.has(term)) n++;
-    df.set(term, n);
-  }
   const scored: RetrievedPassage[] = [];
-  chunks.forEach((c, i) => {
-    let score = 0;
-    for (const term of q) {
-      const tf = tfs[i].get(term) ?? 0;
-      if (tf === 0) continue;
-      const idf = Math.max(0, Math.log(1 + (chunks.length - (df.get(term) ?? 0) + 0.5) / ((df.get(term) ?? 0) + 0.5)));
-      score += (idf * tf * (K1 + 1)) / (tf + K1 * (1 - B + (B * dls[i]) / avgdl));
-    }
-    if (score > 0) {
-      scored.push({ documentId: c.documentId, page: c.page, quote: c.text, score, chunkId: c.chunkId, order: c.order });
-    }
-  });
-  return scored
-    .sort((a, b) =>
-      b.score - a.score ||
-      (a.documentId < b.documentId ? -1 : a.documentId > b.documentId ? 1 : 0) ||
-      a.page - b.page ||
-      a.order - b.order ||
-      (a.chunkId < b.chunkId ? -1 : a.chunkId > b.chunkId ? 1 : 0)
-    )
-    .slice(0, maxPassages);
+  for (const doc of documents) {
+    doc.pages.forEach((pageText, i) => {
+      for (const line of pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean)) {
+        const lt = tokens(line);
+        let overlap = 0;
+        for (const w of q) if (lt.has(w)) overlap++;
+        if (overlap > 0) {
+          scored.push({ documentId: doc.documentId, page: i + 1, quote: line, score: overlap });
+        }
+      }
+    });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, maxPassages);
 }
 
 /** Deterministic fallback answer: grounded strictly in retrieved passages. */
