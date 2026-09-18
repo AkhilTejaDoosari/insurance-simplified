@@ -416,3 +416,150 @@ To unblock semantic measurement, configure (OpenAI-compatible):
 provider, model, dimensions, batch/retry settings, corpus/chunk/retrieval
 hashes, and DEV+VALIDATION per-subset tables here. TEST stays frozen and
 unscored regardless.
+
+## R3 semantic leg — RESOLVED with local Ollama measurement (todo 24 REVISIT)
+
+Status: RESOLVED — semantic-only leg measured against the LOCAL Ollama
+embedding runtime. The SKIPPED/BLOCKED section above is kept verbatim as
+the historical record; everything below is new measurement, no fusion.
+
+The harness flag `node evals/run.mjs --leg=semantic` embeds the R1
+fixture chunk corpus (4 chunks) + each DEV/VALIDATION question via the
+exact contract of `app/lib/rag/embeddings.ts` (OpenAI-compatible POST
+`{baseUrl}/embeddings` `{model, input}`, batch size 32, retry on
+408/409/429/500/502/503/504 up to 3 attempts with base delay 1500ms +
+retry-after, ragged-vector DimensionError) and ranks with the exact math
+of `InMemoryCosineIndex` (L2-normalize once at insert, normalized dot
+product, tie-break chunkId/documentId/page, top-K slice). No similarity
+threshold exists in the app path and none was added (that would be
+tuning): with a non-empty index cosine always ranks, so must-refuse
+items surface as false-acceptances — recorded, not tuned away. Chunk
+identity is `doc#page#order`; a hit needs any chunk CONTAINING the
+expected passage (normalized containment, same as R1/R2). Default
+`node evals/run.mjs`, `--granularity=chunk`, and `--retriever=bm25`
+outputs are byte-identical before and after this todo (shas
+`a4834507…3526d1d`, `7768424d…95ae10`, `35db48b3…f7afd3e6eaf`;
+diffs empty). TEST never scored. No parameter was changed in this todo.
+
+### Provenance
+
+- git sha: `1fcbd65a6c4c726120d72369fb6f80c0b35d255f` (measurement base, `feat/rag-core`)
+- branch: `feat/rag-core`
+- provider: local Ollama (OpenAI-compatible `/v1/embeddings`)
+- base URL: `http://127.0.0.1:11434/v1` (from `.env.local` `EMBEDDING_BASE_URL`; API key value never copied or printed)
+- model: `qwen3-embedding:0.6b` (from `.env.local` `EMBEDDING_MODEL`)
+- dimensions: 1024 OBSERVED at runtime (independent `curl` smoke test +
+  runner dim validation on the application path; never assumed)
+- batch size: 32 (`SEM_BATCH_SIZE`, mirrors `DEFAULT_BATCH_SIZE`)
+- retry: max 3 attempts, base delay 1500ms + `retry-after` (`SEM_MAX_ATTEMPTS` / `SEM_BASE_DELAY_MS`, mirrors `embeddings.ts`)
+- runner: `evals/run.mjs` sha256 `b2fcd7d8de00db984498143d5d95c512de4c5299ee415f55084a9dc52255c40d`
+- retrieval-config hash: `app/lib/rag/embeddings.ts` sha256 `900fbc5dccb727ec148d5e24e02a22f51e6e2d11e4706e7b611101ae15ef17cd` + `app/lib/rag/cosine-index.ts` sha256 `dd735b59a017fd406901e4fbaf29567f518b874445ff5da44404a0517b667104` (both untouched by this todo)
+- chunk-config hash: `app/lib/rag/chunks.ts` sha256 `6c18792d4f94f4f787d33961d53f97ce8f40e1321d104d86ffc2a6c1fdb62787` + params 512/64 (same as R1/R2)
+- corpus: 4 fixture chunks (1 per page), chunk-corpus sha256 `297e5b82e1838a5231c5c89468ab396f20ab7356ce7f287b3a3df5c8e0bffac0`
+- golden-dev.json / golden-validation.json / golden-test.json: same frozen shas as R0 above (datasets untouched)
+- split rule: same as R0 (stratified, 10 items per partition)
+- date: 2026-09-18
+
+### DEV semantic (n=10, answerable=8) — DIAGNOSIS ONLY, never decisive
+
+Overall: recall@5=1.0000 recall@10=1.0000 mrr@5=0.8750 mrr@10=0.8750 refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+
+| subset | n | answerable | recall@5 | recall@10 | mrr@5 | mrr@10 |
+| --- | --- | --- | --- | --- | --- | --- |
+| answerable | 2 | 2 | 1.0000 | 1.0000 | 0.7500 | 0.7500 |
+| paraphrase | 2 | 2 | 1.0000 | 1.0000 | 0.7500 | 0.7500 |
+| multi-doc | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| distractor | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| must-refuse | 2 | 0 | n/a | n/a | n/a | n/a |
+
+Semantic vs lexical delta (DEV, lexical R0 line 1.0000/0.8750/0.9000):
+recall unchanged (1.0000); MRR unchanged (0.8750); refusal-accuracy
+0.9000 -> 0.8000 (cosine always ranks a non-empty index, so the second
+must-refuse item is a false-acceptance instead of the lexical path's
+single false-acceptance). None of this decides anything.
+
+### VALIDATION semantic (n=10, answerable=8) — DECISIVE
+
+Overall: recall@5=1.0000 recall@10=1.0000 mrr@5=0.8438 mrr@10=0.8438 refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+
+| subset | n | answerable | recall@5 | recall@10 | mrr@5 | mrr@10 |
+| --- | --- | --- | --- | --- | --- | --- |
+| answerable | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| paraphrase | 2 | 2 | 1.0000 | 1.0000 | 0.6250 | 0.6250 |
+| multi-doc | 2 | 2 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| distractor | 2 | 2 | 1.0000 | 1.0000 | 0.7500 | 0.7500 |
+| must-refuse | 2 | 0 | n/a | n/a | n/a | n/a |
+
+Semantic vs lexical delta (VALIDATION, lexical R0 line
+0.7500/0.6250/0.8000, FA 2, FR 0 — preserved verbatim above, NOT
+overwritten): recall@5/10 0.7500 -> 1.0000 (+0.2500); MRR@5/10 0.6250 ->
+0.8438 (+0.2188); refusal-accuracy unchanged (0.8000, FA 2, FR 0).
+Per-subset: the R0/R1/R2 paraphrase 0.0000 drop is fully repaired
+(recall 0.0000 -> 1.0000, MRR 0.0000 -> 0.6250 — one rank-1, one rank-4);
+answerable MRR 0.7500 -> 1.0000; multi-doc and distractor identical.
+
+### Viability for R4
+
+Semantic BEATS lexical on FROZEN VALIDATION (recall +0.25, MRR +0.22,
+refusal tied) — the semantic leg is a viable fusion candidate for R4.
+Caveat carried into R4: the raw cosine leg never refuses (FA 2 on both
+DEV and VALIDATION), so fusion must preserve the lexical path's refusal
+behavior rather than inherit cosine's always-rank default.
+
+### TEST
+
+10 items FROZEN, UNSCORED (same as R0/R1/R2; first scored at F1, todo
+49). The `--leg=semantic` flag prints the frozen line only and never
+scores TEST.
+
+### Determinism
+
+Two consecutive `node evals/run.mjs --leg=semantic` runs produce
+byte-identical output (sha256
+`cc27fa7a3a22444d5c48f615eb4440af86805c239337a95a0317ac11a7427732`
+both runs) — the local embedding runtime is deterministic on this
+corpus. Full outputs of both runs are captured in
+`.omo/evidence/task-24-insurance-simplified-flagship.log` (untracked).
+
+### Raw semantic-runner output (run 1 == run 2)
+
+```
+semanticconfig provider=local-ollama model=qwen3-embedding:0.6b base=http://127.0.0.1:11434/v1 dims=1024 batch=32 attempts=3 chunks=4
+semantic partition=dev n=10 answerable=8
+semantic overall recall@5=1.0000 recall@10=1.0000 mrr@5=0.8750 mrr@10=0.8750
+semantic overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+  semantic subset=answerable n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  semantic subset=paraphrase n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  semantic subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  semantic subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  semantic subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+  semantic rank id=ans-01 top3=plan-a.pdf#1#0@0.6284 plan-b.pdf#1#0@0.6280 plan-b.pdf#2#0@0.4593
+  semantic rank id=ans-02 top3=plan-b.pdf#1#0@0.6927 plan-a.pdf#1#0@0.6881 plan-b.pdf#2#0@0.5191
+  semantic rank id=par-01 top3=plan-b.pdf#1#0@0.6724 plan-a.pdf#1#0@0.6721 plan-b.pdf#2#0@0.6046
+  semantic rank id=par-02 top3=plan-b.pdf#1#0@0.6439 plan-a.pdf#1#0@0.6182 plan-b.pdf#2#0@0.4720
+  semantic rank id=mul-01 top3=plan-b.pdf#1#0@0.5442 plan-a.pdf#1#0@0.5338 plan-b.pdf#2#0@0.3747
+  semantic rank id=mul-02 top3=plan-b.pdf#1#0@0.6724 plan-a.pdf#1#0@0.6593 plan-b.pdf#2#0@0.5287
+  semantic rank id=dis-01 top3=plan-a.pdf#1#0@0.6578 plan-b.pdf#1#0@0.6577 plan-b.pdf#2#0@0.5269
+  semantic rank id=dis-02 top3=plan-b.pdf#1#0@0.6692 plan-a.pdf#1#0@0.6487 plan-b.pdf#2#0@0.4497
+  semantic rank id=ref-01 top3=plan-b.pdf#2#0@0.4666 plan-b.pdf#1#0@0.3983 plan-a.pdf#1#0@0.3949
+  semantic rank id=ref-02 top3=plan-a.pdf#1#0@0.5017 plan-b.pdf#1#0@0.5008 plan-b.pdf#2#0@0.4730
+semantic partition=validation n=10 answerable=8
+semantic overall recall@5=1.0000 recall@10=1.0000 mrr@5=0.8438 mrr@10=0.8438
+semantic overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+  semantic subset=answerable n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  semantic subset=paraphrase n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.6250 mrr@10=0.6250
+  semantic subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  semantic subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  semantic subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+  semantic rank id=ans-03 top3=plan-b.pdf#1#0@0.6063 plan-a.pdf#1#0@0.5721 plan-b.pdf#2#0@0.4720
+  semantic rank id=ans-04 top3=plan-b.pdf#2#0@0.6002 plan-a.pdf#2#0@0.3267 plan-b.pdf#1#0@0.3193
+  semantic rank id=par-03 top3=plan-a.pdf#1#0@0.4983 plan-b.pdf#1#0@0.4935 plan-b.pdf#2#0@0.4823
+  semantic rank id=par-04 top3=plan-b.pdf#2#0@0.4693 plan-b.pdf#1#0@0.4619 plan-a.pdf#1#0@0.4607
+  semantic rank id=mul-03 top3=plan-b.pdf#1#0@0.6231 plan-a.pdf#1#0@0.6158 plan-b.pdf#2#0@0.5314
+  semantic rank id=mul-04 top3=plan-b.pdf#2#0@0.5745 plan-a.pdf#2#0@0.4977 plan-b.pdf#1#0@0.4832
+  semantic rank id=dis-03 top3=plan-b.pdf#1#0@0.6359 plan-a.pdf#1#0@0.6263 plan-b.pdf#2#0@0.4506
+  semantic rank id=dis-04 top3=plan-b.pdf#2#0@0.4913 plan-a.pdf#2#0@0.4284 plan-b.pdf#1#0@0.4026
+  semantic rank id=ref-03 top3=plan-b.pdf#2#0@0.4641 plan-b.pdf#1#0@0.4243 plan-a.pdf#1#0@0.3990
+  semantic rank id=ref-04 top3=plan-b.pdf#2#0@0.4673 plan-a.pdf#1#0@0.4395 plan-b.pdf#1#0@0.4375
+semantic test: 10 items FROZEN, unscored until F1 (todo 49)
+```

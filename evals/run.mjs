@@ -806,6 +806,275 @@ function runBm25Baseline(parts) {
   console.log(`bm25 test: ${parts.test.length} items FROZEN, unscored until F1 (todo 49)`);
 }
 
+// ------------------------------------------------- semantic leg
+// R3 semantic-only measurement (todo 24): MEASUREMENT ONLY, no fusion.
+// Embeds the R1 fixture chunk corpus (chunkCorpusMirror, 4 chunks) + each
+// DEV/VALIDATION question against a LOCAL Ollama OpenAI-compatible
+// endpoint using the EXACT contract of app/lib/rag/embeddings.ts (POST
+// {baseUrl}/embeddings {model, input}, batch size 32, retry on
+// 408/409/429/500/502/503/504 up to 3 attempts with base delay 1500ms +
+// retry-after, ragged-vector DimensionError), then ranks with the EXACT
+// math of InMemoryCosineIndex (L2-normalize once at insert, normalize the
+// query, dot product, tie-break chunkId/documentId/page, top-K slice).
+// Chunk-unit scoring (containment, same norm()) matches R1/R2. Refusal is
+// empty cosine retrieval — with a non-empty index cosine always ranks, so
+// must-refuse items surface as false-acceptances; that is RECORDED, not
+// tuned away (no similarity threshold exists in the app path and adding
+// one here would be tuning against VALIDATION). Env is parsed from
+// .env.local at runtime (dotenv-style, no dependency; process env wins);
+// the API key value is NEVER printed. Missing config or an unreachable
+// endpoint prints SKIP (never fake zeros) and never scores TEST (DEV +
+// VALIDATION only). Default output (no flag) is byte-identical to
+// R0/R1/R2; this path only runs with --leg=semantic.
+
+const SEM_BATCH_SIZE = 32;
+const SEM_MAX_ATTEMPTS = 3;
+const SEM_BASE_DELAY_MS = 1500;
+const SEM_RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504]);
+
+const semSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function loadEmbeddingEnv() {
+  const fromFile = {};
+  try {
+    const raw = readFileSync(join(DIR, "..", ".env.local"), "utf8");
+    for (const line of raw.split(/\n/)) {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) continue;
+      const eq = t.indexOf("=");
+      if (eq < 0) continue;
+      let v = t.slice(eq + 1).trim();
+      if (v.length >= 2 && ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))) {
+        v = v.slice(1, -1);
+      }
+      fromFile[t.slice(0, eq).trim()] = v;
+    }
+  } catch {
+    // No .env.local: fall back to process env only.
+  }
+  const baseUrl = process.env.EMBEDDING_BASE_URL ?? fromFile.EMBEDDING_BASE_URL;
+  const apiKey = process.env.EMBEDDING_API_KEY ?? fromFile.EMBEDDING_API_KEY;
+  const model = process.env.EMBEDDING_MODEL ?? fromFile.EMBEDDING_MODEL ?? "default";
+  if (!baseUrl || !apiKey) return null;
+  return { baseUrl, apiKey, model };
+}
+
+function parseSemBatchVectors(payload) {
+  if (typeof payload !== "object" || payload === null) {
+    throw new Error("semantic leg: embedding response malformed: not an object");
+  }
+  const data = payload.data;
+  if (!Array.isArray(data)) {
+    throw new Error("semantic leg: embedding response malformed: data[] missing");
+  }
+  return data.map((item, i) => {
+    const vec = item?.embedding;
+    if (!Array.isArray(vec) || vec.some((n) => typeof n !== "number" || !Number.isFinite(n))) {
+      throw new Error(`semantic leg: data[${i}].embedding must be number[]`);
+    }
+    return vec;
+  });
+}
+
+async function semPostBatch(config, input) {
+  const url = `${config.baseUrl.replace(/\/$/, "")}/embeddings`;
+  let res;
+  for (let attempt = 1; attempt <= SEM_MAX_ATTEMPTS; attempt++) {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
+      body: JSON.stringify({ model: config.model, input }),
+    });
+    if (res.ok || !SEM_RETRYABLE.has(res.status) || attempt === SEM_MAX_ATTEMPTS) break;
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const delay =
+      Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : SEM_BASE_DELAY_MS * 2 ** (attempt - 1);
+    console.warn(`semantic leg: status ${res.status}; retrying in ${delay}ms (attempt ${attempt}/${SEM_MAX_ATTEMPTS})`);
+    await semSleep(delay);
+  }
+  if (!res || !res.ok) {
+    throw new Error(`semantic leg: embedding request failed with status ${res?.status ?? "unknown"}`);
+  }
+  return parseSemBatchVectors(await res.json());
+}
+
+// Same batching + dimension validation as embedTexts() in
+// app/lib/rag/embeddings.ts. Returns { vectors, dims }.
+async function semEmbedTexts(config, texts) {
+  const out = [];
+  for (let i = 0; i < texts.length; i += SEM_BATCH_SIZE) {
+    const batch = await semPostBatch(config, texts.slice(i, i + SEM_BATCH_SIZE));
+    out.push(...batch);
+  }
+  if (out.length === 0) return { vectors: out, dims: null };
+  const expected = out[0].length;
+  for (const vec of out) {
+    if (vec.length !== expected) {
+      throw new Error(`semantic leg: DimensionError expected ${expected}, received ${vec.length}`);
+    }
+  }
+  return { vectors: out, dims: expected };
+}
+
+function semNormOf(vector) {
+  let sum = 0;
+  for (const n of vector) sum += n * n;
+  return Math.sqrt(sum);
+}
+
+function semNormalize(vector) {
+  const norm = semNormOf(vector);
+  if (norm === 0) return vector.slice();
+  return vector.map((n) => n / norm);
+}
+
+// Same ranking math as InMemoryCosineIndex.searchWithRanks(): normalized
+// exhaustive cosine, tie-break chunkId/documentId/page, top-K slice.
+// Mirror chunks carry chunkId = doc#page#order (deterministic; the app's
+// content-hash IDs order identically within this corpus).
+function retrieveCosine(entries, dims, query, topK) {
+  if (entries.length === 0) return [];
+  if (query.length !== dims) {
+    throw new Error(`semantic leg: DimensionError expected ${dims}, received ${query.length}`);
+  }
+  const qn = semNormalize(query);
+  const scored = entries.map((e) => {
+    let dot = 0;
+    for (let i = 0; i < qn.length; i++) dot += qn[i] * e.norm[i];
+    return { chunk: e.chunk, score: dot };
+  });
+  scored.sort(
+    (a, b) =>
+      b.score - a.score ||
+      (a.chunk.chunkId < b.chunk.chunkId ? -1 : a.chunk.chunkId > b.chunk.chunkId ? 1 : 0) ||
+      (a.chunk.documentId < b.chunk.documentId ? -1 : a.chunk.documentId > b.chunk.documentId ? 1 : 0) ||
+      a.chunk.page - b.chunk.page
+  );
+  const k = Math.max(0, Math.min(topK, scored.length));
+  return scored.slice(0, k);
+}
+
+function scorePartitionSemantic(items, chunks, entries, dims, questionVectors) {
+  const perSubset = {};
+  for (const s of SUBSETS) perSubset[s] = { n: 0, answerable: 0, recall5: 0, recall10: 0, mrr5: 0, mrr10: 0 };
+  let answerable = 0;
+  let sumR5 = 0;
+  let sumR10 = 0;
+  let sumM5 = 0;
+  let sumM10 = 0;
+  const pairs = [];
+  const detail = [];
+  for (const it of items) {
+    const mustRefuse = it.mustRefuse === true;
+    const ranked = retrieveCosine(entries, dims, questionVectors.get(it.id), 10);
+    const ranked10 = ranked.map((r) => chunkKey(r.chunk));
+    const refused = ranked10.length === 0;
+    pairs.push({ refused, mustRefuse });
+    detail.push({
+      id: it.id,
+      top: ranked.slice(0, 3).map((r) => `${chunkKey(r.chunk)}@${r.score.toFixed(4)}`),
+    });
+    const cell = perSubset[it.subset];
+    cell.n++;
+    if (!mustRefuse) {
+      const rel = expectedChunkKeys(it, chunks);
+      const r5 = computeRecallAtK(ranked10, rel, 5);
+      const r10 = computeRecallAtK(ranked10, rel, 10);
+      const m5 = computeMrrAtK(ranked10, rel, 5);
+      const m10 = computeMrrAtK(ranked10, rel, 10);
+      answerable++;
+      sumR5 += r5;
+      sumR10 += r10;
+      sumM5 += m5;
+      sumM10 += m10;
+      cell.answerable++;
+      cell.recall5 += r5;
+      cell.recall10 += r10;
+      cell.mrr5 += m5;
+      cell.mrr10 += m10;
+    }
+  }
+  const refusal = refusalStats(pairs);
+  const mean = (s) => (answerable === 0 ? 0 : s / answerable);
+  const cellMean = (cell) => ({
+    n: cell.n,
+    answerable: cell.answerable,
+    recall5: cell.answerable === 0 ? 0 : cell.recall5 / cell.answerable,
+    recall10: cell.answerable === 0 ? 0 : cell.recall10 / cell.answerable,
+    mrr5: cell.answerable === 0 ? 0 : cell.mrr5 / cell.answerable,
+    mrr10: cell.answerable === 0 ? 0 : cell.mrr10 / cell.answerable,
+  });
+  return {
+    n: items.length,
+    answerable,
+    recall5: mean(sumR5),
+    recall10: mean(sumR10),
+    mrr5: mean(sumM5),
+    mrr10: mean(sumM10),
+    refusalAccuracy: refusal.accuracy,
+    falseRefusals: refusal.falseRefusals,
+    falseAcceptances: refusal.falseAcceptances,
+    perSubset: Object.fromEntries(Object.entries(perSubset).map(([s, c]) => [s, cellMean(c)])),
+    detail,
+  };
+}
+
+function printSemanticTable(partition, r) {
+  console.log(`semantic partition=${partition} n=${r.n} answerable=${r.answerable}`);
+  console.log(`semantic overall recall@5=${fmt(r.recall5)} recall@10=${fmt(r.recall10)} mrr@5=${fmt(r.mrr5)} mrr@10=${fmt(r.mrr10)}`);
+  console.log(
+    `semantic overall refusal-accuracy=${fmt(r.refusalAccuracy)} false-refusals=${r.falseRefusals} false-acceptances=${r.falseAcceptances}`
+  );
+  for (const s of SUBSETS) {
+    const c = r.perSubset[s];
+    const m = (x) => (c.answerable === 0 ? "n/a" : fmt(x));
+    console.log(
+      `  semantic subset=${s} n=${c.n} answerable=${c.answerable} recall@5=${m(c.recall5)} recall@10=${m(c.recall10)} mrr@5=${m(c.mrr5)} mrr@10=${m(c.mrr10)}`
+    );
+  }
+  for (const d of r.detail) {
+    console.log(`  semantic rank id=${d.id} top3=${d.top.join(" ")}`);
+  }
+}
+
+async function runSemanticLeg(parts) {
+  const config = loadEmbeddingEnv();
+  if (!config) {
+    console.log("semantic: SKIP (EMBEDDING_BASE_URL + EMBEDDING_API_KEY unset in env and .env.local; no fake zeros recorded)");
+    return;
+  }
+  const chunks = chunkCorpusMirror(CORPUS).map((c) => ({ ...c, chunkId: chunkKey(c) }));
+  let chunkVecs;
+  let dims;
+  try {
+    const embedded = await semEmbedTexts(config, chunks.map((c) => c.text));
+    chunkVecs = embedded.vectors;
+    dims = embedded.dims;
+  } catch (err) {
+    console.log(`semantic: SKIP (embedding endpoint unreachable: ${err instanceof Error ? err.message : "unknown"}; no fake zeros recorded)`);
+    return;
+  }
+  const entries = chunks.map((chunk, i) => ({ chunk, norm: semNormalize(chunkVecs[i]) }));
+  const questions = [...parts.dev, ...parts.validation].map((it) => it.question);
+  let questionVecs;
+  try {
+    questionVecs = (await semEmbedTexts(config, questions)).vectors;
+  } catch (err) {
+    console.log(`semantic: SKIP (question embedding failed: ${err instanceof Error ? err.message : "unknown"}; no fake zeros recorded)`);
+    return;
+  }
+  const byId = new Map();
+  [...parts.dev, ...parts.validation].forEach((it, i) => byId.set(it.id, questionVecs[i]));
+  console.log(
+    `semanticconfig provider=local-ollama model=${config.model} base=${config.baseUrl} dims=${dims} batch=${SEM_BATCH_SIZE} attempts=${SEM_MAX_ATTEMPTS} chunks=${chunks.length}`
+  );
+  printSemanticTable("dev", scorePartitionSemantic(parts.dev, chunks, entries, dims, byId));
+  printSemanticTable("validation", scorePartitionSemantic(parts.validation, chunks, entries, dims, byId));
+  console.log(`semantic test: ${parts.test.length} items FROZEN, unscored until F1 (todo 49)`);
+}
+
 // ------------------------------------------------------------------ cli
 const args = process.argv.slice(2);
 const all = Object.fromEntries(PARTITIONS.map((p) => [p, loadPartition(p)]));
@@ -828,6 +1097,9 @@ if (args.includes("--bench=real")) {
 } else if (args.includes("--retriever=bm25")) {
   // R2 BM25 measurement (todo 17): DEV + VALIDATION only, TEST stays frozen.
   runBm25Baseline(all);
+} else if (args.includes("--leg=semantic")) {
+  // R3 semantic-only measurement (todo 24): DEV + VALIDATION only, TEST stays frozen.
+  await runSemanticLeg(all);
 } else {
   // Default output: DEV + VALIDATION only. TEST is frozen and unscored until F1.
   printTable("dev", scorePartition(all.dev));
