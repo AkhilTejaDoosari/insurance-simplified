@@ -16,7 +16,12 @@ type Status =
  *
  *  Highlight honesty is structural: rectangles render only for a UNIQUE
  *  confident match. Zero or several matches render the page with an
- *  explicit message instead — never an arbitrary highlight. */
+ *  explicit message instead — never an arbitrary highlight.
+ *
+ *  VIEWER FROZEN after C0 proof (todo 6): annotations, bookmarks,
+ *  in-viewer search, and editing are explicitly out of scope. Changes here
+ *  are bug-fixes to the frozen contract only (correct page + unique-match
+ *  highlight or honest fallback). */
 export default function PdfEvidenceViewer({
   pdfUrl,
   page,

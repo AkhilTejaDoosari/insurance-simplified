@@ -49,6 +49,11 @@ test("upload → table → evidence → chat → export (quickstart Flows 1–4,
   // The cited passage highlight sits on the rendered PDF page.
   await viewer.goto(viewer.url().replace(/page=99(&|$)/, "page=1$1"));
   await expect(viewer.getByTestId("evidence-highlight").first()).toBeVisible();
+  // A tampered/unknown evidence ID fails explicitly instead of highlighting
+  // a passage it did not cite.
+  await viewer.goto(viewer.url().replace(/evidence=ev-[0-9a-f]{16}/, "evidence=ev-0000000000000000"));
+  await expect(viewer.getByText(/evidence reference does not match/)).toBeVisible();
+  await expect(viewer.getByTestId("evidence-highlight")).toHaveCount(0);
 
   // Flow 3: cited answer, then explicit refusal.
   await page.getByLabel("Your question").fill("What is the emergency copay?");
