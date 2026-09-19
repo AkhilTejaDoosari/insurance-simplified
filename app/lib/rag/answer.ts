@@ -183,25 +183,20 @@ export async function answerQuestionSemantic(
   if (!isEmbeddingConfigured()) {
     return answerQuestion(documents, question);
   }
-  // Lexical-empty refusal gate (R5 correctness fix): pure cosine never refuses
-  // a non-empty index, so novel nonsense ("space tourism") would false-accept.
-  // Zero token-overlap means no lexical evidence; refuse to preserve the
-  // lexical path's refusal behavior (R4 viability note). No new threshold.
-  if (retrieve(documents, question, 1).length === 0) {
-    return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
-  }
   try {
     const passages = await retrieveSemantic(documents, question);
-    if (passages.length === 0) {
-      return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+    if (passages.length > 0) {
+      const citations: ChatCitation[] = passages.slice(0, 5).map(({ documentId, page, quote }) => ({
+        documentId,
+        page,
+        quote,
+      }));
+      const answerText = passages.slice(0, 5).map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
+      return { schemaVersion: "v1", kind: "answer", answerText, citations, grounding: "explicit" };
     }
-    const citations: ChatCitation[] = passages.slice(0, 5).map(({ documentId, page, quote }) => ({
-      documentId,
-      page,
-      quote,
-    }));
-    const answerText = passages.slice(0, 5).map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
-    return { schemaVersion: "v1", kind: "answer", answerText, citations, grounding: "explicit" };
+    // Semantic healthy but empty (e.g. no chunks) -> degrade to lexical,
+    // which itself refuses when lexical evidence is empty.
+    return answerQuestion(documents, question);
   } catch {
     // Any semantic error (Ollama down, bad key, timeout, dimension mismatch) -> degrade to lexical
     return answerQuestion(documents, question);
@@ -294,14 +289,36 @@ export async function answerViaLlm(
   documents: RagDocument[],
   question: string
 ): Promise<ChatResponse> {
-  // Lexical-empty refusal gate: zero overlap -> refusal WITHOUT LLM call.
-  // (Pure cosine never refuses; this preserves lexical refusal behavior.)
-  if (retrieve(documents, question, 1).length === 0) {
-    return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+  // Semantic-first (P2): try healthy semantic retrieval when embeddings are
+  // configured; lexical line-overlap is ONLY a fallback on semantic
+  // unavailable/error/empty-config. Final empty -> refusal WITHOUT LLM call.
+  let passages: RankedPassage[];
+  if (!isEmbeddingConfigured()) {
+    const lexical = retrieve(documents, question, 10).map(toRankedPassage);
+    if (lexical.length === 0) {
+      return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+    }
+    passages = lexical;
+  } else {
+    try {
+      const semantic = await retrieveSemantic(documents, question);
+      if (semantic.length > 0) {
+        passages = semantic;
+      } else {
+        const lexical = retrieve(documents, question, 10).map(toRankedPassage);
+        if (lexical.length === 0) {
+          return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+        }
+        passages = lexical;
+      }
+    } catch {
+      const lexical = retrieve(documents, question, 10).map(toRankedPassage);
+      if (lexical.length === 0) {
+        return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+      }
+      passages = lexical;
+    }
   }
-
-  // Use SELECTED retriever (semantic-only per R4 VALIDATION)
-  const passages = await retrieveSemantic(documents, question);
 
   // Empty retrieval -> immediate refusal, NO LLM call
   if (passages.length === 0) {
