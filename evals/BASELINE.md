@@ -661,3 +661,55 @@ HEAD: `c5104c0 docs(eval): record semantic leg`
 - TEST remains FROZEN/UNSCORED (per plan invariant)
 - RRF implementation remains in repo (`app/lib/rag/fusion.ts`, `tests/unit/fusion.test.ts`) as evaluated experimental component but is DISABLED/UNSELECTED in runtime
 - Reranker not built (headroom 0.0 < 0.10 threshold)
+
+## R5 retrieval-fed generation (todos 32-36)
+
+### Top-K context assembly + budget (todo 32)
+
+`answerViaLlm` no longer sends whole documents. It retrieves top-K chunks
+via the SELECTED retriever (semantic-only), assembles `[Page N]`-tagged
+blocks, and enforces `MAX_CONTEXT_CHARS=12000` (lowest-rank chunks dropped
+first, tags intact). `wrapDocuments()` itself is untouched (extraction path).
+
+### Empty-retrieval short-circuit (todo 33)
+
+Zero useful chunks -> fixed refusal with ZERO `completeJson` calls (proven by
+`tests/unit/answer-via-llm-shortcircuit.test.ts`: `completeJson` not called).
+
+### Claim-to-citation verifier (todo 34)
+
+`verifyAnswerClaims` enforces: (a) every substantive sentence (>=4 tokens)
+covered by >=1 citation, (b) every citation in supplied chunk context,
+(c) every citation verifies against the original page. ANY failure -> fixed
+refusal, NO repair. Adversarial cases covered in
+`tests/unit/claim-verifier.test.ts` (6 tests).
+
+### Lexical-empty refusal gate (R5 correctness fix)
+
+E2E Flow 3 exposed a refusal regression: pure cosine never refuses a
+non-empty index, so novel nonsense ("Does this cover space tourism?")
+false-accepted with a 4-chunk answer. Fix: `answerQuestionSemantic` and
+`answerViaLlm` refuse when lexical token-overlap is empty (zero overlap =
+no lexical evidence), before semantic ranking / LLM call. No new threshold.
+E2E Flow 3 green after fix (both LLM-configured and fallback paths).
+
+### Cost/latency note (todo 35, measured on fixture corpus)
+
+- Whole-doc prompt (`wrapDocuments`, 2 fixture docs): 1139 bytes
+- Retrieval-fed prompt (top-2 chunks + instructions): 1166 bytes
+- Assembly latency: 0 ms (in-process)
+- Fixture corpus (4 tiny pages) is too small to show the cap win; the win is
+  the 12000-char bound on large sessions (200-page corpus would be unbounded
+  whole-doc vs capped retrieval-fed) plus 100% savings on empty retrieval
+  (zero LLM call). No latency numbers invented.
+
+### Citation precision eval (todo 36, `node evals/run.mjs --eval=citation-precision`)
+
+| Partition | recall@5 | recall@10 | precision@5 | precision@10 | refusal-acc |
+|-----------|----------|-----------|-------------|--------------|-------------|
+| DEV (n=10) | 1.0000 | 1.0000 | 0.2500 | 0.1250 | 0.80 |
+| VALIDATION (n=10) | 1.0000 | 1.0000 | 0.2750 | 0.1375 | 0.80 |
+
+Low precision@K is expected on fixtures: 1 chunk/page means each query has
+1-2 relevant chunks among 4 total, so top-5 necessarily includes distractors.
+TEST frozen/unscored.

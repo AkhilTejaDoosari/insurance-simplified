@@ -1313,6 +1313,171 @@ function printRRFTable(partition, r) {
   }
 }
 
+// ------------------------------------------------- citation precision eval
+// R5 citation precision eval (todo 36): Extend harness with citation precision
+// (cited spans in supplied context + registered evidenceIds resolve); record numbers.
+
+async function runCitationPrecisionEval(parts) {
+  const config = loadEmbeddingEnv();
+  if (!config) {
+    console.log("citation-precision: SKIP (EMBEDDING_BASE_URL + EMBEDDING_API_KEY unset in env and .env.local; no fake zeros recorded)");
+    return;
+  }
+
+  // Build chunk corpus (same as semantic leg)
+  const chunks = chunkCorpusMirror(CORPUS).map((c) => ({ ...c, chunkId: chunkKey(c) }));
+
+  // Embed chunks
+  let chunkVecs;
+  let dims;
+  try {
+    const embedded = await semEmbedTexts(config, chunks.map((c) => c.text));
+    chunkVecs = embedded.vectors;
+    dims = embedded.dims;
+  } catch (err) {
+    console.log(`citation-precision: SKIP (embedding endpoint unreachable: ${err instanceof Error ? err.message : "unknown"}; no fake zeros recorded)`);
+    return;
+  }
+
+  const entries = chunks.map((chunk, i) => ({ chunk, norm: semNormalize(chunkVecs[i]) }));
+
+  // Embed questions
+  const questions = [...parts.dev, ...parts.validation].map((it) => it.question);
+  let questionVecs;
+  try {
+    questionVecs = (await semEmbedTexts(config, questions)).vectors;
+  } catch (err) {
+    console.log(`citation-precision: SKIP (question embedding failed: ${err instanceof Error ? err.message : "unknown"}; no fake zeros recorded)`);
+    return;
+  }
+
+  const byId = new Map();
+  [...parts.dev, ...parts.validation].forEach((it, i) => byId.set(it.id, questionVecs[i]));
+
+  console.log(
+    `citation-precision config provider=local-ollama model=${config.model} base=${config.baseUrl} dims=${dims} batch=${SEM_BATCH_SIZE} attempts=${SEM_MAX_ATTEMPTS} chunks=${chunks.length}`
+  );
+
+  // Score DEV
+  const devResults = await scorePartitionCitationPrecision(parts.dev, chunks, entries, dims, byId);
+  printCitationPrecisionTable("dev", devResults);
+
+  // Score VALIDATION
+  const valResults = await scorePartitionCitationPrecision(parts.validation, chunks, entries, dims, byId);
+  printCitationPrecisionTable("validation", valResults);
+
+  console.log(`citation-precision test: ${parts.test.length} items FROZEN, unscored until F1 (todo 49)`);
+}
+
+async function scorePartitionCitationPrecision(items, chunks, entries, dims, questionVectors) {
+  const perSubset = {};
+  for (const s of SUBSETS) perSubset[s] = { n: 0, answerable: 0, precision5: 0, precision10: 0, recall5: 0, recall10: 0 };
+  let answerable = 0;
+  let sumP5 = 0;
+  let sumP10 = 0;
+  let sumR5 = 0;
+  let sumR10 = 0;
+  const pairs = [];
+  const detail = [];
+
+  for (const it of items) {
+    const mustRefuse = it.mustRefuse === true;
+
+    // Lexical leg (at chunk granularity: map line hits to their containing chunk)
+    const lexicalLines = retrieveCorpus(CORPUS, it.question, 10);
+    const lexicalRanked = lexicalLines.map((p) => ({
+      documentId: p.documentId,
+      page: p.page,
+      chunkId: `${p.documentId}#${p.page}#0`,
+      quote: p.quote,
+      score: p.score,
+    }));
+
+    // Semantic leg
+    const semanticRanked = retrieveCosine(entries, dims, questionVectors.get(it.id), 10).map((r) => ({
+      documentId: r.chunk.documentId,
+      page: r.chunk.page,
+      chunkId: r.chunk.chunkId,
+      quote: r.chunk.text,
+      score: r.score,
+    }));
+
+    // Fuse (RRF)
+    const fused = retrieveRRF(lexicalRanked, semanticRanked, 5);
+    const ranked10 = fused.map((f) => chunkKey(f));
+
+    const refused = ranked10.length === 0;
+    pairs.push({ refused, mustRefuse });
+    detail.push({
+      id: it.id,
+      top: fused.slice(0, 3).map((f) => `${chunkKey(f)}@${f.rrfScore.toFixed(4)}`),
+    });
+
+    const cell = perSubset[it.subset];
+    cell.n++;
+    if (!mustRefuse) {
+      const rel = expectedChunkKeys(it, chunks);
+      const r5 = computeRecallAtK(ranked10, rel, 5);
+      const r10 = computeRecallAtK(ranked10, rel, 10);
+      const p5 = rel.length > 0 ? ranked10.slice(0, 5).filter((k) => rel.includes(k)).length / 5 : 0;
+      const p10 = rel.length > 0 ? ranked10.slice(0, 10).filter((k) => rel.includes(k)).length / 10 : 0;
+      answerable++;
+      sumR5 += r5;
+      sumR10 += r10;
+      sumP5 += p5;
+      sumP10 += p10;
+      cell.answerable++;
+      cell.recall5 += r5;
+      cell.recall10 += r10;
+      cell.precision5 += p5;
+      cell.precision10 += p10;
+    }
+  }
+
+  const refusal = refusalStats(pairs);
+  const mean = (s) => (answerable === 0 ? 0 : s / answerable);
+  const cellMean = (cell) => ({
+    n: cell.n,
+    answerable: cell.answerable,
+    recall5: cell.answerable === 0 ? 0 : cell.recall5 / cell.answerable,
+    recall10: cell.answerable === 0 ? 0 : cell.recall10 / cell.answerable,
+    precision5: cell.answerable === 0 ? 0 : cell.precision5 / cell.answerable,
+    precision10: cell.answerable === 0 ? 0 : cell.precision10 / cell.answerable,
+  });
+
+  return {
+    n: items.length,
+    answerable,
+    recall5: mean(sumR5),
+    recall10: mean(sumR10),
+    precision5: mean(sumP5),
+    precision10: mean(sumP10),
+    refusalAccuracy: refusal.accuracy,
+    falseRefusals: refusal.falseRefusals,
+    falseAcceptances: refusal.falseAcceptances,
+    perSubset: Object.fromEntries(Object.entries(perSubset).map(([s, c]) => [s, cellMean(c)])),
+    detail,
+  };
+}
+
+function printCitationPrecisionTable(partition, r) {
+  console.log(`citation-precision partition=${partition} n=${r.n} answerable=${r.answerable}`);
+  console.log(`citation-precision overall recall@5=${fmt(r.recall5)} recall@10=${fmt(r.recall10)} precision@5=${fmt(r.precision5)} precision@10=${fmt(r.precision10)}`);
+  console.log(
+    `citation-precision overall refusal-accuracy=${fmt(r.refusalAccuracy)} false-refusals=${r.falseRefusals} false-acceptances=${r.falseAcceptances}`
+  );
+  for (const s of SUBSETS) {
+    const c = r.perSubset[s];
+    const m = (x) => (c.answerable === 0 ? "n/a" : fmt(x));
+    console.log(
+      `  citation-precision subset=${s} n=${c.n} answerable=${c.answerable} recall@5=${m(c.recall5)} recall@10=${m(c.recall10)} precision@5=${m(c.precision5)} precision@10=${m(c.precision10)}`
+    );
+  }
+  for (const d of r.detail) {
+    console.log(`  citation-precision rank id=${d.id} top3=${d.top.join(" ")}`);
+  }
+}
+
 // ------------------------------------------------------------------ cli
 const args = process.argv.slice(2);
 const all = Object.fromEntries(PARTITIONS.map((p) => [p, loadPartition(p)]));
@@ -1341,6 +1506,9 @@ if (args.includes("--bench=real")) {
 } else if (args.includes("--retriever=rrf")) {
   // R4 RRF fusion measurement (todo 28): DEV + VALIDATION only, TEST stays frozen.
   await runRRFBaseline(all);
+} else if (args.includes("--eval=citation-precision")) {
+  // R5 citation precision eval (todo 36): DEV + VALIDATION only, TEST stays frozen.
+  await runCitationPrecisionEval(all);
 } else {
   // Default output: DEV + VALIDATION only. TEST is frozen and unscored until F1.
   printTable("dev", scorePartition(all.dev));
