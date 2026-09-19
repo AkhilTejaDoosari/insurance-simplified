@@ -753,3 +753,145 @@ Insurer-questions flow (Flow 4) already surfaces gap-tied follow-ups (E2E
 green). Contact-info audit: no `phone`/`tel:`/`http` rendering exists in
 `ComparisonTable.tsx` or any component — unsourced contacts cannot render
 (vacuously satisfied; P1 todo 46 adds the explicit guard test).
+
+## P2 Todo 59 — retriever survivor experiment on EVAL_V2 (eval-only)
+
+A/B/C comparison on V2 DEV (36) + V2 VALIDATION (12). V2 TEST (12) NEVER
+scored. No production code, scoring logic, golden files, `.env`, PDFs, or
+`.omo`/`.opencode` touched — this todo appends this section only. R4
+history stays truthful: semantic-only SELECTED, RRF rejected, rerank
+skipped (headroom 0.0).
+
+### Leg-flag mapping (read from `evals/run.mjs` CLI dispatch before running)
+
+- Leg A (baseline): `node evals/run.mjs --eval=v2` — V2 DEV + VALIDATION
+  via the line-overlap mirror. This is the runnable in-repo baseline for
+  subsequent P2 todos.
+- Leg B (pgvector): NO `--leg=pgvector` flag exists in `evals/run.mjs`
+  (`grep -c 'pgvector|--leg=pgvector' evals/run.mjs` -> `0`; only
+  `--leg=semantic`, `--leg=fts`/`--retriever=fts` exist). There is
+  therefore no pgvector scoring path to exercise — and per
+  `app/lib/rag/postgres-vector.ts` the adapter throws
+  `PostgresUnconfiguredError` without `SUPABASE_URL` +
+  `SUPABASE_SERVICE_KEY`, which are unset here (verified in env AND
+  `.env.local`, names only, values never printed). Passing a nonexistent
+  `--leg=pgvector` flag would fall through to the DEFAULT golden-v1
+  branch and print misleading numbers, so it was deliberately NOT run.
+  Leg B = SKIP (no leg in runner + no creds). No zeros recorded.
+- Leg C (FTS): `--leg=fts` / `--retriever=fts` exists (`runFtsLeg`,
+  golden-v1 corpus + V2-agnostic DB leg over fixture chunks). Run with
+  both spellings — both print the honest SKIP below verbatim (exit 0).
+- Leg D (fusion): UNSCORED-by-prerequisite — fusion C is scored only if
+  BOTH B and C produce real numbers. B has no runner path and C SKIPped,
+  so no fusion was attempted or fabricated.
+- Out of scope (not run, documented only): `--leg=semantic` scores the
+  GOLDEN-v1 corpus only — no V2 semantic path exists in the runner — so
+  it cannot enter a V2 survivor decision.
+
+### Leg A raw output (`node evals/run.mjs --eval=v2`, verbatim)
+
+```
+partition=v2-dev n=36 answerable=31
+overall recall@5=0.9677 recall@10=1.0000 mrr@5=0.8575 mrr@10=0.8629
+overall refusal-accuracy=1.0000 false-refusals=0 false-acceptances=0
+  subset=answerable n=13 answerable=13 recall@5=1.0000 recall@10=1.0000 mrr@5=0.8654 mrr@10=0.8654
+  subset=paraphrase n=7 answerable=7 recall@5=0.8571 recall@10=1.0000 mrr@5=0.8571 mrr@10=0.8810
+  subset=multi-doc n=6 answerable=6 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  subset=distractor n=5 answerable=5 recall@5=1.0000 recall@10=1.0000 mrr@5=0.6667 mrr@10=0.6667
+  subset=must-refuse n=5 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+partition=v2-validation n=12 answerable=10
+overall recall@5=1.0000 recall@10=1.0000 mrr@5=0.8500 mrr@10=0.8500
+overall refusal-accuracy=1.0000 false-refusals=0 false-acceptances=0
+  subset=answerable n=4 answerable=4 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  subset=paraphrase n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+v2 test: 12 items FROZEN, V2 TEST MUST NOT BE SCORED until P2 FINAL AUDIT (todo 65)
+```
+
+### Leg B raw output (pgvector — SKIP, no runner path + no creds)
+
+```
+(no pgvector leg in evals/run.mjs; grep count 0. No command run — a
+nonexistent flag would fall through to default golden-v1 scoring.
+SUPABASE_URL_set=false SUPABASE_SERVICE_KEY_set=false, no SUPABASE_*
+names in .env.local. Per postgres-vector.ts, unconfigured persistence
+throws PostgresUnconfiguredError = SKIP, never fake success.)
+```
+
+### Leg C raw output (`node evals/run.mjs --leg=fts` AND `--retriever=fts`, verbatim, exit 0 both)
+
+```
+fts: SKIP (SUPABASE_URL + SUPABASE_SERVICE_KEY unset in env and .env.local; no fake zeros recorded)
+```
+
+### Leg D (fusion — UNSCORED-by-prerequisite)
+
+Leg B has no runner path and Leg C SKIPped: prerequisite "BOTH B and C
+produce real numbers" fails, so fusion is UNSCORED-by-prerequisite. No
+hybrid forced, no rerank forced (R4 rerank-skipped headroom 0.0 stands).
+
+### A/B/C/D comparison tables
+
+V2 DEV (n=36, answerable=31) — DIAGNOSIS ONLY, never decisive:
+
+| Leg | recall@5 | recall@10 | mrr@5 | mrr@10 | refusal-acc | FR | FA |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A lexical mirror (`--eval=v2`) | 0.9677 | 1.0000 | 0.8575 | 0.8629 | 1.0000 | 0 | 0 |
+| B pgvector | SKIP | SKIP | SKIP | SKIP | SKIP | SKIP | SKIP |
+| C FTS | SKIP | SKIP | SKIP | SKIP | SKIP | SKIP | SKIP |
+| D fusion | UNSCORED-by-prerequisite | — | — | — | — | — | — |
+
+V2 VALIDATION (n=12, answerable=10) — DECISIVE:
+
+| Leg | recall@5 | recall@10 | mrr@5 | mrr@10 | refusal-acc | FR | FA |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A lexical mirror (`--eval=v2`) | 1.0000 | 1.0000 | 0.8500 | 0.8500 | 1.0000 | 0 | 0 |
+| B pgvector | SKIP | SKIP | SKIP | SKIP | SKIP | SKIP | SKIP |
+| C FTS | SKIP | SKIP | SKIP | SKIP | SKIP | SKIP | SKIP |
+| D fusion | UNSCORED-by-prerequisite | — | — | — | — | — | — |
+
+precision@5: NOT emitted by the `--eval=v2` runner path (recall/MRR +
+refusal only) — recorded here as not-available, never fabricated. The
+only precision-emitting leg (`--eval=citation-precision`) is
+golden-v1-only and out of scope for a V2 survivor call.
+
+### Per-category notes (VALIDATION decisive; DEV diagnosis)
+
+Category<->subset mapping verified against the V2 files
+(`v2-MANIFEST.md` mapping holds exactly): direct+exact-term ->
+`answerable` (DEV 7+6=13, VAL 2+2=4), paraphrase -> `paraphrase` (7/2),
+multi-doc -> `multi-doc` (6/2), exclusion -> `distractor` (5/2),
+must-refuse -> `must-refuse` (5/2).
+
+- VALIDATION `answerable` (direct + exact-term: F-1, dollar amounts,
+  plan names, waiting-period, network name): recall@5/10 1.0000, MRR
+  0.7500. The FTS leg's raison d'etre (exact-surface recall) has NO
+  headroom here — recall is already 1.0000 on the lexical mirror.
+- VALIDATION `paraphrase`: 1.0000 / 0.7500 — no R0-style paraphrase
+  collapse on V2 (contrast golden-v1 R0 VALIDATION paraphrase 0.0000).
+- VALIDATION `multi-doc`: 1.0000 / 1.0000. VALIDATION `distractor`
+  (exclusion/authority): 1.0000 / 1.0000.
+- VALIDATION refusal: accuracy 1.0000, FR 0, FA 0 — the ceiling. Any
+  future challenger must not regress this (survivor rule below).
+- DEV diagnosis only: recall@5 0.9677 (one paraphrase miss in top-5,
+  recovered at top-10 -> 1.0000); lowest cell is DEV `distractor` MRR
+  0.6667; refusal 1.0000 (FR 0, FA 0). None of this decides anything.
+
+### Survivor rule applied (VALIDATION only)
+
+KEEP complexity only with useful VALIDATION improvement without
+refusal-safety regression. Legs B and C produced NO numbers (SKIP), so
+no VALIDATION improvement is demonstrated by any challenger; Leg A
+already sits at recall@5/10 1.0000 with refusal-accuracy 1.0000 (FA 0,
+FR 0). Forcing a hybrid on SKIP legs would add complexity for zero
+measured gain — explicitly rejected per the no-forced-hybrid rule.
+
+### SELECTED for subsequent todos: semantic-only (UNCHANGED from R4)
+
+R4 SELECTED (`semantic-only`, RRF rejected, rerank skipped headroom
+0.0) STANDS. The V2 lexical-mirror baseline above (`--eval=v2`) is the
+recorded reference for subsequent P2 todos; no runtime path changes.
+V2 TEST (12 items) remains FROZEN and UNSCORED until P2 FINAL AUDIT
+(todo 65).
