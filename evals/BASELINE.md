@@ -895,3 +895,15 @@ R4 SELECTED (`semantic-only`, RRF rejected, rerank skipped headroom
 recorded reference for subsequent P2 todos; no runtime path changes.
 V2 TEST (12 items) remains FROZEN and UNSCORED until P2 FINAL AUDIT
 (todo 65).
+
+## P2 Todo 60 — reranker headroom recheck (selected retriever: semantic-only)
+
+No reranker code written first, per plan. Headroom = MRR@10 − MRR@5 on the
+Todo-59-selected retriever (`--eval=v2` lexical-mirror reference):
+
+- DEV (n=36, diagnosis): 0.8629 − 0.8575 = 0.0054 (< 0.10)
+- VALIDATION (n=12, confirmation): 0.8500 − 0.8500 = 0.0 (< 0.10)
+
+Threshold remains >= 0.10. Outcome: SKIPPED WITH MEASURED JUSTIFICATION
+again — no reranker implemented, no resume keyword earned. Consistent with
+the R4 skip (headroom 0.0 on golden VALIDATION).
