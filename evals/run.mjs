@@ -1478,6 +1478,48 @@ function printCitationPrecisionTable(partition, r) {
   }
 }
 
+// ------------------------------------------------- EVAL V2 (P2 todos 54-55)
+// Fresh 60-case set: evals/v2-dev.json (36) + evals/v2-validation.json (12)
+// + evals/v2-test.json (12). Item shape mirrors golden (id/question/subset/
+// expected|mustRefuse) plus category/grounding/chunkKeys; see
+// evals/v2-MANIFEST.md for shas + category table. `--eval=v2` scores V2
+// DEV + VALIDATION only with the same line-overlap mirror. There is
+// intentionally NO V2 TEST scoring path: V2 TEST MUST NOT BE SCORED until
+// P2 FINAL AUDIT (todo 65).
+
+function loadV2Partition(name) {
+  const file = join(DIR, `v2-${name}.json`);
+  let raw;
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch (err) {
+    throw new Error(`eval: cannot read ${file}: ${err.message}`);
+  }
+  let items;
+  try {
+    items = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`eval: ${file} is not valid JSON: ${err.message}`);
+  }
+  if (!Array.isArray(items)) throw new Error(`eval: ${file} root must be an array`);
+  items.forEach((it, i) => validateEntry(file, i, it));
+  return items;
+}
+
+function runV2Eval() {
+  const dev = loadV2Partition("dev");
+  const validation = loadV2Partition("validation");
+  let testCount = 0;
+  try {
+    testCount = loadV2Partition("test").length;
+  } catch {
+    testCount = 0;
+  }
+  printTable("v2-dev", scorePartition(dev));
+  printTable("v2-validation", scorePartition(validation));
+  console.log(`v2 test: ${testCount} items FROZEN, V2 TEST MUST NOT BE SCORED until P2 FINAL AUDIT (todo 65)`);
+}
+
 // ------------------------------------------------------------------ cli
 const args = process.argv.slice(2);
 const all = Object.fromEntries(PARTITIONS.map((p) => [p, loadPartition(p)]));
@@ -1509,6 +1551,9 @@ if (args.includes("--bench=real")) {
 } else if (args.includes("--eval=citation-precision")) {
   // R5 citation precision eval (todo 36): DEV + VALIDATION only, TEST stays frozen.
   await runCitationPrecisionEval(all);
+} else if (args.includes("--eval=v2")) {
+  // EVAL V2 (P2 todos 54-55): V2 DEV + VALIDATION only, V2 TEST stays frozen.
+  runV2Eval();
 } else {
   // Default output: DEV + VALIDATION only. TEST is frozen and unscored until F1.
   printTable("dev", scorePartition(all.dev));
