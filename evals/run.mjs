@@ -33,6 +33,7 @@
 // exactly the answerQuestion() empty-passages branch. Refusal accuracy is
 // computed over ALL items; recall/MRR over answerable items only.
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -1520,6 +1521,243 @@ function runV2Eval() {
   console.log(`v2 test: ${testCount} items FROZEN, V2 TEST MUST NOT BE SCORED until P2 FINAL AUDIT (todo 65)`);
 }
 
+// ------------------------------------------------- FTS candidate leg
+// P2 FTS candidate measurement (todo 58): EVALUATION ONLY. Scores the
+// Postgres full-text leg (app/lib/rag/postgres-fts.ts retrieveFtsCandidate,
+// db/schema.sql fts_search_chunks: to_tsvector + websearch_to_tsquery +
+// ts_rank) against the fixture corpus. The runner seeds the 4 fixture
+// chunks under a throwaway owner_session scope, issues one
+// fts_search_chunks RPC per DEV/VALIDATION question, scores chunk-unit
+// containment (same norm(), same expectedChunkKeys()), then deletes the
+// scope (ON DELETE CASCADE). Target surface forms: F-1, OPT, PPO,
+// precertification, amounts, %, plan names, visa codes, dates.
+// WITHOUT SUPABASE_URL + SUPABASE_SERVICE_KEY (env or .env.local) this
+// prints SKIP (never fake zeros) and never scores TEST (DEV + VALIDATION
+// only). Default output (no flag) is byte-identical; this path only runs
+// with --leg=fts or --retriever=fts. Production answer paths
+// (answerQuestionSemantic/answerViaLlm) are untouched.
+
+function loadSupabaseEnv() {
+  const fromFile = {};
+  try {
+    const raw = readFileSync(join(DIR, "..", ".env.local"), "utf8");
+    for (const line of raw.split(/\n/)) {
+      const t = line.trim();
+      if (!t || t.startsWith("#")) continue;
+      const eq = t.indexOf("=");
+      if (eq < 0) continue;
+      let v = t.slice(eq + 1).trim();
+      if (v.length >= 2 && ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))) {
+        v = v.slice(1, -1);
+      }
+      fromFile[t.slice(0, eq).trim()] = v;
+    }
+  } catch {
+    // No .env.local: fall back to process env only.
+  }
+  const url = process.env.SUPABASE_URL ?? fromFile.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY ?? fromFile.SUPABASE_SERVICE_KEY;
+  if (!url || !serviceKey) return null;
+  return { url: url.replace(/\/$/, ""), serviceKey };
+}
+
+function ftsHeaders(env) {
+  return {
+    apikey: env.serviceKey,
+    authorization: `Bearer ${env.serviceKey}`,
+    "content-type": "application/json",
+  };
+}
+
+async function ftsRest(env, path, init) {
+  const res = await fetch(`${env.url}${path}`, {
+    ...init,
+    headers: { ...ftsHeaders(env), ...((init && init.headers) ?? {}) },
+  });
+  if (!res.ok) {
+    throw new Error(`fts leg: ${init?.method ?? "GET"} ${path} -> status ${res.status}`);
+  }
+  return res;
+}
+
+function sha16hex(input) {
+  return createHash("sha256").update(input, "utf8").digest("hex").slice(0, 16);
+}
+
+function scorePartitionFts(items, chunks, rankedById) {
+  const perSubset = {};
+  for (const s of SUBSETS) perSubset[s] = { n: 0, answerable: 0, recall5: 0, recall10: 0, mrr5: 0, mrr10: 0 };
+  let answerable = 0;
+  let sumR5 = 0;
+  let sumR10 = 0;
+  let sumM5 = 0;
+  let sumM10 = 0;
+  const pairs = [];
+  const detail = [];
+  for (const it of items) {
+    const mustRefuse = it.mustRefuse === true;
+    const ranked10 = rankedById.get(it.id) ?? [];
+    const refused = ranked10.length === 0;
+    pairs.push({ refused, mustRefuse });
+    detail.push({ id: it.id, top: ranked10.slice(0, 3) });
+    const cell = perSubset[it.subset];
+    cell.n++;
+    if (!mustRefuse) {
+      const rel = expectedChunkKeys(it, chunks);
+      const r5 = computeRecallAtK(ranked10, rel, 5);
+      const r10 = computeRecallAtK(ranked10, rel, 10);
+      const m5 = computeMrrAtK(ranked10, rel, 5);
+      const m10 = computeMrrAtK(ranked10, rel, 10);
+      answerable++;
+      sumR5 += r5;
+      sumR10 += r10;
+      sumM5 += m5;
+      sumM10 += m10;
+      cell.answerable++;
+      cell.recall5 += r5;
+      cell.recall10 += r10;
+      cell.mrr5 += m5;
+      cell.mrr10 += m10;
+    }
+  }
+  const refusal = refusalStats(pairs);
+  const mean = (s) => (answerable === 0 ? 0 : s / answerable);
+  const cellMean = (cell) => ({
+    n: cell.n,
+    answerable: cell.answerable,
+    recall5: cell.answerable === 0 ? 0 : cell.recall5 / cell.answerable,
+    recall10: cell.answerable === 0 ? 0 : cell.recall10 / cell.answerable,
+    mrr5: cell.answerable === 0 ? 0 : cell.mrr5 / cell.answerable,
+    mrr10: cell.answerable === 0 ? 0 : cell.mrr10 / cell.answerable,
+  });
+  return {
+    n: items.length,
+    answerable,
+    recall5: mean(sumR5),
+    recall10: mean(sumR10),
+    mrr5: mean(sumM5),
+    mrr10: mean(sumM10),
+    refusalAccuracy: refusal.accuracy,
+    falseRefusals: refusal.falseRefusals,
+    falseAcceptances: refusal.falseAcceptances,
+    perSubset: Object.fromEntries(Object.entries(perSubset).map(([s, c]) => [s, cellMean(c)])),
+    detail,
+  };
+}
+
+function printFtsTable(partition, r) {
+  console.log(`fts partition=${partition} n=${r.n} answerable=${r.answerable}`);
+  console.log(`fts overall recall@5=${fmt(r.recall5)} recall@10=${fmt(r.recall10)} mrr@5=${fmt(r.mrr5)} mrr@10=${fmt(r.mrr10)}`);
+  console.log(
+    `fts overall refusal-accuracy=${fmt(r.refusalAccuracy)} false-refusals=${r.falseRefusals} false-acceptances=${r.falseAcceptances}`
+  );
+  for (const s of SUBSETS) {
+    const c = r.perSubset[s];
+    const m = (x) => (c.answerable === 0 ? "n/a" : fmt(x));
+    console.log(
+      `  fts subset=${s} n=${c.n} answerable=${c.answerable} recall@5=${m(c.recall5)} recall@10=${m(c.recall10)} mrr@5=${m(c.mrr5)} mrr@10=${m(c.mrr10)}`
+    );
+  }
+  for (const d of r.detail) {
+    console.log(`  fts rank id=${d.id} top3=${d.top.join(" ")}`);
+  }
+}
+
+async function runFtsLeg(parts) {
+  const env = loadSupabaseEnv();
+  if (!env) {
+    console.log("fts: SKIP (SUPABASE_URL + SUPABASE_SERVICE_KEY unset in env and .env.local; no fake zeros recorded)");
+    return;
+  }
+  const chunks = chunkCorpusMirror(CORPUS);
+  const scope = `eval-fts-${Date.now().toString(36)}`;
+  const rankedById = new Map();
+  try {
+    await ftsRest(env, "/rest/v1/documents", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify(
+        CORPUS.map((doc) => ({
+          id: `${scope}/${doc.documentId}`,
+          owner_session: scope,
+          filename: doc.documentId,
+          sha256: "eval-fixture",
+          status: "active",
+        }))
+      ),
+    });
+    await ftsRest(env, "/rest/v1/pages", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify(
+        CORPUS.flatMap((doc) =>
+          doc.pages.map((text, i) => ({
+            document_id: `${scope}/${doc.documentId}`,
+            page_number: i + 1,
+            text,
+            text_hash: sha16hex(text.replace(/\s+/g, " ").trim()),
+          }))
+        )
+      ),
+    });
+    await ftsRest(env, "/rest/v1/chunks", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates" },
+      body: JSON.stringify(
+        chunks.map((c) => ({
+          chunk_id: `${scope}/${chunkKey(c)}`,
+          document_id: `${scope}/${c.documentId}`,
+          page_number: c.page,
+          chunk_order: c.order,
+          text: c.text,
+          token_count: c.text.split(/\s+/).filter(Boolean).length,
+          char_start: 0,
+          char_end: c.text.length,
+          section: null,
+          text_hash: sha16hex(c.text.replace(/\s+/g, " ").trim()),
+          embedding: null,
+        }))
+      ),
+    });
+    for (const it of [...parts.dev, ...parts.validation]) {
+      const res = await ftsRest(env, "/rest/v1/rpc/fts_search_chunks", {
+        method: "POST",
+        body: JSON.stringify({
+          query_text: it.question.replace(/\s+/g, " ").trim().slice(0, 500),
+          match_count: 10,
+          filter_document_id: null,
+          filter_session: scope,
+        }),
+      });
+      const rows = await res.json();
+      // Mirror rankFtsRows(): rank DESC, chunkId ASC, then strip the scope prefix.
+      const keys = (Array.isArray(rows) ? rows : [])
+        .slice()
+        .sort((a, b) => b.rank - a.rank || (a.chunk_id < b.chunk_id ? -1 : 1))
+        .map((r) => String(r.chunk_id).replace(`${scope}/`, ""))
+        .slice(0, 10);
+      rankedById.set(it.id, keys);
+    }
+  } catch (err) {
+    console.log(`fts: SKIP (Supabase FTS leg failed: ${err instanceof Error ? err.message : "unknown"}; no fake zeros recorded)`);
+    return;
+  } finally {
+    try {
+      await ftsRest(env, `/rest/v1/documents?owner_session=eq.${encodeURIComponent(scope)}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // Cleanup is best-effort; the scope prefix keeps strays identifiable.
+    }
+  }
+  console.log(
+    `ftsconfig rpc=fts_search_chunks tsquery=websearch_to_tsquery rank=ts_rank scope=${scope} chunks=${chunks.length}`
+  );
+  printFtsTable("dev", scorePartitionFts(parts.dev, chunks, rankedById));
+  printFtsTable("validation", scorePartitionFts(parts.validation, chunks, rankedById));
+  console.log(`fts test: ${parts.test.length} items FROZEN, unscored until F1 (todo 49)`);
+}
+
 // ------------------------------------------------------------------ cli
 const args = process.argv.slice(2);
 const all = Object.fromEntries(PARTITIONS.map((p) => [p, loadPartition(p)]));
@@ -1554,6 +1792,9 @@ if (args.includes("--bench=real")) {
 } else if (args.includes("--eval=v2")) {
   // EVAL V2 (P2 todos 54-55): V2 DEV + VALIDATION only, V2 TEST stays frozen.
   runV2Eval();
+} else if (args.includes("--leg=fts") || args.includes("--retriever=fts")) {
+  // P2 FTS candidate measurement (todo 58): DEV + VALIDATION only, TEST stays frozen.
+  await runFtsLeg(all);
 } else {
   // Default output: DEV + VALIDATION only. TEST is frozen and unscored until F1.
   printTable("dev", scorePartition(all.dev));
