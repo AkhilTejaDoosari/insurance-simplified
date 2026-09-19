@@ -9,6 +9,7 @@ import { embedTexts, isEmbeddingConfigured } from "@/app/lib/rag/embeddings";
 import { InMemoryCosineIndex } from "@/app/lib/rag/cosine-index";
 import { fuseRRF, fuseSingleLeg, retrieveFused, type FusedPassage } from "@/app/lib/rag/fusion";
 import type { RankedPassage } from "@/app/lib/rag/embeddings";
+import { verifyAnswerClaims } from "@/app/lib/evidence-verification";
 
 export interface RagDocument {
   documentId: string;
@@ -278,7 +279,8 @@ function buildRetrievalPrompt(
 
 /** LLM answer using retrieval-fed context (selected retriever: semantic-only).
  *  Empty retrieval -> refusal WITHOUT LLM call (short-circuit).
- *  Budget enforced: lowest-rank chunks dropped first, page tags intact. */
+ *  Budget enforced: lowest-rank chunks dropped first, page tags intact.
+ *  Post-generation: claim-to-citation verification (refusal on any failure, no repair). */
 export async function answerViaLlm(
   documents: RagDocument[],
   question: string
@@ -298,7 +300,33 @@ export async function answerViaLlm(
   if (raw.cantAnswer === true) {
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
   }
-  return validateChatResponse({ schemaVersion: "v1", kind: "answer", ...(raw as object) });
+
+  const response = validateChatResponse({ schemaVersion: "v1", kind: "answer", ...(raw as object) });
+
+  // validateChatResponse guarantees kind === "answer" here (cantAnswer handled above)
+  const answerResponse = response as { schemaVersion: "v1"; kind: "answer"; answerText: string; citations: ChatCitation[] };
+
+  // Convert passages to supplied chunks format for verification
+  const suppliedChunks = passages.map((p) => ({
+    documentId: p.documentId,
+    page: p.page,
+    quote: p.quote,
+  }));
+
+  // Verify claims: (a) substantive sentences covered, (b) citations in supplied context, (c) citations verify vs source
+  const verification = verifyAnswerClaims(
+    answerResponse.answerText,
+    answerResponse.citations,
+    suppliedChunks,
+    documents
+  );
+
+  if (!verification.ok) {
+    // ANY failure -> fixed refusal. NO repair.
+    return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+  }
+
+  return answerResponse;
 }
 
 /** Validate a payload against chat-api v1. Throws on violation. */

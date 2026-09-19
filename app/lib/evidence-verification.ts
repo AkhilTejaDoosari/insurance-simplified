@@ -263,3 +263,114 @@ export function checkDisplayGrounding(
     rationale: `Display material token(s) ${listed} not supported by verified citations for fact "${factName}".`,
   };
 }
+
+/** R5 claim-to-citation verifier (refusal only, no repair).
+ *  Verifies three conditions:
+ *  (a) every substantive generated sentence is covered by >=1 citation
+ *  (b) every emitted citation occurs in the SUPPLIED chunk context
+ *  (c) every citation resolves via evidence-verification against the ORIGINAL page
+ *  ANY failure -> fixed refusal. No repair.
+ */
+export interface VerifyClaimsResult {
+  ok: boolean;
+  rationale?: string;
+}
+
+/** Split text into sentences using regex boundaries. */
+function splitSentences(text: string): string[] {
+  return text
+    .split(/\n+|(?<=[.!?])\s+(?=[A-Z0-9"(])/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Count whitespace-separated tokens in a segment. */
+function countTokens(segment: string): number {
+  return segment.split(/\s+/).filter(Boolean).length;
+}
+
+/** Normalize text for substring matching: lowercase, collapse whitespace, strip punctuation. */
+function normalizeForClaim(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Check if a normalized sentence is covered by any normalized canonical quote. */
+function isSentenceCovered(sentence: string, canonicalQuotes: string[]): boolean {
+  const normSentence = normalizeForClaim(sentence);
+  if (!normSentence) return false;
+  for (const quote of canonicalQuotes) {
+    const normQuote = normalizeForClaim(quote);
+    if (normQuote.includes(normSentence)) return true;
+    // Check token-level coverage: every non-stopword token in sentence appears in quote
+    const sentenceTokens = normSentence.split(/\s+/).filter((t) => t.length > 2);
+    if (sentenceTokens.length === 0) continue;
+    const allTokensInQuote = sentenceTokens.every((t) => normQuote.includes(t));
+    if (allTokensInQuote) return true;
+  }
+  return false;
+}
+
+/** Verify claims in answerText against supplied citations and chunk context.
+ *  Returns { ok: true } if all checks pass, else { ok: false, rationale }.
+ *  Any failure -> fixed refusal. No repair.
+ */
+export function verifyAnswerClaims(
+  answerText: string,
+  citations: Array<{ documentId: string; page: number; quote: string }>,
+  suppliedChunks: Array<{ documentId: string; page: number; quote: string }>,
+  sessionDocuments: Array<{ documentId: string; pages: string[] }>
+): VerifyClaimsResult {
+  // (b) Every emitted citation must occur in the SUPPLIED chunk context
+  for (const citation of citations) {
+    const inSupplied = suppliedChunks.some(
+      (c) =>
+        c.documentId === citation.documentId &&
+        c.page === citation.page &&
+        c.quote.includes(citation.quote)
+    );
+    if (!inSupplied) {
+      return { ok: false, rationale: `Citation not in supplied context: ${citation.documentId} p${citation.page}` };
+    }
+  }
+
+  // (c) Every citation must verify against the original page
+  const canonicalQuotes: string[] = [];
+  for (const citation of citations) {
+    const doc = sessionDocuments.find((d) => d.documentId === citation.documentId);
+    if (!doc) {
+      return { ok: false, rationale: `Citation document not found: ${citation.documentId}` };
+    }
+    if (!Number.isInteger(citation.page) || citation.page < 1 || citation.page > doc.pages.length) {
+      return { ok: false, rationale: `Citation page out of range: ${citation.documentId} p${citation.page}` };
+    }
+    const pageText = doc.pages[citation.page - 1];
+    if (typeof pageText !== "string" || !pageText.trim()) {
+      return { ok: false, rationale: `Citation page empty: ${citation.documentId} p${citation.page}` };
+    }
+    if (typeof citation.quote !== "string" || !citation.quote.trim()) {
+      return { ok: false, rationale: `Citation quote empty` };
+    }
+    // Simple exact normalized containment check
+    const normPage = normalizeForClaim(pageText);
+    const normQuote = normalizeForClaim(citation.quote);
+    if (!normPage.includes(normQuote)) {
+      return { ok: false, rationale: `Citation not found in source page: ${citation.documentId} p${citation.page}` };
+    }
+    canonicalQuotes.push(citation.quote);
+  }
+
+  // (a) Every substantive generated sentence must be covered by >=1 citation
+  const sentences = splitSentences(answerText);
+  for (const sentence of sentences) {
+    if (countTokens(sentence) < 4) continue; // non-substantive
+    if (!isSentenceCovered(sentence, canonicalQuotes)) {
+      return { ok: false, rationale: `Unsupported claim: "${sentence}"` };
+    }
+  }
+
+  return { ok: true };
+}
