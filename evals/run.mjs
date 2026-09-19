@@ -562,14 +562,20 @@ function retrieveChunks(chunks, question, maxPassages = 10) {
 }
 
 // An expected passage maps to every same-doc+page chunk whose normalized
-// text contains it (with 1 chunk/page this is exactly one chunk).
+// text contains it. With 1 chunk/page this is exactly one chunk per passage.
+// Multiple expected passages on the same page map to the same chunk;
+// we deduplicate by chunkKey to avoid inflating recall.
 function expectedChunkKeys(item, chunks) {
-  return item.expected.flatMap((ex) => {
+  const keys = new Set();
+  for (const ex of item.expected) {
     const anchor = norm(ex.passage);
-    return chunks
-      .filter((c) => c.documentId === ex.doc && c.page === ex.page && norm(c.text).includes(anchor))
-      .map(chunkKey);
-  });
+    for (const c of chunks) {
+      if (c.documentId === ex.doc && c.page === ex.page && norm(c.text).includes(anchor)) {
+        keys.add(chunkKey(c));
+      }
+    }
+  }
+  return Array.from(keys);
 }
 
 function scorePartitionChunks(items, chunks) {
@@ -1075,6 +1081,238 @@ async function runSemanticLeg(parts) {
   console.log(`semantic test: ${parts.test.length} items FROZEN, unscored until F1 (todo 49)`);
 }
 
+// ------------------------------------------------- RRF fusion
+// R4 RRF fusion measurement (todo 28): fuses lexical (line-overlap) + semantic
+// (cosine) legs using RRF with k=60. Per-leg top-10 -> fused top-5. DEV +
+// VALIDATION only, TEST stays frozen. Mirrors app/lib/rag/fusion.ts exactly.
+
+const RRF_K = 60;
+
+function fuseRRF(lexicalTop10, semanticTop10, maxFused = 5) {
+  const k = RRF_K;
+  const fusedMap = new Map();
+
+  for (let i = 0; i < lexicalTop10.length; i++) {
+    const p = lexicalTop10[i];
+    const key = p.chunkId;
+    const existing = fusedMap.get(key);
+    if (existing) {
+      existing.bm25Rank = i;
+    } else {
+      fusedMap.set(key, { passage: p, bm25Rank: i });
+    }
+  }
+
+  for (let i = 0; i < semanticTop10.length; i++) {
+    const p = semanticTop10[i];
+    const key = p.chunkId;
+    const existing = fusedMap.get(key);
+    if (existing) {
+      existing.cosineRank = i;
+    } else {
+      fusedMap.set(key, { passage: p, cosineRank: i });
+    }
+  }
+
+  const scored = [];
+  for (const { passage, bm25Rank, cosineRank } of fusedMap.values()) {
+    let rrfScore = 0;
+    if (bm25Rank !== undefined) {
+      rrfScore += 1 / (k + bm25Rank + 1);
+    }
+    if (cosineRank !== undefined) {
+      rrfScore += 1 / (k + cosineRank + 1);
+    }
+    // Get order from semantic leg if available (passage.chunk.order), else 0
+    const order = passage.chunk?.order ?? 0;
+    scored.push({
+      ...passage,
+      docId: passage.documentId,
+      rank: -1,
+      rrfScore,
+      bm25Rank,
+      cosineRank,
+      order,
+    });
+  }
+
+  scored.sort((a, b) => {
+    if (b.rrfScore !== a.rrfScore) return b.rrfScore - a.rrfScore;
+    if (a.chunkId !== b.chunkId) return a.chunkId < b.chunkId ? -1 : 1;
+    if (a.documentId !== b.documentId) return a.documentId < b.documentId ? -1 : 1;
+    return a.page - b.page;
+  });
+
+  const kOut = Math.max(0, Math.min(maxFused, scored.length));
+  return scored.slice(0, kOut).map((p, rank) => ({ ...p, rank }));
+}
+
+function retrieveRRF(lexicalRanked, semanticRanked, maxPassages = 5) {
+  return fuseRRF(lexicalRanked.slice(0, 10), semanticRanked.slice(0, 10), maxPassages);
+}
+
+async function runRRFBaseline(parts) {
+  // Load embedding config
+  const config = loadEmbeddingEnv();
+  if (!config) {
+    console.log("rrf: SKIP (EMBEDDING_BASE_URL + EMBEDDING_API_KEY unset in env and .env.local; no fake zeros recorded)");
+    return;
+  }
+
+  // Build chunk corpus (same as semantic leg)
+  const chunks = chunkCorpusMirror(CORPUS).map((c) => ({ ...c, chunkId: chunkKey(c) }));
+
+  // Embed chunks
+  let chunkVecs;
+  let dims;
+  try {
+    const embedded = await semEmbedTexts(config, chunks.map((c) => c.text));
+    chunkVecs = embedded.vectors;
+    dims = embedded.dims;
+  } catch (err) {
+    console.log(`rrf: SKIP (embedding endpoint unreachable: ${err instanceof Error ? err.message : "unknown"}; no fake zeros recorded)`);
+    return;
+  }
+
+  const entries = chunks.map((chunk, i) => ({ chunk, norm: semNormalize(chunkVecs[i]) }));
+
+  // Embed questions
+  const questions = [...parts.dev, ...parts.validation].map((it) => it.question);
+  let questionVecs;
+  try {
+    questionVecs = (await semEmbedTexts(config, questions)).vectors;
+  } catch (err) {
+    console.log(`rrf: SKIP (question embedding failed: ${err instanceof Error ? err.message : "unknown"}; no fake zeros recorded)`);
+    return;
+  }
+
+  const byId = new Map();
+  [...parts.dev, ...parts.validation].forEach((it, i) => byId.set(it.id, questionVecs[i]));
+
+  console.log(
+    `rrfconfig provider=local-ollama model=${config.model} base=${config.baseUrl} dims=${dims} batch=${SEM_BATCH_SIZE} attempts=${SEM_MAX_ATTEMPTS} chunks=${chunks.length} k=${RRF_K}`
+  );
+
+  // Score DEV
+  const devResults = scorePartitionRRF(parts.dev, chunks, entries, dims, byId);
+  printRRFTable("dev", devResults);
+
+  // Score VALIDATION
+  const valResults = scorePartitionRRF(parts.validation, chunks, entries, dims, byId);
+  printRRFTable("validation", valResults);
+
+  console.log(`rrf test: ${parts.test.length} items FROZEN, unscored until F1 (todo 49)`);
+}
+
+function scorePartitionRRF(items, chunks, entries, dims, questionVectors) {
+  const perSubset = {};
+  for (const s of SUBSETS) perSubset[s] = { n: 0, answerable: 0, recall5: 0, recall10: 0, mrr5: 0, mrr10: 0 };
+  let answerable = 0;
+  let sumR5 = 0;
+  let sumR10 = 0;
+  let sumM5 = 0;
+  let sumM10 = 0;
+  const pairs = [];
+  const detail = [];
+
+  for (const it of items) {
+    const mustRefuse = it.mustRefuse === true;
+
+    // Lexical leg (at chunk granularity: map line hits to their containing chunk)
+    const lexicalLines = retrieveCorpus(CORPUS, it.question, 10);
+    const lexicalRanked = lexicalLines.map((p) => ({
+      documentId: p.documentId,
+      page: p.page,
+      chunkId: `${p.documentId}#${p.page}#0`, // chunkKey format: doc#page#order (0 = only chunk per page in fixtures)
+      quote: p.quote,
+      score: p.score,
+    }));
+
+    // Semantic leg
+    const semanticRanked = retrieveCosine(entries, dims, questionVectors.get(it.id), 10).map((r) => ({
+      documentId: r.chunk.documentId,
+      page: r.chunk.page,
+      chunkId: r.chunk.chunkId,
+      quote: r.chunk.text,
+      score: r.score,
+    }));
+
+    // Fuse
+    const fused = retrieveRRF(lexicalRanked, semanticRanked, 5);
+    const ranked10 = fused.map((f) => chunkKey(f));
+
+    const refused = ranked10.length === 0;
+    pairs.push({ refused, mustRefuse });
+    detail.push({
+      id: it.id,
+      top: fused.slice(0, 3).map((f) => `${chunkKey(f)}@${f.rrfScore.toFixed(4)}`),
+    });
+
+    const cell = perSubset[it.subset];
+    cell.n++;
+    if (!mustRefuse) {
+      const rel = expectedChunkKeys(it, chunks);
+      const r5 = computeRecallAtK(ranked10, rel, 5);
+      const r10 = computeRecallAtK(ranked10, rel, 10);
+      const m5 = computeMrrAtK(ranked10, rel, 5);
+      const m10 = computeMrrAtK(ranked10, rel, 10);
+      answerable++;
+      sumR5 += r5;
+      sumR10 += r10;
+      sumM5 += m5;
+      sumM10 += m10;
+      cell.answerable++;
+      cell.recall5 += r5;
+      cell.recall10 += r10;
+      cell.mrr5 += m5;
+      cell.mrr10 += m10;
+    }
+  }
+
+  const refusal = refusalStats(pairs);
+  const mean = (s) => (answerable === 0 ? 0 : s / answerable);
+  const cellMean = (cell) => ({
+    n: cell.n,
+    answerable: cell.answerable,
+    recall5: cell.answerable === 0 ? 0 : cell.recall5 / cell.answerable,
+    recall10: cell.answerable === 0 ? 0 : cell.recall10 / cell.answerable,
+    mrr5: cell.answerable === 0 ? 0 : cell.mrr5 / cell.answerable,
+    mrr10: cell.answerable === 0 ? 0 : cell.mrr10 / cell.answerable,
+  });
+
+  return {
+    n: items.length,
+    answerable,
+    recall5: mean(sumR5),
+    recall10: mean(sumR10),
+    mrr5: mean(sumM5),
+    mrr10: mean(sumM10),
+    refusalAccuracy: refusal.accuracy,
+    falseRefusals: refusal.falseRefusals,
+    falseAcceptances: refusal.falseAcceptances,
+    perSubset: Object.fromEntries(Object.entries(perSubset).map(([s, c]) => [s, cellMean(c)])),
+    detail,
+  };
+}
+
+function printRRFTable(partition, r) {
+  console.log(`rrf partition=${partition} n=${r.n} answerable=${r.answerable}`);
+  console.log(`rrf overall recall@5=${fmt(r.recall5)} recall@10=${fmt(r.recall10)} mrr@5=${fmt(r.mrr5)} mrr@10=${fmt(r.mrr10)}`);
+  console.log(
+    `rrf overall refusal-accuracy=${fmt(r.refusalAccuracy)} false-refusals=${r.falseRefusals} false-acceptances=${r.falseAcceptances}`
+  );
+  for (const s of SUBSETS) {
+    const c = r.perSubset[s];
+    const m = (x) => (c.answerable === 0 ? "n/a" : fmt(x));
+    console.log(
+      `  rrf subset=${s} n=${c.n} answerable=${c.answerable} recall@5=${m(c.recall5)} recall@10=${m(c.recall10)} mrr@5=${m(c.mrr5)} mrr@10=${m(c.mrr10)}`
+    );
+  }
+  for (const d of r.detail) {
+    console.log(`  rrf rank id=${d.id} top3=${d.top.join(" ")}`);
+  }
+}
+
 // ------------------------------------------------------------------ cli
 const args = process.argv.slice(2);
 const all = Object.fromEntries(PARTITIONS.map((p) => [p, loadPartition(p)]));
@@ -1100,6 +1338,9 @@ if (args.includes("--bench=real")) {
 } else if (args.includes("--leg=semantic")) {
   // R3 semantic-only measurement (todo 24): DEV + VALIDATION only, TEST stays frozen.
   await runSemanticLeg(all);
+} else if (args.includes("--retriever=rrf")) {
+  // R4 RRF fusion measurement (todo 28): DEV + VALIDATION only, TEST stays frozen.
+  await runRRFBaseline(all);
 } else {
   // Default output: DEV + VALIDATION only. TEST is frozen and unscored until F1.
   printTable("dev", scorePartition(all.dev));
