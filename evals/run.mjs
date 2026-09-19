@@ -1774,6 +1774,12 @@ if (args.includes("--bench=real")) {
   // ESCAPE HATCH FOR F1 (todo 49) ONLY — FORBIDDEN during R0.
   console.log("WARNING: TEST scoring is forbidden during R0; this hatch exists for F1 (todo 49) only.");
   printTable("test", scorePartition(all.test));
+} else if (args.includes("--partition=v2-test")) {
+  // ESCAPE HATCH FOR P2 FINAL AUDIT (todo 65) ONLY — first and only V2 TEST
+  // scoring. Mirrors the golden --partition=test pattern (WARNING + printTable
+  // with the shared line-overlap scorePartition). Never use for tuning.
+  console.log("WARNING: V2 TEST scoring is permitted only at P2 FINAL AUDIT (todo 65); never use for tuning.");
+  printTable("v2-test", scorePartition(loadV2Partition("test")));
 } else if (args.includes("--granularity=chunk")) {
   // R1 chunk baseline (todo 14): DEV + VALIDATION only, TEST stays frozen.
   runChunkBaseline(all);
