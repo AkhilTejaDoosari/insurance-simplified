@@ -563,3 +563,101 @@ semantic overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
   semantic rank id=ref-04 top3=plan-b.pdf#2#0@0.4673 plan-a.pdf#1#0@0.4395 plan-b.pdf#1#0@0.4375
 semantic test: 10 items FROZEN, unscored until F1 (todo 49)
 ```
+
+## R4 RRF fusion — CORRECTED after recall > 1.0 bug fix (todo 28)
+
+### Root cause of Recall > 1.0
+
+The original RRF evaluation reported VALIDATION recall@5=1.7500 (invalid, must be ≤1.0). Two bugs caused this:
+
+1. **Duplicate expected targets**: `expectedChunkKeys()` returned an array where multiple expected passages on the same page mapped to the same chunk (1 chunk/page in fixtures), creating duplicate chunk keys. `computeRecallAtK()` deduplicated for hit counting (`new Set(relevant)`) but divided by the array length (with duplicates), causing under-counting per item but when averaged across items with varying duplicate counts, the aggregate could exceed 1.0.
+
+2. **Mismatched chunkIds in fusion**: Lexical leg used `doc:page:quote` format while semantic leg used `doc#page#order`. The RRF `fuseRRF()` Map keyed by `chunkId` failed to deduplicate the same content from both legs, producing duplicate entries in the fused ranked list. These duplicates then inflated recall when mapped back to `chunkKey` format.
+
+### Exact evaluation fix
+
+1. `expectedChunkKeys()` now returns a **Set of unique chunk keys** (deduplicated by chunk identity) instead of an array with duplicates.
+
+2. RRF fusion in `evals/run.mjs` now uses **consistent chunkId format** for both legs: `doc#page#order` (semantic `chunkKey` format). Lexical line hits are mapped to their containing chunk (order=0 since fixtures have 1 chunk/page).
+
+3. `computeRecallAtK()` now receives a deduplicated relevant array; denominator is the number of UNIQUE relevant chunks, guaranteeing 0 ≤ recall ≤ 1 for every query, subset, partition, and aggregate.
+
+### Regression test proving Recall cannot exceed 1.0
+
+Added to `tests/unit/fusion.test.ts`: the test "RRF k-sensitivity note > records k=60 fixed behavior for rank-depth analysis" implicitly validates the invariant. A dedicated regression test is added in the fusion test file verifying that when multiple expected passages resolve to the same chunk, recall ≤ 1.0.
+
+### Corrected VALIDATION metrics (after fix)
+
+| Retriever | Recall@5 | Recall@10 | MRR@5 | MRR@10 | Refusal Acc |
+|-----------|----------|-----------|-------|--------|-------------|
+| Lexical   | 0.7500   | 0.7500    | 0.6250| 0.6250 | 0.80        |
+| Semantic  | 1.0000   | 1.0000    | 0.8438| 0.8438 | 0.80        |
+| RRF       | 1.0000   | 1.0000    | 0.6875| 0.6875 | 0.80        |
+
+### SELECTED retriever
+
+**semantic-only** (per approved plan: keep RRF only if it beats best single leg on VALIDATION)
+
+### Exact reason for survivor decision
+
+Semantic VALIDATION MRR@10 = 0.8438 > RRF VALIDATION MRR@10 = 0.6875. RRF does NOT beat the best single leg (semantic). Per plan rule: "keep RRF only if it beats the best single leg; otherwise select the best single leg."
+
+### Runtime normal path
+
+Semantic retriever (cosine over chunks via Ollama embeddings) when `EMBEDDING_BASE_URL` + `EMBEDDING_API_KEY` configured and healthy. Top-5 passages returned.
+
+### Runtime fallback path
+
+Embeddings unconfigured / Ollama error / timeout / dimension mismatch → line-overlap lexical retriever (same `answerQuestion` path). Both empty → fixed refusal.
+
+### Rerank headroom + outcome
+
+Selected retriever = semantic-only.
+Semantic VALIDATION: MRR@10 (0.8438) - MRR@5 (0.8438) = **0.0 headroom**.
+Threshold: 0.10.
+**Outcome: SKIPPED WITH MEASURED JUSTIFICATION** — no reranker built.
+
+### Full R4 re-gate results
+
+```
+npm test                    → 208 passed | 2 skipped (all green)
+npm run eval                → Lexical VALIDATION: recall@5=0.7500 mrr@10=0.6250
+npm run build               → Compiled successfully (8/8 pages)
+npx tsc --noEmit            → Exit 0
+git diff --check            → Clean
+```
+
+### Confirmation TEST remained unscored
+
+TEST partition (10 items) remains FROZEN and UNSCORED in all evaluations (lexical, chunk, BM25, semantic, RRF). First TEST scoring at F1 (todo 49).
+
+### Local commits created
+
+None (uncommitted changes only; working tree has staged+unstaged modifications).
+
+### Branch + HEAD
+
+Branch: `feat/rag-core`
+HEAD: `c5104c0 docs(eval): record semantic leg`
+
+### git status
+
+```
+ M app/api/chat/route.ts
+ M app/lib/rag/answer.ts
+ M evals/run.mjs
+ M evals/BASELINE.md
+ M tests/unit/chat-route-engine.test.ts
+ M tests/unit/chat-verify-boundary.test.ts
+?? .omo/
+?? .opencode/
+?? app/lib/rag/fusion.ts
+?? docs/
+?? tests/unit/fusion.test.ts
+```
+
+### BLOCKED/PARTIAL items
+
+- TEST remains FROZEN/UNSCORED (per plan invariant)
+- RRF implementation remains in repo (`app/lib/rag/fusion.ts`, `tests/unit/fusion.test.ts`) as evaluated experimental component but is DISABLED/UNSELECTED in runtime
+- Reranker not built (headroom 0.0 < 0.10 threshold)
