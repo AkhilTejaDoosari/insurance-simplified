@@ -4,6 +4,11 @@
 
 import { wrapDocuments } from "@/app/lib/llm/safe-prompt";
 import { completeJson } from "@/app/lib/llm/client";
+import { chunkDocument, type ChunkableDocument } from "@/app/lib/rag/chunks";
+import { embedTexts, isEmbeddingConfigured } from "@/app/lib/rag/embeddings";
+import { InMemoryCosineIndex } from "@/app/lib/rag/cosine-index";
+import { fuseRRF, fuseSingleLeg, retrieveFused, type FusedPassage } from "@/app/lib/rag/fusion";
+import type { RankedPassage } from "@/app/lib/rag/embeddings";
 
 export interface RagDocument {
   documentId: string;
@@ -81,6 +86,56 @@ export function retrieve(
   return scored.sort((a, b) => b.score - a.score).slice(0, maxPassages);
 }
 
+/** Convert line-overlap RetrievedPassage to RankedPassage for fusion. */
+function toRankedPassage(p: RetrievedPassage): RankedPassage {
+  return { ...p, chunkId: `${p.documentId}:${p.page}:${p.quote}` };
+}
+
+/** Lexical retriever leg: line-overlap, returns top-10 RankedPassage. */
+async function retrieveLexical(documents: RagDocument[], question: string): Promise<RankedPassage[]> {
+  const passages = retrieve(documents, question, 10);
+  return passages.map(toRankedPassage);
+}
+
+/** Semantic retriever leg: chunk + embed + cosine, returns top-10 RankedPassage. */
+async function retrieveSemantic(documents: RagDocument[], question: string): Promise<RankedPassage[]> {
+  if (!isEmbeddingConfigured()) return [];
+  const chunkable: ChunkableDocument[] = documents.map((d) => ({
+    documentId: d.documentId,
+    pages: d.pages,
+  }));
+  const chunks = chunkable.flatMap((d) => chunkDocument(d.documentId, d.pages));
+  if (chunks.length === 0) return [];
+  const texts = chunks.map((c) => c.text);
+  const vectors = await embedTexts(texts);
+  const index = new InMemoryCosineIndex();
+  for (let i = 0; i < chunks.length; i++) {
+    index.add({
+      chunkId: chunks[i].chunkId,
+      documentId: chunks[i].documentId,
+      page: chunks[i].page,
+      quote: chunks[i].text,
+      vector: vectors[i],
+    });
+  }
+  const qVecs = await embedTexts([question]);
+  const results = index.search(qVecs[0], 10);
+  return results;
+}
+
+/** Hybrid retrieval: RRF fusion of lexical + semantic, with single-leg degradation. */
+export async function retrieveHybrid(
+  documents: RagDocument[],
+  question: string,
+  maxPassages = 5
+): Promise<FusedPassage[]> {
+  return retrieveFused(
+    () => retrieveLexical(documents, question),
+    () => retrieveSemantic(documents, question),
+    maxPassages
+  );
+}
+
 /** Deterministic fallback answer: grounded strictly in retrieved passages. */
 export function answerQuestion(documents: RagDocument[], question: string): ChatResponse {
   const passages = retrieve(documents, question);
@@ -94,6 +149,53 @@ export function answerQuestion(documents: RagDocument[], question: string): Chat
   }));
   const answerText = passages.map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
   return { schemaVersion: "v1", kind: "answer", answerText, citations };
+}
+
+/** Hybrid answer: uses RRF-fused retrieval when embeddings are configured,
+ *  degrades to lexical-only when they are not. Same refusal semantics. */
+export async function answerQuestionHybrid(
+  documents: RagDocument[],
+  question: string
+): Promise<ChatResponse> {
+  const passages = await retrieveHybrid(documents, question, 5);
+  if (passages.length === 0) {
+    return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+  }
+  const citations: ChatCitation[] = passages.map(({ documentId, page, quote }) => ({
+    documentId,
+    page,
+    quote,
+  }));
+  const answerText = passages.map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
+  return { schemaVersion: "v1", kind: "answer", answerText, citations };
+}
+
+/** Semantic-selected answer: uses semantic retrieval when embeddings are configured
+ *  and healthy, degrades to lexical-only on any error/unconfigured. Same refusal semantics.
+ *  This is the SELECTED retriever per R4 VALIDATION (semantic MRR@10=0.8438 > RRF MRR@10=0.6875). */
+export async function answerQuestionSemantic(
+  documents: RagDocument[],
+  question: string
+): Promise<ChatResponse> {
+  if (!isEmbeddingConfigured()) {
+    return answerQuestion(documents, question);
+  }
+  try {
+    const passages = await retrieveSemantic(documents, question);
+    if (passages.length === 0) {
+      return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+    }
+    const citations: ChatCitation[] = passages.slice(0, 5).map(({ documentId, page, quote }) => ({
+      documentId,
+      page,
+      quote,
+    }));
+    const answerText = passages.slice(0, 5).map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
+    return { schemaVersion: "v1", kind: "answer", answerText, citations };
+  } catch {
+    // Any semantic error (Ollama down, bad key, timeout, dimension mismatch) -> degrade to lexical
+    return answerQuestion(documents, question);
+  }
 }
 
 const CHAT_INSTRUCTIONS = [
