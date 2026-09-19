@@ -173,6 +173,46 @@ export async function answerQuestionHybrid(
   return { schemaVersion: "v1", kind: "answer", answerText, citations, grounding: "explicit" };
 }
 
+/** Semantic-USEFULNESS floor (top-1 cosine similarity) applied AFTER semantic
+ *  retrieval has been attempted and scored — never a precheck that prevents
+ *  the semantic call. Calibrated DEV-ONLY on qwen3-embedding:0.6b against the
+ *  4 fixture chunks (1 chunk/page), top-1 cosine per question:
+ *    genuine paraphrase (V2 DEV): deductible 0.6721, oop 0.5377, emergency
+ *      0.5441, meds 0.4869, preexisting 0.6261, network 0.4478 (min), visa
+ *      0.5795; direct "What is the emergency copay?" 0.5801
+ *    nonsense / must-refuse (V2 DEV + E2E Flow 3): "Does this cover space
+ *      tourism?" 0.4137, maternity 0.4144, dental 0.4040, counsel 0.4224
+ *      (lens 0.4944 and opt 0.5355 score higher but carry lexical overlap or
+ *      go to the LLM cantAnswer path, so the floor does not need to catch them)
+ *  Floor 0.43 = midpoint of the DEV gap (nonsense max 0.4224 < 0.43 <
+ *  genuine min 0.4478). Zero-overlap + below-floor similarity -> not useful ->
+ *  degrade to lexical (which refuses on empty). Strong similarity -> useful
+ *  even with zero lexical overlap (lexically disjoint paraphrase still succeeds). */
+export const SEMANTIC_USEFULNESS_FLOOR = 0.43;
+
+/** Top-1 cosine score over semantic passages (-Infinity when empty). */
+function topSemanticScore(passages: RankedPassage[]): number {
+  let top = -Infinity;
+  for (const p of passages) if (p.score > top) top = p.score;
+  return top;
+}
+
+/** Semantic-usefulness gate. Semantic retrieval is ALWAYS attempted first by
+ *  the caller; this decides from SEMANTIC evidence itself whether the ranked
+ *  passages are worth answering from. The lexical signal is ONLY a secondary
+ *  corroborating input computed here, after semantic scoring — never a
+ *  precheck. Returns false only when top-1 similarity is below
+ *  SEMANTIC_USEFULNESS_FLOOR AND lexical line-overlap is empty. */
+function isSemanticUseful(
+  documents: RagDocument[],
+  question: string,
+  passages: RankedPassage[]
+): boolean {
+  if (passages.length === 0) return false;
+  if (topSemanticScore(passages) >= SEMANTIC_USEFULNESS_FLOOR) return true;
+  return retrieve(documents, question, 1).length > 0;
+}
+
 /** Semantic-selected answer: uses semantic retrieval when embeddings are configured
  *  and healthy, degrades to lexical-only on any error/unconfigured. Same refusal semantics.
  *  This is the SELECTED retriever per R4 VALIDATION (semantic MRR@10=0.8438 > RRF MRR@10=0.6875). */
@@ -185,7 +225,7 @@ export async function answerQuestionSemantic(
   }
   try {
     const passages = await retrieveSemantic(documents, question);
-    if (passages.length > 0) {
+    if (passages.length > 0 && isSemanticUseful(documents, question, passages)) {
       const citations: ChatCitation[] = passages.slice(0, 5).map(({ documentId, page, quote }) => ({
         documentId,
         page,
@@ -194,8 +234,10 @@ export async function answerQuestionSemantic(
       const answerText = passages.slice(0, 5).map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
       return { schemaVersion: "v1", kind: "answer", answerText, citations, grounding: "explicit" };
     }
-    // Semantic healthy but empty (e.g. no chunks) -> degrade to lexical,
-    // which itself refuses when lexical evidence is empty.
+    // Semantic healthy but empty, or ranked but not useful (below-floor
+    // similarity with zero lexical overlap, e.g. nonsense queries that pure
+    // cosine always ranks) -> degrade to lexical, which itself refuses when
+    // lexical evidence is empty.
     return answerQuestion(documents, question);
   } catch {
     // Any semantic error (Ollama down, bad key, timeout, dimension mismatch) -> degrade to lexical
@@ -291,7 +333,8 @@ export async function answerViaLlm(
 ): Promise<ChatResponse> {
   // Semantic-first (P2): try healthy semantic retrieval when embeddings are
   // configured; lexical line-overlap is ONLY a fallback on semantic
-  // unavailable/error/empty-config. Final empty -> refusal WITHOUT LLM call.
+  // unavailable/error/empty-config/empty/not-useful (below-floor similarity
+  // with zero lexical overlap). Final empty -> refusal WITHOUT LLM call.
   let passages: RankedPassage[];
   if (!isEmbeddingConfigured()) {
     const lexical = retrieve(documents, question, 10).map(toRankedPassage);
@@ -302,7 +345,7 @@ export async function answerViaLlm(
   } else {
     try {
       const semantic = await retrieveSemantic(documents, question);
-      if (semantic.length > 0) {
+      if (semantic.length > 0 && isSemanticUseful(documents, question, semantic)) {
         passages = semantic;
       } else {
         const lexical = retrieve(documents, question, 10).map(toRankedPassage);

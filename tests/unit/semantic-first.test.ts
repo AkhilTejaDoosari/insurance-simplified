@@ -142,3 +142,41 @@ describe("P2 semantic-first correction", () => {
     expect(mockedCompleteJson).not.toHaveBeenCalled();
   });
 });
+
+describe("semantic-usefulness gate (E2E Flow 3 regression)", () => {
+  // Healthy semantic path, but the ranked passages are USELESS: chunk vectors
+  // [1,0] vs question vector [0,1] -> cosine 0, below SEMANTIC_USEFULNESS_FLOOR.
+  // (Matched on question content because the single-chunk fixture and the
+  // single-question call both arrive as length-1 batches.)
+  function mockHealthyButUselessEmbeddings() {
+    mockedConfigured.mockReturnValue(true);
+    mockedEmbed.mockImplementation(async (texts: string[]) =>
+      texts.map((t) => (t.includes("space tourism") ? [0, 1] : [1, 0])),
+    );
+  }
+
+  const NONSENSE = "Does this cover space tourism?";
+
+  it("below-floor + zero overlap -> answerQuestionSemantic refuses (semantic still attempted)", async () => {
+    mockHealthyButUselessEmbeddings();
+    const result = await answerQuestionSemantic(SEMANTIC_ONLY_DOCS, NONSENSE);
+    expect(mockedEmbed).toHaveBeenCalled();
+    expect(result).toEqual({
+      schemaVersion: "v1",
+      kind: "refusal",
+      refusalText: REFUSAL_TEXT,
+    });
+  });
+
+  it("below-floor + zero overlap -> answerViaLlm refuses with zero completeJson calls", async () => {
+    mockHealthyButUselessEmbeddings();
+    const result = await answerViaLlm(SEMANTIC_ONLY_DOCS, NONSENSE);
+    expect(mockedEmbed).toHaveBeenCalled();
+    expect(result).toEqual({
+      schemaVersion: "v1",
+      kind: "refusal",
+      refusalText: REFUSAL_TEXT,
+    });
+    expect(mockedCompleteJson).not.toHaveBeenCalled();
+  });
+});
