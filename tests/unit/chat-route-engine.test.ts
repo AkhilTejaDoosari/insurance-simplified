@@ -14,10 +14,11 @@ vi.mock("@/app/lib/rag/answer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/lib/rag/answer")>()),
   answerViaLlm: vi.fn(async () => ({ ...REFUSAL, refusalText: `llm: ${REFUSAL.refusalText}` })),
   answerQuestion: vi.fn(() => REFUSAL),
+  answerQuestionSemantic: vi.fn(async () => REFUSAL),
 }));
 
 import { POST } from "@/app/api/chat/route";
-import { answerQuestion, answerViaLlm } from "@/app/lib/rag/answer";
+import { answerQuestion, answerQuestionSemantic, answerViaLlm } from "@/app/lib/rag/answer";
 import { resolveEmbeddingConfig } from "@/app/lib/rag/embeddings";
 import { REFUSAL_TEXT, validateChatResponse } from "@/app/lib/rag/answer";
 
@@ -52,7 +53,7 @@ describe("POST /api/chat engine selection", () => {
     delete process.env.LLM_BASE_URL;
     delete process.env.LLM_API_KEY;
     await post({ sessionId: "sess-1", question: "What is the deductible?" });
-    expect(answerQuestion).toHaveBeenCalledTimes(1);
+    expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
     expect(answerViaLlm).not.toHaveBeenCalled();
   });
 
@@ -60,7 +61,7 @@ describe("POST /api/chat engine selection", () => {
     process.env.LLM_BASE_URL = "https://llm.example";
     process.env.LLM_API_KEY = "key";
     await post({ sessionId: "sess-1", question: "q", engine: "fallback" });
-    expect(answerQuestion).toHaveBeenCalledTimes(1);
+    expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
 
     delete process.env.LLM_BASE_URL;
     delete process.env.LLM_API_KEY;
@@ -90,7 +91,7 @@ describe("POST /api/chat embedding degradation (todo 23)", () => {
     expect(resolveEmbeddingConfig()).toBeNull();
     const res = await post({ sessionId: "sess-1", question: "What is the deductible?" });
     expect(res.status).toBe(200);
-    expect(answerQuestion).toHaveBeenCalledTimes(1);
+    expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
     expect(answerViaLlm).not.toHaveBeenCalled();
   });
 
@@ -116,7 +117,7 @@ describe("POST /api/chat embedding degradation (todo 23)", () => {
     );
     const res = await post({ sessionId: "sess-1", question: "What is the deductible?" });
     expect(res.status).toBe(200);
-    expect(answerQuestion).toHaveBeenCalledTimes(1);
+    expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
     const body = (await res.json()) as unknown;
     expect(() => validateChatResponse(body)).not.toThrow();
     expect(body).toEqual({
@@ -134,7 +135,7 @@ describe("POST /api/chat embedding degradation (todo 23)", () => {
     const res = await post({ sessionId: "sess-1", question: "q", engine: "llm" });
     expect(res.status).toBe(200);
     expect(answerViaLlm).toHaveBeenCalledTimes(1);
-    expect(answerQuestion).toHaveBeenCalledTimes(1);
+    expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
     const body = (await res.json()) as unknown;
     expect(() => validateChatResponse(body)).not.toThrow();
   });

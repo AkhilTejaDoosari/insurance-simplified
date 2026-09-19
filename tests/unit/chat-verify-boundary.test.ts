@@ -12,13 +12,14 @@ afterEach(() => {
 vi.mock("@/app/lib/rag/answer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/lib/rag/answer")>()),
   answerQuestion: vi.fn(),
+  answerQuestionSemantic: vi.fn(),
   answerViaLlm: vi.fn(),
 }));
 
 import { POST } from "@/app/api/chat/route";
-import { answerQuestion } from "@/app/lib/rag/answer";
+import { answerQuestion, answerQuestionSemantic } from "@/app/lib/rag/answer";
 
-const mockedAnswer = vi.mocked(answerQuestion);
+const mockedAnswer = vi.mocked(answerQuestionSemantic);
 
 function seedSession() {
   const session = createSession(
