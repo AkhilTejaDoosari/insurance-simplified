@@ -4,19 +4,12 @@
 // LLM_BASE_URL and LLM_API_KEY are set, else the deterministic fallback.
 // `engine` in the body ("llm" | "fallback") is an explicit override for testing.
 //
-// R3 DEGRADATION (graceful, hybrid -> lexical-only -> refusal):
-// - Embeddings are a separate concern with SEPARATE keys: EMBEDDING_BASE_URL
-//   + EMBEDDING_API_KEY (+ optional EMBEDDING_MODEL). They are NEVER read from
-//   LLM_* — a chat/generation endpoint is not an embedding endpoint, and the
-//   generation model is never a valid embedding model. See
-//   app/lib/rag/embeddings.ts resolveEmbeddingConfig() for the clean-skip
-//   signal (null when unconfigured). While embeddings are absent the
-//   deterministic line-overlap lexical path serves every request with the
-//   IDENTICAL ChatResponse contract and refusal semantics.
-// - An unhealthy generation provider (bad key, 401/5xx, timeout) degrades to
-//   the same lexical path instead of surfacing a 500. There is deliberately
-//   NO whole-document LLM fallback: runtime degradation is hybrid ->
-//   lexical-only -> fixed refusal, nothing else.
+// R4 DEGRADATION (semantic-selected per VALIDATION):
+// - Semantic retriever is the selected path (semantic MRR@10=0.8438 > RRF MRR@10=0.6875).
+// - Embeddings are separate keys: EMBEDDING_BASE_URL + EMBEDDING_API_KEY.
+// - Semantic configured + healthy -> semantic retriever (top-5 cosine).
+// - Semantic unavailable/error/unconfigured -> lexical line-overlap fallback.
+// - Both empty -> fixed refusal. NO whole-document LLM fallback.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, registerEvidence } from "@/app/lib/session";
@@ -25,6 +18,7 @@ import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
 import { REFUSAL_TEXT } from "@/app/lib/rag/answer";
 import {
   answerQuestion,
+  answerQuestionSemantic,
   answerViaLlm,
   validateChatResponse,
 } from "@/app/lib/rag/answer";
@@ -54,12 +48,12 @@ export async function POST(request: NextRequest) {
         response = await answerViaLlm(session.documents, body.question);
       } catch (err) {
         console.warn(
-          `[chat] llm engine failed; degrading to lexical: ${err instanceof Error ? err.message : "unknown"}`
+          `[chat] llm engine failed; degrading to semantic: ${err instanceof Error ? err.message : "unknown"}`
         );
-        response = answerQuestion(session.documents, body.question);
+        response = await answerQuestionSemantic(session.documents, body.question);
       }
     } else {
-      response = answerQuestion(session.documents, body.question);
+      response = await answerQuestionSemantic(session.documents, body.question);
     }
     const validated = validateChatResponse(response);
     if (validated.kind === "answer") {
