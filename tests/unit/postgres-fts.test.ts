@@ -56,7 +56,7 @@ describe("retrieveFtsCandidate", () => {
     delete process.env.SUPABASE_URL;
     delete process.env.SUPABASE_SERVICE_KEY;
     try {
-      await expect(retrieveFtsCandidate("F-1 visa eligibility")).resolves.toEqual([]);
+      await expect(retrieveFtsCandidate("F-1 visa eligibility", { sessionId: "sess-test" })).resolves.toEqual([]);
     } finally {
       if (savedUrl !== undefined) process.env.SUPABASE_URL = savedUrl;
       if (savedKey !== undefined) process.env.SUPABASE_SERVICE_KEY = savedKey;
@@ -67,7 +67,7 @@ describe("retrieveFtsCandidate", () => {
     const searchFts = () => {
       throw new Error("must not query on empty input");
     };
-    await expect(retrieveFtsCandidate("   ", { client: { searchFts } })).resolves.toEqual([]);
+    await expect(retrieveFtsCandidate("   ", { client: { searchFts }, sessionId: "sess-test" })).resolves.toEqual([]);
   });
 
   it("maps injected-client rows with provenance + tie-break", async () => {
@@ -77,7 +77,7 @@ describe("retrieveFtsCandidate", () => {
         { chunk_id: "c-a", document_id: "plan-a.pdf", page_number: 1, quote: "F-1 visa required", rank: 0.5 },
       ],
     };
-    const out = await retrieveFtsCandidate("F-1 visa PPO", { client, topK: 5 });
+    const out = await retrieveFtsCandidate("F-1 visa PPO", { client, topK: 5, sessionId: "sess-test" });
     expect(out.map((p) => p.chunkId)).toEqual(["c-a", "c-b"]);
     expect(out[0]).toMatchObject({ documentId: "plan-a.pdf", page: 1 });
   });

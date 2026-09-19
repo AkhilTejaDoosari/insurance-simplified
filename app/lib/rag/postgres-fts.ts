@@ -20,6 +20,7 @@
 // DB errors propagate (never swallowed into fake zeros).
 
 import type { RankedPassage } from "@/app/lib/rag/embeddings";
+import { requireScopeId } from "@/app/lib/rag/ownership";
 
 export interface FtsRow {
   chunk_id: string;
@@ -29,9 +30,13 @@ export interface FtsRow {
   rank: number;
 }
 
+// OWNERSHIP SEAM (todo 62): sessionId is REQUIRED — same opaque-token rule
+// as the pgvector leg (see app/lib/rag/ownership.ts). Unscoped calls throw
+// UnscopedQueryError; the scope id rides the SQL-level `filter_session`
+// predicate of fts_search_chunks. RLS is NOT claimed.
 export interface FtsQueryFilters {
   documentId?: string;
-  sessionId?: string;
+  sessionId: string;
 }
 
 export interface FtsClient {
@@ -98,7 +103,8 @@ export function createRestFtsClient(): FtsClient {
     );
   }
   return {
-    async searchFts(queryText: string, topK: number, filters: FtsQueryFilters = {}): Promise<FtsRow[]> {
+    async searchFts(queryText: string, topK: number, filters: FtsQueryFilters): Promise<FtsRow[]> {
+      const scope = requireScopeId(filters?.sessionId, "RestFtsClient.searchFts");
       const res = await fetch(`${url}/rest/v1/rpc/fts_search_chunks`, {
         method: "POST",
         headers: {
@@ -110,7 +116,7 @@ export function createRestFtsClient(): FtsClient {
           query_text: queryText,
           match_count: topK,
           filter_document_id: filters.documentId ?? null,
-          filter_session: filters.sessionId ?? null,
+          filter_session: scope,
         }),
       });
       if (!res.ok) {
@@ -122,13 +128,15 @@ export function createRestFtsClient(): FtsClient {
 }
 
 /**
- * Evaluation-only FTS candidate retrieval. Same RankedPassage shape as every
- * other leg. [] when unconfigured or on empty queries; DB errors throw.
+ * Evaluation-only FTS candidate retrieval. sessionId is REQUIRED (unscoped
+ * calls throw UnscopedQueryError, never silently search all owners). []
+ * when unconfigured or on empty queries; DB errors throw.
  */
 export async function retrieveFtsCandidate(
   question: string,
-  opts: FtsCandidateOptions = {},
+  opts: FtsCandidateOptions & { sessionId: string },
 ): Promise<RankedPassage[]> {
+  requireScopeId(opts?.sessionId, "retrieveFtsCandidate");
   const topK = opts.topK ?? 5;
   const queryText = buildFtsQuery(question);
   if (queryText === "") return [];

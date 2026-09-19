@@ -15,8 +15,11 @@
 --   * Embeddings are qwen3-embedding:0.6b, 1024 dims (evals/BASELINE.md).
 --     Dimension is enforced in the adapter (DimensionError, never coerced),
 --     not by silent truncation here.
---   * NO row-level security in this file: RLS is todo 62 (separate). Until
---     then, access is gated by the SERVICE_KEY server-side contract
+--   * NO row-level security in this file: scope gating lives in the app
+--     seam (queryTopK / retrieveFtsCandidate require an opaque session
+--     scope, always bound as the filter_session predicate below; unscoped
+--     calls throw rather than search all owners). RLS is NOT claimed —
+--     access is gated by the SERVICE_KEY server-side contract
 --     (see db/README.md). Do NOT claim RLS from this schema.
 --
 -- Apply via db/migrations/0001_init.sql (idempotent), not by hand-editing

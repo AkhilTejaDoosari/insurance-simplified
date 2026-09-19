@@ -136,10 +136,15 @@ describe("upsertChunks hash-skip", () => {
     });
     const store = new PostgresVectorStore({ client, expectedDimension: DIM });
     // Lookup throws if called for an unchanged chunk: proves no re-embed.
-    const result = await store.upsertChunks(all, (chunk) => {
-      if (chunk.chunkId === all[0].chunkId) return vec([1, 0, 0, 0]);
-      throw new Error(`re-embedded unchanged chunk ${chunk.chunkId}`);
-    });
+    // sessionId declares the owning scope (todo 62 seam — required, opaque id only).
+    const result = await store.upsertChunks(
+      all,
+      (chunk) => {
+        if (chunk.chunkId === all[0].chunkId) return vec([1, 0, 0, 0]);
+        throw new Error(`re-embedded unchanged chunk ${chunk.chunkId}`);
+      },
+      { sessionId: "sess-test" },
+    );
     expect(result).toEqual({ inserted: 1, skipped: all.length - 1 });
     expect(client.calls.upserted).toHaveLength(1);
   });
@@ -149,7 +154,7 @@ describe("upsertChunks hash-skip", () => {
     const store = new PostgresVectorStore({ client }); // expects 1024
     const all = chunkPage("doc-a", 1, pageText);
     await expect(
-      store.upsertChunks(all, () => [1, 2, 3]),
+      store.upsertChunks(all, () => [1, 2, 3], { sessionId: "sess-test" }),
     ).rejects.toBeInstanceOf(DimensionError);
     expect(client.calls.upserted).toHaveLength(0);
   });
@@ -159,7 +164,7 @@ describe("queryTopK", () => {
   it("validates dimensions before any network call", async () => {
     const client = mockClient();
     const store = new PostgresVectorStore({ client });
-    await expect(store.queryTopK([1, 2, 3], 5)).rejects.toBeInstanceOf(DimensionError);
+    await expect(store.queryTopK([1, 2, 3], 5, { sessionId: "sess-test" })).rejects.toBeInstanceOf(DimensionError);
     expect(client.calls.matched).toBe(0);
   });
 
@@ -171,7 +176,9 @@ describe("queryTopK", () => {
     ];
     const client = mockClient({ matchChunks: vi.fn(async () => rows) });
     const store = new PostgresVectorStore({ client });
-    const out = await store.queryTopK(new Array(EMBEDDING_DIMENSION).fill(0.1), 10);
+    const out = await store.queryTopK(new Array(EMBEDDING_DIMENSION).fill(0.1), 10, {
+      sessionId: "sess-test",
+    });
     expect(out.map((p) => p.chunkId)).toEqual(["c-top", "c-aye", "c-zed"]);
     expect(out[0]).toMatchObject({ documentId: "doc-b", page: 1, quote: "t" });
   });
@@ -199,11 +206,12 @@ describe("unconfigured behavior", () => {
     delete process.env.SUPABASE_SERVICE_KEY;
     try {
       const store = new PostgresVectorStore(); // no injected client, no env
-      await expect(store.queryTopK(new Array(EMBEDDING_DIMENSION).fill(0), 5)).rejects.toBeInstanceOf(
+      const scoped = { sessionId: "sess-test" };
+      await expect(store.queryTopK(new Array(EMBEDDING_DIMENSION).fill(0), 5, scoped)).rejects.toBeInstanceOf(
         PostgresUnconfiguredError,
       );
       await expect(
-        store.upsertChunks(chunkPage("d", 1, "hello world"), new Map()),
+        store.upsertChunks(chunkPage("d", 1, "hello world"), new Map(), scoped),
       ).rejects.toBeInstanceOf(PostgresUnconfiguredError);
     } finally {
       if (savedUrl !== undefined) process.env.SUPABASE_URL = savedUrl;

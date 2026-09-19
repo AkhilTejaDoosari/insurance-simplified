@@ -35,6 +35,7 @@ import {
   sha16,
   type TextChunk,
 } from "@/app/lib/rag/chunks";
+import { requireScopeId } from "@/app/lib/rag/ownership";
 
 /** Embedding model + width backing the `chunks.embedding vector(1024)` column. */
 export const EMBEDDING_MODEL = "qwen3-embedding:0.6b";
@@ -112,9 +113,15 @@ export interface MatchRow {
   score: number;
 }
 
+// OWNERSHIP SEAM (todo 62): sessionId is REQUIRED — an opaque session id
+// (app/lib/session.ts), never raw user text. Unscoped calls throw
+// UnscopedQueryError instead of silently searching all owners. The scope id
+// is always forwarded as the SQL-level `filter_session` predicate of the
+// match_chunks RPC (db/schema.sql). RLS is NOT claimed (see
+// app/lib/rag/ownership.ts).
 export interface VectorQueryFilters {
   documentId?: string;
-  sessionId?: string;
+  sessionId: string;
 }
 
 export interface PostgresVectorClient {
@@ -123,7 +130,7 @@ export interface PostgresVectorClient {
   matchChunks(
     query: number[],
     topK: number,
-    filters?: VectorQueryFilters,
+    filters: VectorQueryFilters,
   ): Promise<MatchRow[]>;
   deleteByDocument(documentId: string): Promise<void>;
   deleteBySession(sessionId: string): Promise<void>;
@@ -173,15 +180,16 @@ export class SupabaseRestVectorClient implements PostgresVectorClient {
   async matchChunks(
     query: number[],
     topK: number,
-    filters?: VectorQueryFilters,
+    filters: VectorQueryFilters,
   ): Promise<MatchRow[]> {
+    const scope = requireScopeId(filters?.sessionId, "SupabaseRestVectorClient.matchChunks");
     const res = await this.request("/rest/v1/rpc/match_chunks", {
       method: "POST",
       body: JSON.stringify({
         query_embedding: query,
         match_count: topK,
         filter_document_id: filters?.documentId ?? null,
-        filter_session: filters?.sessionId ?? null,
+        filter_session: scope,
       }),
     });
     return (await res.json()) as MatchRow[];
@@ -343,8 +351,9 @@ export class PostgresVectorStore implements VectorStore {
   async upsertChunks(
     chunks: TextChunk[],
     embeddings: Map<string, number[]> | ((chunk: TextChunk) => number[] | undefined),
-    opts: { documentId?: string } = {},
+    opts: { documentId?: string; sessionId: string },
   ): Promise<UpsertResult> {
+    requireScopeId(opts?.sessionId, "PostgresVectorStore.upsertChunks");
     const client = this.client();
     const lookup =
       typeof embeddings === "function"
@@ -391,16 +400,24 @@ export class PostgresVectorStore implements VectorStore {
   }
 
   /**
-   * Cosine top-K from Postgres (match_chunks RPC) with optional
-   * document/session scoping. Dimension check runs BEFORE any network call.
-   * Results are re-sorted client-side (score DESC, chunkId ASC) and sliced
-   * so the DB leg and the in-memory leg agree byte-for-byte on ties.
+   * Cosine top-K from Postgres (match_chunks RPC) with MANDATORY session
+   * scoping. Unscoped calls throw UnscopedQueryError — they never silently
+   * search all owners. Scope is checked BEFORE the dimension check and any
+   * network call; the scope id rides the SQL-level `filter_session`
+   * predicate. Results are re-sorted client-side (score DESC, chunkId ASC)
+   * and sliced so the DB leg and the in-memory leg agree byte-for-byte.
+   *
+   * Ownership note: persisted chunks inherit their owner from the parent
+   * documents.owner_session row (db/schema.sql); upsertChunks requires the
+   * caller to declare the same opaque sessionId so unattributed writes are
+   * impossible at the seam. RLS is NOT claimed (see ownership.ts).
    */
   async queryTopK(
     query: number[],
     topK: number,
-    filters: VectorQueryFilters = {},
+    filters: VectorQueryFilters,
   ): Promise<RankedPassage[]> {
+    requireScopeId(filters?.sessionId, "PostgresVectorStore.queryTopK");
     validateDimension(query, this.expectedDimension);
     const rows = await this.client().matchChunks(query, topK, filters);
     const mapped: RankedPassage[] = rows.map((row) => ({

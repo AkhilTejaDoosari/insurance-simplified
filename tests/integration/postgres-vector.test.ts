@@ -31,7 +31,7 @@ describe.skipIf(!configured)("postgres vector round-trip (live Supabase)", () =>
 
     const store = new PostgresVectorStore();
     const embeddings = new Map(chunks.map((c, i) => [c.chunkId, unitVector(i)]));
-    const first = await store.upsertChunks(chunks, embeddings);
+    const first = await store.upsertChunks(chunks, embeddings, { sessionId: scope });
     expect(first.inserted).toBe(chunks.length);
     expect(first.skipped).toBe(0);
 
@@ -39,10 +39,10 @@ describe.skipIf(!configured)("postgres vector round-trip (live Supabase)", () =>
     const throwingLookup = () => {
       throw new Error("must not re-embed hash-identical chunks");
     };
-    const second = await store.upsertChunks(chunks, throwingLookup);
+    const second = await store.upsertChunks(chunks, throwingLookup, { sessionId: scope });
     expect(second).toEqual({ inserted: 0, skipped: chunks.length });
 
-    const hits = await store.queryTopK(unitVector(0), 5, { documentId });
+    const hits = await store.queryTopK(unitVector(0), 5, { documentId, sessionId: scope });
     expect(hits.length).toBeGreaterThan(0);
     for (const hit of hits) {
       // Provenance: chunk -> document -> page -> source quote.
@@ -53,7 +53,7 @@ describe.skipIf(!configured)("postgres vector round-trip (live Supabase)", () =>
     }
 
     await store.deleteDocument(documentId);
-    const after = await store.queryTopK(unitVector(0), 5, { documentId });
+    const after = await store.queryTopK(unitVector(0), 5, { documentId, sessionId: scope });
     expect(after).toEqual([]);
   });
 });
