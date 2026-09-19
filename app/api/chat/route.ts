@@ -23,6 +23,7 @@ import {
   validateChatResponse,
 } from "@/app/lib/rag/answer";
 import { isLlmConfigured } from "@/app/lib/llm/client";
+import { buildTraceEvent, emitTrace } from "@/app/lib/observability/trace";
 
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
@@ -40,6 +41,39 @@ export async function POST(request: NextRequest) {
 
   const useLlm =
     body.engine === "llm" || (body.engine !== "fallback" && isLlmConfigured());
+  const startedAt = Date.now();
+
+  // Sanitized trace helper: metadata only (ids/pages/counts/latencies).
+  // Never includes user text, prompts, document text, or keys.
+  const trace = (init: {
+    candidateCount: number;
+    topK: { documentId: string; page: number }[];
+    citationCount: number;
+    verification?: "pass" | "fail";
+    refusalReason?: string;
+    fallbackReason?: string;
+    errorCategory?: string;
+  }) => {
+    try {
+      emitTrace(
+        buildTraceEvent({
+          scopeId: body.sessionId as string,
+          strategy: useLlm ? "llm" : "semantic",
+          candidateCount: init.candidateCount,
+          topK: init.topK.map((c, i) => ({ ...c, rank: i + 1 })),
+          llmModel: useLlm ? (process.env.LLM_MODEL ?? "default") : undefined,
+          verification: init.verification,
+          refusalReason: init.refusalReason,
+          fallbackReason: init.fallbackReason,
+          errorCategory: init.errorCategory,
+          citationCount: init.citationCount,
+          totalLatencyMs: Date.now() - startedAt,
+        })
+      );
+    } catch {
+      // tracing never breaks the response
+    }
+  };
 
   try {
     let response;
@@ -73,6 +107,13 @@ export async function POST(request: NextRequest) {
         canonical.push({ ...citation, quote: verified.quote });
       }
       if (!allVerified) {
+        trace({
+          candidateCount: validated.citations.length,
+          topK: validated.citations.map((c) => ({ documentId: c.documentId, page: c.page })),
+          citationCount: 0,
+          verification: "fail",
+          refusalReason: "verification-failed",
+        });
         return NextResponse.json({
           schemaVersion: "v1",
           kind: "refusal",
@@ -80,13 +121,40 @@ export async function POST(request: NextRequest) {
         });
       }
       registerEvidence(session.sessionId, canonical);
+      trace({
+        candidateCount: canonical.length,
+        topK: canonical.map((c) => ({ documentId: c.documentId, page: c.page })),
+        citationCount: canonical.length,
+        verification: "pass",
+      });
       return NextResponse.json({
         ...validated,
         citations: canonical.map(withEvidenceId),
       });
     }
+    trace({
+      candidateCount: 0,
+      topK: [],
+      citationCount: 0,
+      refusalReason: "no-evidence",
+    });
     return NextResponse.json(validated);
   } catch (err) {
+    try {
+      emitTrace(
+        buildTraceEvent({
+          scopeId: typeof body?.sessionId === "string" ? body.sessionId : "unknown",
+          strategy: useLlm ? "llm" : "semantic",
+          candidateCount: 0,
+          topK: [],
+          citationCount: 0,
+          totalLatencyMs: Date.now() - startedAt,
+          errorCategory: err instanceof Error ? err.message.slice(0, 120) : "chat-failed",
+        })
+      );
+    } catch {
+      // tracing never breaks the response
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Chat failed" },
       { status: 500 }
