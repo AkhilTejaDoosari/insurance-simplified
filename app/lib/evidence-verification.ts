@@ -374,3 +374,18 @@ export function verifyAnswerClaims(
 
   return { ok: true };
 }
+
+/** R6 grounding classifier (FR-020): explicit = every substantive sentence is
+ *  a normalized substring of some canonical quote; otherwise related.
+ *  Call only after verifyAnswerClaims passes. */
+export function classifyGrounding(answerText: string, canonicalQuotes: string[]): "explicit" | "related" {
+  const sentences = splitSentences(answerText).filter((s) => countTokens(s) >= 4);
+  if (sentences.length === 0) return "explicit";
+  const normQuotes = canonicalQuotes.map(normalizeForClaim);
+  for (const sentence of sentences) {
+    const normSentence = normalizeForClaim(sentence);
+    if (!normSentence) continue;
+    if (!normQuotes.some((q) => q.includes(normSentence))) return "related";
+  }
+  return "explicit";
+}

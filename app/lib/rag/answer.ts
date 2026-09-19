@@ -9,7 +9,7 @@ import { embedTexts, isEmbeddingConfigured } from "@/app/lib/rag/embeddings";
 import { InMemoryCosineIndex } from "@/app/lib/rag/cosine-index";
 import { fuseRRF, fuseSingleLeg, retrieveFused, type FusedPassage } from "@/app/lib/rag/fusion";
 import type { RankedPassage } from "@/app/lib/rag/embeddings";
-import { verifyAnswerClaims } from "@/app/lib/evidence-verification";
+import { verifyAnswerClaims, classifyGrounding } from "@/app/lib/evidence-verification";
 
 export interface RagDocument {
   documentId: string;
@@ -24,8 +24,10 @@ export interface ChatCitation {
   quote: string;
 }
 
+export type AnswerGrounding = "explicit" | "related" | "needs-external";
+
 export type ChatResponse =
-  | { schemaVersion: "v1"; kind: "answer"; answerText: string; citations: ChatCitation[] }
+  | { schemaVersion: "v1"; kind: "answer"; answerText: string; citations: ChatCitation[]; grounding?: AnswerGrounding }
   | { schemaVersion: "v1"; kind: "refusal"; refusalText: string };
 
 /** Presentation-time citation: core citation plus its session-bound opaque
@@ -36,7 +38,7 @@ export type RegisteredChatCitation = ChatCitation & {
 };
 
 export type RegisteredChatResponse =
-  | { schemaVersion: "v1"; kind: "answer"; answerText: string; citations: RegisteredChatCitation[] }
+  | { schemaVersion: "v1"; kind: "answer"; answerText: string; citations: RegisteredChatCitation[]; grounding?: AnswerGrounding }
   | { schemaVersion: "v1"; kind: "refusal"; refusalText: string };
 
 export const REFUSAL_TEXT =
@@ -149,7 +151,7 @@ export function answerQuestion(documents: RagDocument[], question: string): Chat
     quote,
   }));
   const answerText = passages.map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
-  return { schemaVersion: "v1", kind: "answer", answerText, citations };
+  return { schemaVersion: "v1", kind: "answer", answerText, citations, grounding: "explicit" };
 }
 
 /** Hybrid answer: uses RRF-fused retrieval when embeddings are configured,
@@ -168,7 +170,7 @@ export async function answerQuestionHybrid(
     quote,
   }));
   const answerText = passages.map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
-  return { schemaVersion: "v1", kind: "answer", answerText, citations };
+  return { schemaVersion: "v1", kind: "answer", answerText, citations, grounding: "explicit" };
 }
 
 /** Semantic-selected answer: uses semantic retrieval when embeddings are configured
@@ -199,7 +201,7 @@ export async function answerQuestionSemantic(
       quote,
     }));
     const answerText = passages.slice(0, 5).map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
-    return { schemaVersion: "v1", kind: "answer", answerText, citations };
+    return { schemaVersion: "v1", kind: "answer", answerText, citations, grounding: "explicit" };
   } catch {
     // Any semantic error (Ollama down, bad key, timeout, dimension mismatch) -> degrade to lexical
     return answerQuestion(documents, question);
@@ -339,7 +341,13 @@ export async function answerViaLlm(
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
   }
 
-  return answerResponse;
+  return {
+    ...answerResponse,
+    grounding: classifyGrounding(
+      answerResponse.answerText,
+      answerResponse.citations.map((c) => c.quote),
+    ),
+  };
 }
 
 /** Validate a payload against chat-api v1. Throws on violation. */
@@ -366,6 +374,9 @@ export function validateChatResponse(payload: unknown): ChatResponse {
       if (typeof c.documentId !== "string" || typeof c.page !== "number" || c.page < 1 || typeof c.quote !== "string" || !c.quote.trim()) {
         throw new Error("Invalid chat response: malformed citation");
       }
+    }
+    if (r.grounding !== undefined && r.grounding !== "explicit" && r.grounding !== "related" && r.grounding !== "needs-external") {
+      throw new Error("Invalid chat response: grounding must be explicit, related, or needs-external");
     }
     return payload as ChatResponse;
   }

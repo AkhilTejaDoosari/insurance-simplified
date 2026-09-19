@@ -60,6 +60,13 @@ export default function ChatPanel({
               <p className="chat__q">{t.question}</p>
               {t.response.kind === "answer" ? (
                 <div className="chat__a">
+                  {(t.response.grounding === "related" || t.response.grounding === "needs-external") && (
+                    <p className="text-muted">
+                      {t.response.grounding === "related"
+                        ? "Related passages — indirectly answered."
+                        : "Needs an outside source — verify before enrolling."}
+                    </p>
+                  )}
                   <p>{t.response.answerText}</p>
                   <ul className="list">
                     {t.response.citations.map((c, j) => (

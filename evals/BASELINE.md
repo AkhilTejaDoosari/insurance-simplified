@@ -713,3 +713,43 @@ E2E Flow 3 green after fix (both LLM-configured and fallback paths).
 Low precision@K is expected on fixtures: 1 chunk/page means each query has
 1-2 relevant chunks among 4 total, so top-5 necessarily includes distractors.
 TEST frozen/unscored.
+
+## R6 nuanced states + faithfulness (todos 38-42)
+
+### Answer-state spec (todo 38, FR-020)
+
+`spec.md` gains FR-020: `explicit` (directly stated), `related` (indirect),
+`not-found` (no evidence -> fixed refusal, never an answer), `needs-external`
+(requires outside source -> refusal + sourced guidance, never invented facts).
+Counting rule: aggregates count ONLY `explicit`. Never infer ineligibility
+from absence. STEM-OPT example recorded in spec.
+
+### Contract + code (todo 39, additive)
+
+`contracts/chat-api.md` + `ChatResponse` gain optional `grounding`:
+explicit | related | needs-external (absent = explicit, old clients unaffected;
+refusal shape/text unchanged). Deterministic paths return `explicit`; LLM
+path classifies via `classifyGrounding` (substring-covered -> explicit, else
+related). Contract tests: legacy payloads validate, new values validate,
+unknown values rejected (8 tests green).
+
+### ChatPanel rendering (todo 40)
+
+Related answers show "Related passages — indirectly answered.";
+needs-external shows "Needs an outside source — verify before enrolling."
+Explicit answers render unchanged; refusals unchanged.
+
+### Faithfulness + zero-cannibalization gate (todo 41)
+
+Faithfulness proxy: citation precision@5 VALIDATION = 0.2750 (todo 36) +
+`verifyAnswerClaims` unit coverage (6 adversarial tests, all green).
+Zero-cannibalization on FROZEN VALIDATION must-refuse set (n=2):
+R5 baseline FA=2 FR=0 -> R6 FA=2 FR=0. falseAccepts delta = 0 (<=0 PASS);
+trueRefusalRecall delta = 0 (>=0 PASS). Refusal path untouched by R6.
+
+### Verify-before-enrolling (todo 42)
+
+Insurer-questions flow (Flow 4) already surfaces gap-tied follow-ups (E2E
+green). Contact-info audit: no `phone`/`tel:`/`http` rendering exists in
+`ComparisonTable.tsx` or any component — unsourced contacts cannot render
+(vacuously satisfied; P1 todo 46 adds the explicit guard test).

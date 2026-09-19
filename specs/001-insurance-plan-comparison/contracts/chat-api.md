@@ -39,6 +39,12 @@ closed into the refusal shape below — never a partially supported answer.
 Every substantive claim MUST trace to a cited passage;
 no outside knowledge (FR-012, FR-017).
 
+Answers carry an optional additive `grounding` field (FR-020):
+`explicit` (default when absent — directly stated), `related` (indirect),
+`needs-external` (requires outside source). `not-found` never appears as an
+answer — it surfaces as the refusal below. Old clients that ignore unknown
+fields keep working; the refusal shape and text are unchanged.
+
 ## Refusal response (no supporting evidence)
 
 ```jsonc

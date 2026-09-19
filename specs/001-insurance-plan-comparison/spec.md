@@ -237,6 +237,19 @@ upload. Delivers onboarding value standalone.
   for the active session and delete them on session close, unless the user
   explicitly saves the comparison as a downloadable export file they keep
   themselves.
+- **FR-020**: Chat answers MUST carry additive grounding states distinguishing
+  how directly the evidence answers the question: `explicit` (directly stated
+  in cited passages), `related` (topically related passages, indirect answer),
+  `not-found` (no evidence — always surfaces as the fixed refusal, never an
+  answer), `needs-external` (answer requires a source outside the uploads —
+  surfaces as refusal plus sourced next-step guidance, never invented facts).
+  Counting rule: aggregate counts/statistics use ONLY `explicit` evidence.
+  The system MUST NEVER infer ineligibility merely from absence (missing
+  evidence is NOT STATED / refusal, never a negative eligibility verdict).
+  Example: "How many plans support STEM OPT?" counts only plans with explicit
+  OPT/STEM-OPT statements; plans with related visa language (F-1) but no OPT
+  mention are `related`, not counted; plans with no visa language are
+  not-found.
 
 ### Key Entities
 
