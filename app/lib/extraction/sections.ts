@@ -1,5 +1,5 @@
 // Presentation grouping for the comparison table. Sections slice the fact
-// rows into three stacked groups; the plan columns are identical in each.
+// rows into four stacked groups; the plan columns are identical in each.
 // Fact names must match app/lib/extraction/fact-list.ts (tested).
 
 import type { TableRow } from "@/app/lib/extraction/types";
@@ -13,10 +13,11 @@ export interface Section {
 
 export const SECTIONS: Section[] = [
   {
-    title: "Must know",
+    title: "Essentials",
     description:
       "The costs and conditions that decide whether a plan works for you at all.",
     factNames: [
+      "premium",
       "annual-deductible",
       "out-of-pocket-maximum",
       "eligibility",
@@ -27,7 +28,7 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
-    title: "Coverage details",
+    title: "Care & Coverage",
     description: "What each plan pays for when you actually need care.",
     factNames: [
       "emergency-care",
@@ -38,12 +39,29 @@ export const SECTIONS: Section[] = [
       "specialist-visit",
       "mental-health",
       "maternity-coverage",
+      "preventive-care",
+      "lab-and-imaging",
+      "ambulance",
+      "dental-coverage",
+      "vision-coverage",
+      "urgent-care",
     ],
   },
   {
-    title: "Extras and fine print",
+    title: "Rules & Restrictions",
     description:
-      "Nice-to-haves, limits and rules worth checking before you sign.",
+      "What conditions could prevent you from using the coverage the way you expect.",
+    factNames: [
+      "referral-requirement",
+      "waiting-period",
+      "age-limits",
+      "international-coverage",
+    ],
+  },
+  {
+    title: "Plan Highlights",
+    description:
+      "What is unusual or unique about this plan that does not belong in the main comparison.",
     factNames: [
       "dental-coverage",
       "vision-coverage",
@@ -51,10 +69,6 @@ export const SECTIONS: Section[] = [
       "urgent-care",
       "ambulance",
       "lab-and-imaging",
-      "referral-requirement",
-      "waiting-period",
-      "age-limits",
-      "international-coverage",
     ],
   },
 ];
@@ -72,15 +86,20 @@ export interface SectionGroup<R extends TableRow = TableRow> {
 
 /** Split rows into sections in display order; empty sections are dropped.
  *  Generic over the row type so enriched (registered) tables keep their
- *  evidence IDs. */
+ *  evidence IDs. Plan Highlights re-surfaces its facts without consuming
+ *  them, so lower-priority extras appear both in Care & Coverage and in
+ *  the trailing highlights tab. */
 export function groupRows<R extends TableRow>(rows: R[]): SectionGroup<R>[] {
   const byName = new Map(rows.map((r) => [r.factName, r]));
+  const all = new Map(byName);
   const groups: SectionGroup<R>[] = [];
   for (const section of SECTIONS) {
+    const isHighlights = section.title === "Plan Highlights";
+    const source = isHighlights ? all : byName;
     const matched = section.factNames.flatMap((n) => {
-      const r = byName.get(n);
+      const r = source.get(n);
       if (!r) return [];
-      byName.delete(n);
+      if (!isHighlights) byName.delete(n);
       return [r];
     });
     if (matched.length > 0) groups.push({ section, rows: matched });

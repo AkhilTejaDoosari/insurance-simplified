@@ -4,6 +4,9 @@
 // capability cookie (see app/lib/session-db.ts, app/lib/session-auth.ts).
 
 import { NextRequest, NextResponse } from "next/server";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { extractPages } from "@/app/lib/pdf/extract-pages";
 import {
   attachDocumentObjectMetadata,
@@ -64,21 +67,25 @@ export async function POST(request: NextRequest) {
   }
 
   // 1. Create durable session FIRST (gets sessionId + capability)
+  // Falls back to tmpdir-only mode if durable store is unavailable.
   let sessionId: string;
   let capability: string;
+  let durableSession = true;
   try {
     const created = await createSessionDb({ context: userContext });
     sessionId = created.sessionId;
     capability = created.capability;
   } catch (err) {
     if (err instanceof SessionDbUnconfiguredError) {
-      return errorResponse("DEPENDENCY_UNAVAILABLE", 503, {
-        requestId,
-        retryable: false,
-        message: "Durable session store is not configured",
-      });
+      durableSession = false;
+      const { session, capability: cap, capabilityHash } = createSession([], userContext);
+      sessionId = session.sessionId;
+      capability = cap;
+      // The tmpdir session was created empty; documents will be added after extraction
+    } else {
+      console.error("[UPLOAD] createSessionDb failed:", err);
+      return errorResponse("INTERNAL_ERROR", 500, { requestId, retryable: true });
     }
-    return errorResponse("INTERNAL_ERROR", 500, { requestId, retryable: true });
   }
 
   // 2. Process files and extract pages
@@ -115,6 +122,7 @@ export async function POST(request: NextRequest) {
           // Already terminal
         }
         void state;
+        console.error("[UPLOAD] file processing failed:", file.name, err);
         const classified = classifyExtractorError(err);
         failures.push({ filename: file.name, reason: userVisibleMessage(classified.reason) });
       }
@@ -124,10 +132,14 @@ export async function POST(request: NextRequest) {
   // Never produce a silent partial comparison: any failure fails the set.
   if (failures.length > 0) {
     // Clean up the session we created
-    try {
-      await deleteSessionDb(sessionId);
-    } catch {
-      // Best effort
+    if (durableSession) {
+      try {
+        await deleteSessionDb(sessionId);
+      } catch {
+        // Best effort
+      }
+    } else {
+      await deleteSession(sessionId);
     }
     return errorResponse("UNPROCESSABLE_DOCUMENTS", 422, {
       requestId,
@@ -138,44 +150,62 @@ export async function POST(request: NextRequest) {
   documents.sort((a, b) => a.documentId.localeCompare(b.documentId));
 
   // 3. Store raw bytes in tmpdir for legacy document route + viewer fallback
-  const { session } = createSession(documents, userContext);
+  // In durable mode, create tmpdir session now. In fallback mode, update the existing empty session.
+  let session;
+  if (durableSession) {
+    const created = createSession(documents, userContext);
+    session = created.session;
+  } else {
+    // Update the existing empty tmpdir session with extracted documents
+    const existing = getSession(sessionId);
+    if (existing) {
+      existing.documents = documents;
+      existing.userContext = userContext;
+      writeFileSync(join(tmpdir(), "insurance-simplified-sessions", `${sessionId}.json`), JSON.stringify(existing));
+    }
+    session = getSession(sessionId)!;
+  }
   const store = getDefaultObjectStore();
   for (const [documentId, bytes] of rawFiles) {
     try {
       const metadata = await putDocumentBytes(bytes, store);
       attachDocumentObjectMetadata(session.sessionId, documentId, metadata);
-    } catch {
+    } catch (err) {
+      console.error("[UPLOAD] putDocumentBytes failed:", documentId, err);
       // Durability upgrade is best-effort per file; temp fallback below.
     }
     saveDocumentFile(session.sessionId, documentId, bytes);
   }
 
   // 4. Persist to durable storage (documents, pages, chunks, vectors)
-  const { isDurableConfigured, persistSessionUpload } = await import(
-    "@/app/lib/rag/persist-session"
-  );
-  if (isDurableConfigured()) {
-    try {
-      const persisted = await persistSessionUpload(
-        sessionId,
-        documents.map((d) => ({
-          documentId: d.documentId,
-          filename: d.filename,
-          pages: d.pages,
-          bytes: rawFiles.get(d.documentId) ?? new Uint8Array(),
-        })),
-      );
-      for (const meta of persisted) {
-        attachDocumentObjectMetadata(session.sessionId, meta.documentId, meta);
+  if (durableSession) {
+    const { isDurableConfigured, persistSessionUpload } = await import(
+      "@/app/lib/rag/persist-session"
+    );
+    if (isDurableConfigured()) {
+      try {
+        const persisted = await persistSessionUpload(
+          sessionId,
+          documents.map((d) => ({
+            documentId: d.documentId,
+            filename: d.filename,
+            pages: d.pages,
+            bytes: rawFiles.get(d.documentId) ?? new Uint8Array(),
+          })),
+        );
+        for (const meta of persisted) {
+          attachDocumentObjectMetadata(session.sessionId, meta.documentId, meta);
+        }
+      } catch (err) {
+        console.error("[UPLOAD] persistSessionUpload failed:", err);
+        await deleteSessionDb(sessionId);
+        await deleteSession(session.sessionId);
+        return errorResponse("INTERNAL_ERROR", 503, {
+          requestId,
+          retryable: true,
+          message: "Durable persistence failed; upload was not saved.",
+        });
       }
-    } catch (err) {
-      await deleteSessionDb(sessionId);
-      await deleteSession(session.sessionId);
-      return errorResponse("INTERNAL_ERROR", 503, {
-        requestId,
-        retryable: true,
-        message: "Durable persistence failed; upload was not saved.",
-      });
     }
   }
 

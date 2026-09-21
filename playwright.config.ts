@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const E2E_PORT = 3100;
+const E2E_PORT = 3333;
 const E2E_BASE_URL = `http://127.0.0.1:${E2E_PORT}`;
 
 export default defineConfig({
@@ -13,7 +13,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `npm run dev -- -p ${E2E_PORT}`,
+    command: `npm run dev`,
     // e2e assertions are written against the deterministic engine; blank
     // credentials here win over .env.local so /api/extract never auto-picks
     // the LLM in CI or locally. Supabase is blanked for the same reason so

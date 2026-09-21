@@ -15,6 +15,7 @@ export interface FactDefinition {
 export const FACT_LIST_VERSION = "v1";
 
 export const FACTS: FactDefinition[] = [
+  { name: "premium", label: "Premium / price", patterns: ["premium", "monthly premium", "\\bprice\\b"] },
   { name: "annual-deductible", label: "Annual deductible", patterns: ["deductible"] },
   { name: "out-of-pocket-maximum", label: "Out-of-pocket maximum", patterns: ["out-of-pocket maximum", "out of pocket max"] },
   { name: "emergency-care", label: "Emergency care coverage", patterns: ["emergency (care|copay|coverage|services?)"] },

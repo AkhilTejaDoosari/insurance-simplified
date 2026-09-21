@@ -78,6 +78,16 @@ async function restRequest(
     headers: { ...restHeaders(config), ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
+    // In development, treat missing sessions table (404) as unconfigured
+    // so local dev can fall back to tmpdir without running migrations.
+    // In production, fail explicitly — missing table is a deployment error.
+    if (
+      res.status === 404 &&
+      path.startsWith("/rest/v1/sessions") &&
+      process.env.NODE_ENV !== "production"
+    ) {
+      throw new SessionDbUnconfiguredError();
+    }
     throw new Error(
       `SessionDb ${init?.method ?? "GET"} ${path} failed with status ${res.status}`,
     );

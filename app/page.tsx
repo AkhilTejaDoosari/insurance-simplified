@@ -4,32 +4,51 @@ import { useMemo, useState } from "react";
 import UploadDropzone, { type UploadResult } from "@/app/components/UploadDropzone";
 import ComparisonTable from "@/app/components/ComparisonTable";
 import ChatPanel from "@/app/components/ChatPanel";
-import InsurerQuestions from "@/app/components/InsurerQuestions";
 import ChecklistFlow from "@/app/components/ChecklistFlow";
+import WelcomePage from "@/app/components/WelcomePage";
+import InsurerQuestions from "@/app/components/InsurerQuestions";
+import { DEFAULT_COUNTRY } from "@/app/components/ContextInputs";
 import { suggestQuestions } from "@/app/lib/extraction/insurer-questions";
 import type { RegisteredComparisonTable as Table } from "@/app/lib/extraction/types";
 
+type Page = "welcome" | "upload" | "checklist" | "results";
+
 export default function Home() {
+  const [page, setPage] = useState<Page>("welcome");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [table, setTable] = useState<Table | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A-008: intake context is shared so Guided Intake → Document Intake
+  // reuses previously supplied values instead of starting blank.
+  const [sharedContext, setSharedContext] = useState<Record<string, string>>({
+    countryOrResidency: DEFAULT_COUNTRY,
+  });
+  // Context actually submitted with the upload; passed to Results so
+  // NEEDS YOUR INPUT can ask only for what is still missing (A-022).
+  const [sessionContext, setSessionContext] = useState<Record<string, string>>({});
   const questions = useMemo(() => (table ? suggestQuestions(table) : []), [table]);
-  const [mode, setMode] = useState<"upload" | "checklist">("upload");
 
-  async function handleUploaded(result: UploadResult) {
+  async function handleUploaded(result: UploadResult, context: Record<string, string>) {
     setSessionId(result.sessionId);
+    setSessionContext({ ...context });
+    setSharedContext({ ...context });
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/extract", {
         method: "POST",
         headers: { "content-type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ sessionId: result.sessionId }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Extraction failed");
+      if (!res.ok) {
+        const message = data.error?.message ?? data.error ?? "Extraction failed";
+        throw new Error(message);
+      }
       setTable(data as Table);
+      setPage("results");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Extraction failed");
     } finally {
@@ -37,21 +56,36 @@ export default function Home() {
     }
   }
 
+  function goToUpload() {
+    setPage("upload");
+  }
+
   return (
     <main className="page">
-      {!table && mode === "upload" && (
+      {page === "welcome" && (
+        <WelcomePage onChoosePath={(path) => (path === "documents" ? setPage("upload") : setPage("checklist"))} />
+      )}
+      {page === "upload" && !table && (
         <>
-          <UploadDropzone onUploaded={handleUploaded} />
+          <UploadDropzone
+            onUploaded={handleUploaded}
+            context={sharedContext}
+            onContextChange={setSharedContext}
+          />
           <p className="notice">
             Still waiting on your plan documents?{" "}
-            <button className="btn--link" onClick={() => setMode("checklist")}>
+            <button className="btn--link" onClick={() => setPage("checklist")}>
               I don&apos;t have documents yet
             </button>
           </p>
         </>
       )}
-      {!table && mode === "checklist" && (
-        <ChecklistFlow onHaveDocuments={() => setMode("upload")} />
+      {page === "checklist" && !table && (
+        <ChecklistFlow
+          onHaveDocuments={() => goToUpload()}
+          context={sharedContext}
+          onContextChange={setSharedContext}
+        />
       )}
       {busy && (
         <p className="notice" role="status">
@@ -63,13 +97,19 @@ export default function Home() {
           {error}
         </p>
       )}
-      {table && sessionId && (
+      {page === "results" && table && sessionId && (
         <>
-          <div className="results">
-            <ComparisonTable table={table} sessionId={sessionId} />
-            <div className="results__tools">
+          <div className="results-workspace">
+            <ComparisonTable
+              table={table}
+              sessionId={sessionId}
+              userContext={sessionContext}
+              onContextUpdate={setSessionContext}
+              onTableUpdate={setTable}
+            />
+            <aside className="results-workspace__chat" aria-label="Ask about your plans">
               <ChatPanel sessionId={sessionId} documents={table.documents} />
-            </div>
+            </aside>
           </div>
           <InsurerQuestions questions={questions} />
           <p className="notice">

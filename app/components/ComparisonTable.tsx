@@ -8,18 +8,104 @@ import type {
 } from "@/app/lib/extraction/types";
 import { FACTS } from "@/app/lib/extraction/fact-list";
 import { groupRows } from "@/app/lib/extraction/sections";
-import { cellValues, documentTiers } from "@/app/lib/extraction/tiers";
+import { documentTiers, cellValues } from "@/app/lib/extraction/tiers";
+import { getPlanDisplayName } from "@/app/lib/extraction/plan-names";
 import { documentUrl } from "@/app/lib/document-url";
 import VerdictBadge from "@/app/components/VerdictBadge";
 
 const LABELS = new Map(FACTS.map((f) => [f.name, f.label]));
+const FACT_CONTEXT = new Map(FACTS.map((f) => [f.name, f.contextField]));
 const ALL_TIERS = "__all__";
+
+const FIELD_LABELS: Record<string, string> = {
+  age: "Age",
+  countryOrResidency: "Country / residency",
+  visaOrStatus: "Visa / status",
+  location: "City / ZIP",
+  coverageDates: "Coverage dates",
+};
+
+function MissingContextPrompt({
+  factName,
+  field,
+  sessionId,
+  onApplied,
+}: {
+  factName: string;
+  field: string;
+  sessionId: string;
+  onApplied: (table: Table, field: string, value: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  async function apply() {
+    if (!value.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/extract", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sessionId, context: { [field]: value.trim() } }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error?.message ?? data.error ?? "Update failed");
+      }
+      onApplied(data as Table, field, value.trim());
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="table__needs-input">
+      <span className="table__needs-badge">NEEDS YOUR INPUT</span>
+      {!open ? (
+        <button type="button" className="btn--link" onClick={() => setOpen(true)}>
+          Add information
+        </button>
+      ) : (
+        <span className="table__needs-form">
+          <label>
+            {FIELD_LABELS[field] ?? field}
+            <input
+              className="input"
+              aria-label={`${FIELD_LABELS[field] ?? field} for ${LABELS.get(factName) ?? factName}`}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void apply();
+              }}
+            />
+          </label>
+          <button type="button" className="btn" onClick={() => void apply()} disabled={busy}>
+            {busy ? "…" : "Apply"}
+          </button>
+        </span>
+      )}
+      {error && (
+        <span role="alert" className="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
 
 /** One document's slot in the header: single-tier docs get one column; a
  *  multi-tier doc gets one column per visible tier under a shared header. */
 interface DocumentGroup {
   documentId: string;
   filename: string;
+  displayName: string;
   tiers: string[];
   /** Tiers currently shown; undefined entries mean "the whole document". */
   visible: (string | undefined)[];
@@ -29,12 +115,12 @@ function TierCells({
   row,
   group,
   sessionId,
-  filenames,
+  planNames,
 }: {
   row: RegisteredTableRow;
   group: DocumentGroup;
   sessionId: string;
-  filenames: Map<string, string>;
+  planNames: Map<string, { name: string; source: "extracted" | "filename" }>;
 }) {
   const label = LABELS.get(row.factName) ?? row.factName;
   const render = (values: RegisteredCellValue[], key: string, colSpan = 1, first = false) => (
@@ -53,16 +139,17 @@ function TierCells({
               </span>
             );
           }
-          const filename = filenames.get(v.documentId) ?? v.documentId;
+          const planInfo = planNames.get(v.documentId);
+          const displayName = planInfo?.name ?? v.documentId;
           return (
             <a
               key={i}
               className="cell-value"
-              href={documentUrl(sessionId, v.documentId, filename, primary.page, primary.evidenceId)}
+              href={documentUrl(sessionId, v.documentId, displayName, primary.page, primary.evidenceId)}
               target="_blank"
               rel="noopener"
-              title={`View source evidence for ${label} — ${filename}, page ${primary.page}`}
-              aria-label={`View source evidence for ${label} — ${filename}, page ${primary.page}`}
+              title={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
+              aria-label={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
             >
               {v.display}
             </a>
@@ -99,28 +186,43 @@ function TierCells({
 export default function ComparisonTable({
   table,
   sessionId,
+  userContext,
+  onContextUpdate,
+  onTableUpdate,
 }: {
   table: Table;
   sessionId: string;
+  userContext?: Record<string, string>;
+  onContextUpdate?: (next: Record<string, string>) => void;
+  onTableUpdate?: (next: Table) => void;
 }) {
   const groups = groupRows(table.rows);
   const [activeSection, setActiveSection] = useState(groups[0]?.section.title ?? "");
   const activeGroup = groups.find(({ section }) => section.title === activeSection) ?? groups[0];
   const tiersByDoc = useMemo(() => documentTiers(table), [table]);
   const [selection, setSelection] = useState<Record<string, string>>({});
-  const filenames = useMemo(
-    () => new Map(table.documents.map((d) => [d.documentId, d.filename] as const)),
-    [table],
+  
+  // Plan display names
+  const planNames = useMemo(
+    () => new Map(
+      table.documents.map((d) => {
+        const { name, source } = getPlanDisplayName({ filename: d.filename, pages: [] });
+        return [d.documentId, { name, source }] as const;
+      })
+    ),
+    [table]
   );
 
   const docGroups: DocumentGroup[] = table.documents.map((d) => {
     const tiers = tiersByDoc.get(d.documentId) ?? [];
+    const planInfo = planNames.get(d.documentId);
+    const displayName = planInfo?.name ?? d.filename;
     if (tiers.length < 2) {
-      return { documentId: d.documentId, filename: d.filename, tiers, visible: [undefined] };
+      return { documentId: d.documentId, filename: d.filename, displayName, tiers, visible: [undefined] };
     }
     const chosen = selection[d.documentId] ?? ALL_TIERS;
     const visible = chosen === ALL_TIERS ? tiers : tiers.filter((t) => t === chosen);
-    return { documentId: d.documentId, filename: d.filename, tiers, visible };
+    return { documentId: d.documentId, filename: d.filename, displayName, tiers, visible };
   });
   const hasTierRow = docGroups.some((g) => g.tiers.length > 1);
   const valueColumns = docGroups.reduce((n, g) => n + g.visible.length, 0);
@@ -200,9 +302,9 @@ export default function ComparisonTable({
                     colSpan={g.visible.length}
                     className="table__group table__group-start"
                   >
-                    <span className="table__group-name">{g.filename}</span>
+                    <span className="table__group-name">{g.displayName}</span>
                     <label className="table__tier-picker">
-                      <span className="sr-only">Tier shown for {g.filename}</span>
+                      <span className="sr-only">Tier shown for {g.displayName}</span>
                       <select
                         className="select select--compact"
                         value={selection[g.documentId] ?? ALL_TIERS}
@@ -226,7 +328,7 @@ export default function ComparisonTable({
                     rowSpan={hasTierRow ? 2 : 1}
                     className="table__group-start"
                   >
-                    {g.filename}
+                    {g.displayName}
                   </th>
                 ),
               )}
@@ -250,7 +352,13 @@ export default function ComparisonTable({
             )}
           </thead>
           <tbody>
-            {(activeGroup?.rows ?? []).map((row) => (
+            {(activeGroup?.rows ?? []).map((row) => {
+              const contextField = FACT_CONTEXT.get(row.factName);
+              const missingField =
+                contextField && !(userContext?.[contextField] ?? "").trim()
+                  ? contextField
+                  : null;
+              return (
               <tr key={row.factName}>
                 <th scope="row" className="table__fact">
                   {LABELS.get(row.factName) ?? row.factName}
@@ -260,12 +368,24 @@ export default function ComparisonTable({
                   {row.verdict === "DOES NOT APPEAR TO FIT" && row.rationale ? (
                     <span className="table__rationale">{row.rationale}</span>
                   ) : null}
+                  {missingField && onTableUpdate && (
+                    <MissingContextPrompt
+                      factName={row.factName}
+                      field={missingField}
+                      sessionId={sessionId}
+                      onApplied={(next, field, val) => {
+                        onTableUpdate(next);
+                        onContextUpdate?.({ ...(userContext ?? {}), [field]: val });
+                      }}
+                    />
+                  )}
                 </td>
                 {docGroups.map((g) => (
-                  <TierCells key={g.documentId} row={row} group={g} sessionId={sessionId} filenames={filenames} />
+                  <TierCells key={g.documentId} row={row} group={g} sessionId={sessionId} planNames={planNames} />
                 ))}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

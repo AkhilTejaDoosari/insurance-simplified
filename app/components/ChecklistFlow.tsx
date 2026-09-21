@@ -11,12 +11,18 @@ import { buildChecklist, type CollectionChecklist } from "@/app/lib/checklist";
 
 export default function ChecklistFlow({
   onHaveDocuments,
+  context: controlledContext,
+  onContextChange,
 }: {
   onHaveDocuments: () => void;
+  context?: Record<string, string>;
+  onContextChange?: (next: Record<string, string>) => void;
 }) {
-  const [context, setContext] = useState<Record<string, string>>({
+  const [internalContext, setInternalContext] = useState<Record<string, string>>({
     countryOrResidency: DEFAULT_COUNTRY,
   });
+  const context = controlledContext ?? internalContext;
+  const setContext = onContextChange ?? setInternalContext;
   const [list, setList] = useState<CollectionChecklist | null>(null);
 
   function build() {
@@ -32,7 +38,7 @@ export default function ChecklistFlow({
     <section className="card" aria-label="What to collect">
       <h2>No documents yet? Start here</h2>
       <p className="text-muted">
-        Tell us a little about yourself and we&apos;ll list what to ask for.
+        Tell us a little about yourself and we&apos;ll list what to look for and what documents to collect.
       </p>
       {!list && (
         <>
@@ -71,6 +77,18 @@ export default function ChecklistFlow({
                   <li key={item}>{item}</li>
                 ))}
               </ul>
+            </div>
+            <div>
+              <h3>Where to get them</h3>
+              <ul className="list">
+                <li>Insurer websites or member portals</li>
+                <li>School or employer benefits resources</li>
+                <li>Insurance brokers</li>
+                <li>Search engines and comparison sites</li>
+              </ul>
+              <p className="text-muted" style={{ marginTop: 8 }}>
+                Insurance Simplified does not search these sources — you&apos;ll need to collect the PDFs yourself.
+              </p>
             </div>
             <p>{list.nextStep}</p>
           </div>

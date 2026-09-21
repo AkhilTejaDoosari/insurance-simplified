@@ -56,18 +56,19 @@ test("multi-tier document gets one column per tier and a tier picker", async ({ 
     route.fulfill({ json: TIERED_TABLE }),
   );
   await page.goto("/");
+  await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', [
     "tests/fixtures/plan-a.pdf",
     "tests/fixtures/plan-b.pdf",
   ]);
-  await page.getByRole("button", { name: "Compare documents" }).click();
+  await page.getByRole("button", { name: "Compare my plans" }).click();
 
   const table = page.getByRole("table");
   // Three tier sub-columns under the brochure; single-tier plan-a unchanged.
   for (const t of ["Lite", "Plus", "Platinum"]) {
     await expect(table.getByRole("columnheader", { name: t, exact: true })).toBeVisible();
   }
-  await expect(table.getByRole("columnheader", { name: "plan-a.pdf" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "A", exact: true })).toBeVisible();
   // Values are direct source links (accessible name carries fact/file/page;
   // visible text is the figure, which the mocked table fixes).
   const valueLink = (text: string) => table.getByRole("link").filter({ hasText: text });
@@ -75,14 +76,14 @@ test("multi-tier document gets one column per tier and a tier picker", async ({ 
   await expect(valueLink("$0 to $2,500")).toHaveCount(2);
 
   // Section tabs intentionally hide non-active rows. Verify the tier-agnostic
-  // value in Coverage details, where emergency-care lives, then return to
-  // Must know for the deductible/tier assertions below.
-  await page.getByRole("button", { name: "Coverage details", exact: true }).click();
+  // value in Care & Coverage, where emergency-care lives, then return to
+  // Essentials for the deductible/tier assertions below.
+  await page.getByRole("button", { name: "Care & Coverage", exact: true }).click();
   await expect(table.getByRole("link").filter({ hasText: /evacuation/ })).toHaveCount(1);
-  await page.getByRole("button", { name: "Must know", exact: true }).click();
+  await page.getByRole("button", { name: "Essentials", exact: true }).click();
 
   // Picking one tier collapses the group to a single column.
-  const picker = page.getByLabel("Tier shown for plan-b.pdf");
+  const picker = page.getByLabel("Tier shown for B");
   await expect(picker).toHaveValue("__all__");
   await picker.selectOption("Platinum");
   await expect(table.getByRole("columnheader", { name: "Platinum", exact: true })).toBeVisible();
@@ -99,7 +100,7 @@ test("multi-tier document gets one column per tier and a tier picker", async ({ 
   const tierValue = valueLink("$0 to $25,000");
   await expect(tierValue).toHaveAttribute(
     "href",
-    /\/view\/sess-[^/]+\/doc-2\/plan-b\.pdf\?page=1$/,
+    /\/view\/sess-[^/]+\/doc-2\/.+\?page=1$/,
   );
   const [viewer] = await Promise.all([
     page.waitForEvent("popup"),

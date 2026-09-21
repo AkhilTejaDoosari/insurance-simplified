@@ -8,7 +8,7 @@
 // Session ID alone is insufficient for authorization.
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSession, registerEvidence } from "@/app/lib/session";
+import { getSession, registerEvidence, updateSessionContext } from "@/app/lib/session";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
 import { verifyEvidenceCitation, checkDisplayGrounding } from "@/app/lib/evidence-verification";
 import type { ComparisonTable } from "@/app/lib/extraction/types";
@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
     sessionId?: string;
     engine?: string;
+    context?: Record<string, string>;
   } | null;
   if (!body?.sessionId) {
     return errorResponse("VALIDATION_ERROR", 400, { requestId, message: "sessionId required" });
@@ -35,6 +36,34 @@ export async function POST(request: NextRequest) {
   const auth = await requireSessionCapability(request, body.sessionId);
   if (!auth.ok) {
     return auth.errorResponse!;
+  }
+
+  const CONTEXT_FIELDS = [
+    "age",
+    "countryOrResidency",
+    "visaOrStatus",
+    "location",
+    "coverageDates",
+  ] as const;
+  if (body.context && typeof body.context === "object") {
+    const patch: Record<string, string> = {};
+    for (const field of CONTEXT_FIELDS) {
+      const value = body.context[field];
+      if (typeof value === "string" && value.trim()) {
+        patch[field] = value.trim();
+      }
+    }
+    if (Object.keys(patch).length > 0) {
+      const updated = updateSessionContext(body.sessionId, patch);
+      if (updated) {
+        try {
+          const { updateSessionContextDb } = await import("@/app/lib/session-db");
+          await updateSessionContextDb(body.sessionId, { context: updated.userContext });
+        } catch {
+          void 0;
+        }
+      }
+    }
   }
 
   const session = getSession(body.sessionId);

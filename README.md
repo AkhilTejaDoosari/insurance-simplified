@@ -14,7 +14,7 @@ Design docs: [specs/001-insurance-plan-comparison/](specs/001-insurance-plan-com
 
 ```sh
 npm install
-npm run dev        # http://localhost:3000
+npm run dev        # http://localhost:3333
 ```
 
 ## Test

@@ -34,10 +34,14 @@ export default function ChatPanel({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ sessionId, question }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Chat failed");
+      if (!res.ok) {
+        const message = data.error?.message ?? data.error ?? "Chat failed";
+        throw new Error(message);
+      }
       setTurns([...turns, { question, response: data as RegisteredChatResponse }]);
       setQuestion("");
     } catch (err) {

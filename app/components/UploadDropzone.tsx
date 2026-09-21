@@ -17,13 +17,19 @@ const TEXT_FIELDS = ["age", "countryOrResidency"] as const;
 
 export default function UploadDropzone({
   onUploaded,
+  context: controlledContext,
+  onContextChange,
 }: {
   onUploaded: (result: UploadResult, context: Record<string, string>) => void;
+  context?: Record<string, string>;
+  onContextChange?: (next: Record<string, string>) => void;
 }) {
   const [files, setFiles] = useState<File[]>([]);
-  const [context, setContext] = useState<Record<string, string>>({
+  const [internalContext, setInternalContext] = useState<Record<string, string>>({
     countryOrResidency: DEFAULT_COUNTRY,
   });
+  const context = controlledContext ?? internalContext;
+  const setContext = onContextChange ?? setInternalContext;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -46,13 +52,14 @@ export default function UploadDropzone({
       if (location) form.set("location", location);
       const coverageDates = combineCoverageDates(context);
       if (coverageDates) form.set("coverageDates", coverageDates);
-      const res = await fetch("/api/upload", { method: "POST", body: form });
+      const res = await fetch("/api/upload", { method: "POST", body: form, credentials: "include" });
       const data = await res.json();
       if (!res.ok) {
         const detail = data.failures
           ? `: ${(data.failures as { filename: string; reason: string }[]).map((f) => `${f.filename} — ${f.reason}`).join("; ")}`
           : "";
-        throw new Error(`${data.error ?? "Upload failed"}${detail}`);
+        const message = data.error?.message ?? data.error ?? "Upload failed";
+        throw new Error(`${message}${detail}`);
       }
       onUploaded(data as UploadResult, context);
     } catch (err) {
@@ -93,7 +100,7 @@ export default function UploadDropzone({
       )}
       <div className="actions">
         <button className="btn" onClick={submit} disabled={busy}>
-          {busy ? "Processing…" : "Compare documents"}
+          {busy ? "Processing…" : "Compare my plans"}
         </button>
       </div>
     </section>

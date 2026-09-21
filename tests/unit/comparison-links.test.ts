@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import ComparisonTable from "@/app/components/ComparisonTable";
 import { documentUrl } from "@/app/lib/document-url";
+import { getPlanDisplayName } from "@/app/lib/extraction/plan-names";
 import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import type { RegisteredCellValue, RegisteredComparisonTable as Table } from "@/app/lib/extraction/types";
 
@@ -68,6 +69,9 @@ function html(): string {
   return renderToStaticMarkup(createElement(ComparisonTable, { table: TABLE, sessionId: "sess-1" }));
 }
 
+const planA = getPlanDisplayName({ filename: "plan-a.pdf" }).name;
+const brochure = getPlanDisplayName({ filename: "brochure.pdf" }).name;
+
 function hrefAttr(url: string): string {
   return `href="${url.replace(/&/g, "&amp;")}"`;
 }
@@ -77,7 +81,7 @@ describe("comparison values link directly to their own source evidence", () => {
     const expected = documentUrl(
       "sess-1",
       "doc-1",
-      "plan-a.pdf",
+      planA,
       1,
       evidenceIdFor("doc-1", 1, "Annual deductible: $250."),
     );
@@ -86,8 +90,8 @@ describe("comparison values link directly to their own source evidence", () => {
 
   it("links each plan value to its OWN evidence, not the row's", () => {
     const out = html();
-    const lite = documentUrl("sess-1", "doc-2", "brochure.pdf", 1, evidenceIdFor("doc-2", 1, "Lite: $0 to $2,500."));
-    const platinum = documentUrl("sess-1", "doc-2", "brochure.pdf", 1, evidenceIdFor("doc-2", 1, "Platinum: $0 to $25,000."));
+    const lite = documentUrl("sess-1", "doc-2", brochure, 1, evidenceIdFor("doc-2", 1, "Lite: $0 to $2,500."));
+    const platinum = documentUrl("sess-1", "doc-2", brochure, 1, evidenceIdFor("doc-2", 1, "Platinum: $0 to $25,000."));
     expect(out).toContain(hrefAttr(lite));
     expect(out).toContain(hrefAttr(platinum));
     expect(lite).not.toBe(platinum);
@@ -95,15 +99,15 @@ describe("comparison values link directly to their own source evidence", () => {
 
   it("uses the first citation deterministically for multi-evidence values", () => {
     const out = html();
-    const primary = documentUrl("sess-1", "doc-1", "plan-a.pdf", 1, evidenceIdFor("doc-1", 1, "Out-of-pocket maximum $3,000."));
-    const secondary = documentUrl("sess-1", "doc-1", "plan-a.pdf", 2, evidenceIdFor("doc-1", 2, "Out-of-pocket maximum restated $3,000."));
+    const primary = documentUrl("sess-1", "doc-1", planA, 1, evidenceIdFor("doc-1", 1, "Out-of-pocket maximum $3,000."));
+    const secondary = documentUrl("sess-1", "doc-1", planA, 2, evidenceIdFor("doc-1", 2, "Out-of-pocket maximum restated $3,000."));
     expect(out).toContain(hrefAttr(primary));
     expect(out).not.toContain(hrefAttr(secondary));
   });
 
   it("exposes an accessible source label and real link semantics", () => {
     const out = html();
-    expect(out).toContain('aria-label="View source evidence for Annual deductible — plan-a.pdf, page 1"');
+    expect(out).toContain(`aria-label="View source evidence for Annual deductible — ${planA}, page 1"`);
     expect(out).toContain('target="_blank"');
     expect(out).toContain("<a");
   });

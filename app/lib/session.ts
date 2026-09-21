@@ -139,6 +139,18 @@ export function getSession(sessionId: string): Session | undefined {
   }
 }
 
+export function updateSessionContext(
+  sessionId: string,
+  patch: Record<string, string>,
+): Session | undefined {
+  if (!isSafeId(sessionId)) return undefined;
+  const session = getSession(sessionId);
+  if (!session) return undefined;
+  session.userContext = { ...session.userContext, ...patch };
+  writeFileSync(pathFor(sessionId), JSON.stringify(session));
+  return session;
+}
+
 /** Register cited passages in the session-bound evidence registry.
  *  IDs are deterministic content hashes, so re-registering the same
  *  passage is idempotent. */
