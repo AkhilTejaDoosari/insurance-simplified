@@ -9,7 +9,8 @@
 //
 // LAZINESS: importing this module never touches the network or the
 // environment. Credentials resolve at call time; without SUPABASE_URL /
-// SUPABASE_SERVICE_KEY the async persistence methods throw
+// SUPABASE_SECRET_KEY (legacy fallback SUPABASE_SERVICE_KEY) the async
+// persistence methods throw
 // PostgresUnconfiguredError (callers/tests treat that as SKIP, never as
 // fake success).
 //
@@ -45,7 +46,7 @@ export const EMBEDDING_DIMENSION = 1024;
 export class PostgresUnconfiguredError extends Error {
   constructor() {
     super(
-      "PostgresVectorStore: SUPABASE_URL and SUPABASE_SERVICE_KEY are unset — " +
+      "PostgresVectorStore: SUPABASE_URL and SUPABASE_SECRET_KEY are unset — " +
         "skipping persistence (in-memory index remains the default)",
     );
     this.name = "PostgresUnconfiguredError";
@@ -60,7 +61,7 @@ export interface PostgresConfig {
 /** Null when unconfigured — the honest-skip signal. Lazy: call, don't cache at import. */
 export function resolvePostgresConfig(): PostgresConfig | null {
   const url = process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY;
+  const serviceKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_KEY;
   if (!url || !serviceKey) return null;
   return { url: url.replace(/\/$/, ""), serviceKey };
 }
@@ -117,8 +118,8 @@ export interface MatchRow {
 // (app/lib/session.ts), never raw user text. Unscoped calls throw
 // UnscopedQueryError instead of silently searching all owners. The scope id
 // is always forwarded as the SQL-level `filter_session` predicate of the
-// match_chunks RPC (db/schema.sql). RLS is NOT claimed (see
-// app/lib/rag/ownership.ts).
+// match_chunks RPC (db/schema.sql). RLS additionally backs this at the
+// database (db/migrations/0003_rls.sql); the seam stays mandatory regardless.
 export interface VectorQueryFilters {
   documentId?: string;
   sessionId: string;

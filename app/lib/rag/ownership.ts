@@ -11,10 +11,10 @@
 // queryTopK / retrieveFtsCandidate REQUIRE a scope id and throw
 // UnscopedQueryError when it is missing/invalid, and the scope id is always
 // forwarded as the SQL-level `filter_session` predicate of the match_chunks /
-// fts_search_chunks RPCs (db/schema.sql). RLS is NOT claimed: there are no
-// row-level-security policies in db/schema.sql or db/migrations, and no live
-// integration test proves DB-side isolation. Do NOT claim RBAC/RLS anywhere
-// unless such a migration AND a live-DB proof test exist.
+// fts_search_chunks RPCs (db/schema.sql). RLS backs this at the database
+// (db/migrations/0003_rls.sql, proven by
+// tests/integration/rls-isolation.test.ts) — the seam stays mandatory
+// regardless: unscoped calls throw before any client call.
 
 /** Thrown when a persistence/retrieval call lacks a valid owner scope. */
 export class UnscopedQueryError extends Error {

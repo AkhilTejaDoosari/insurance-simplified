@@ -201,8 +201,10 @@ describe("queryTopK", () => {
 describe("unconfigured behavior", () => {
   it("throws PostgresUnconfiguredError (honest skip, never fake success)", async () => {
     const savedUrl = process.env.SUPABASE_URL;
-    const savedKey = process.env.SUPABASE_SERVICE_KEY;
+    const savedSecret = process.env.SUPABASE_SECRET_KEY;
+    const savedLegacy = process.env.SUPABASE_SERVICE_KEY;
     delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_SECRET_KEY;
     delete process.env.SUPABASE_SERVICE_KEY;
     try {
       const store = new PostgresVectorStore(); // no injected client, no env
@@ -215,7 +217,8 @@ describe("unconfigured behavior", () => {
       ).rejects.toBeInstanceOf(PostgresUnconfiguredError);
     } finally {
       if (savedUrl !== undefined) process.env.SUPABASE_URL = savedUrl;
-      if (savedKey !== undefined) process.env.SUPABASE_SERVICE_KEY = savedKey;
+      if (savedSecret !== undefined) process.env.SUPABASE_SECRET_KEY = savedSecret;
+      if (savedLegacy !== undefined) process.env.SUPABASE_SERVICE_KEY = savedLegacy;
     }
   });
 });

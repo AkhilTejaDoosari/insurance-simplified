@@ -14,7 +14,7 @@
 // websearch_to_tsquery (no app-side tsquery escaping to get wrong) while
 // still ranking exact surface matches via ts_rank.
 //
-// HONEST SKIP: without SUPABASE_URL / SUPABASE_SERVICE_KEY,
+// HONEST SKIP: without SUPABASE_URL / SUPABASE_SECRET_KEY,
 // retrieveFtsCandidate() resolves [] (the zero-evidence contract —
 // refusal gating depends on empty arrays, never null/throws for "no hits").
 // DB errors propagate (never swallowed into fake zeros).
@@ -33,7 +33,8 @@ export interface FtsRow {
 // OWNERSHIP SEAM (todo 62): sessionId is REQUIRED — same opaque-token rule
 // as the pgvector leg (see app/lib/rag/ownership.ts). Unscoped calls throw
 // UnscopedQueryError; the scope id rides the SQL-level `filter_session`
-// predicate of fts_search_chunks. RLS is NOT claimed.
+// predicate of fts_search_chunks. RLS additionally backs this at the
+// database (db/migrations/0003_rls.sql); the seam stays mandatory regardless.
 export interface FtsQueryFilters {
   documentId?: string;
   sessionId: string;
@@ -55,7 +56,7 @@ export interface FtsCandidateOptions extends FtsQueryFilters {
 
 /** Same env contract as the pgvector adapter (db/README.md). Lazy: call, don't cache at import. */
 export function isFtsConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
+  return Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_KEY));
 }
 
 /**
@@ -96,10 +97,10 @@ export function rankFtsRows(rows: FtsRow[], topK: number): RankedPassage[] {
 /** Fetch-based fts_search_chunks RPC call. Created lazily — never at import. */
 export function createRestFtsClient(): FtsClient {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY;
+  const serviceKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_KEY;
   if (!url || !serviceKey) {
     throw new Error(
-      "retrieveFtsCandidate: SUPABASE_URL and SUPABASE_SERVICE_KEY are unset — skipping FTS leg",
+      "retrieveFtsCandidate: SUPABASE_URL and SUPABASE_SECRET_KEY are unset — skipping FTS leg",
     );
   }
   return {

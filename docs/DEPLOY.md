@@ -44,9 +44,10 @@ Notes:
 
 ## 3. Migration procedure (`db/migrations`)
 
-`db/migrations/` holds ordered SQL migrations (`NNN_description.sql`).
-There are no migrations yet — sessions are server-local and Supabase is an
-external placeholder.
+`db/migrations/` holds ordered SQL migrations (`NNN_description.sql`),
+currently `0001_init` → `0002_object_key` → `0003_rls` (see `db/README.md`
+for what each applies). Sessions remain server-local; Supabase is opt-in
+durability, not the default runtime.
 
 When migrations exist, apply in filename order against the target database:
 

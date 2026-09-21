@@ -52,14 +52,17 @@ describe("rankFtsRows", () => {
 describe("retrieveFtsCandidate", () => {
   it("resolves [] without DB credentials (honest skip, never fake success)", async () => {
     const savedUrl = process.env.SUPABASE_URL;
-    const savedKey = process.env.SUPABASE_SERVICE_KEY;
+    const savedSecret = process.env.SUPABASE_SECRET_KEY;
+    const savedLegacy = process.env.SUPABASE_SERVICE_KEY;
     delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_SECRET_KEY;
     delete process.env.SUPABASE_SERVICE_KEY;
     try {
       await expect(retrieveFtsCandidate("F-1 visa eligibility", { sessionId: "sess-test" })).resolves.toEqual([]);
     } finally {
       if (savedUrl !== undefined) process.env.SUPABASE_URL = savedUrl;
-      if (savedKey !== undefined) process.env.SUPABASE_SERVICE_KEY = savedKey;
+      if (savedSecret !== undefined) process.env.SUPABASE_SECRET_KEY = savedSecret;
+      if (savedLegacy !== undefined) process.env.SUPABASE_SERVICE_KEY = savedLegacy;
     }
   });
 

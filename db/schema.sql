@@ -15,15 +15,16 @@
 --   * Embeddings are qwen3-embedding:0.6b, 1024 dims (evals/BASELINE.md).
 --     Dimension is enforced in the adapter (DimensionError, never coerced),
 --     not by silent truncation here.
---   * NO row-level security in this file: scope gating lives in the app
---     seam (queryTopK / retrieveFtsCandidate require an opaque session
---     scope, always bound as the filter_session predicate below; unscoped
---     calls throw rather than search all owners). RLS is NOT claimed —
---     access is gated by the SERVICE_KEY server-side contract
---     (see db/README.md). Do NOT claim RLS from this schema.
+--   * NO row-level security in this file's original P2 scope: scope gating
+--     lives in the app seam (queryTopK / retrieveFtsCandidate require an
+--     opaque session scope, always bound as the filter_session predicate
+--     below; unscoped calls throw rather than search all owners). RLS is
+--     applied separately and additively by db/migrations/0003_rls.sql
+--     (defense-in-depth on auth.uid(); service_role keeps serving the
+--     server-side scoped flows). See db/README.md.
 --
--- Apply via db/migrations/0001_init.sql (idempotent), not by hand-editing
--- a live database. No secrets in this file.
+-- Apply via db/migrations/0001_init.sql + 0002_object_key.sql + 0003_rls.sql
+-- (each idempotent), not by hand-editing a live database. No secrets here.
 
 -- pgvector provides the vector(1024) type + <=> cosine-distance operator.
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -36,8 +37,17 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS documents (
   id            TEXT        PRIMARY KEY,
   owner_session TEXT        NULL,
+  -- P3 defense-in-depth owner: Supabase Auth user id. NULL = pre-RLS or
+  -- server-seeded rows (invisible to authenticated users, fully visible to
+  -- service_role). Set at upload time for signed-in users.
+  owner_user_id UUID        NULL REFERENCES auth.users (id) ON DELETE CASCADE,
   filename      TEXT        NOT NULL,
   sha256        TEXT        NOT NULL,
+  -- P3-A durable object pointer: stable content-addressed key from
+  -- app/lib/storage/objects.ts objectKeyFor(sha256). NULL = bytes live only
+  -- in session-temp (pre-P3-A rows). Applied via
+  -- db/migrations/0002_object_key.sql (idempotent), not by hand-editing.
+  object_key    TEXT        NULL,
   source_type   TEXT        NULL,
   plan_key      TEXT        NULL,
   version_label TEXT        NULL,
@@ -51,6 +61,8 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS documents_owner_session_idx
   ON documents (owner_session);
+CREATE INDEX IF NOT EXISTS documents_owner_user_id_idx
+  ON documents (owner_user_id);
 CREATE INDEX IF NOT EXISTS documents_plan_key_idx
   ON documents (plan_key);
 
@@ -171,3 +183,80 @@ AS $$
   ORDER BY rank DESC
   LIMIT match_count;
 $$;
+
+-- ------------------------------------------------------- row-level security
+-- P3 defense-in-depth (db/migrations/0003_rls.sql is what operators run;
+-- this section keeps the canonical reference in sync). Both RPCs above are
+-- SECURITY INVOKER, so these policies apply to the caller; the app seam
+-- still binds filter_session on every call. service_role bypasses RLS and
+-- keeps serving the server-side scoped flows unchanged.
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chunks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS documents_select_own ON documents;
+CREATE POLICY documents_select_own ON documents
+  FOR SELECT TO authenticated USING (owner_user_id = auth.uid());
+DROP POLICY IF EXISTS documents_insert_own ON documents;
+CREATE POLICY documents_insert_own ON documents
+  FOR INSERT TO authenticated WITH CHECK (owner_user_id = auth.uid());
+DROP POLICY IF EXISTS documents_update_own ON documents;
+CREATE POLICY documents_update_own ON documents
+  FOR UPDATE TO authenticated
+  USING (owner_user_id = auth.uid()) WITH CHECK (owner_user_id = auth.uid());
+DROP POLICY IF EXISTS documents_delete_own ON documents;
+CREATE POLICY documents_delete_own ON documents
+  FOR DELETE TO authenticated USING (owner_user_id = auth.uid());
+
+DROP POLICY IF EXISTS pages_select_own ON pages;
+CREATE POLICY pages_select_own ON pages
+  FOR SELECT TO authenticated USING (
+    EXISTS (SELECT 1 FROM documents d
+      WHERE d.id = pages.document_id AND d.owner_user_id = auth.uid()));
+DROP POLICY IF EXISTS pages_insert_own ON pages;
+CREATE POLICY pages_insert_own ON pages
+  FOR INSERT TO authenticated WITH CHECK (
+    EXISTS (SELECT 1 FROM documents d
+      WHERE d.id = pages.document_id AND d.owner_user_id = auth.uid()));
+DROP POLICY IF EXISTS pages_update_own ON pages;
+CREATE POLICY pages_update_own ON pages
+  FOR UPDATE TO authenticated
+  USING (EXISTS (SELECT 1 FROM documents d
+    WHERE d.id = pages.document_id AND d.owner_user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM documents d
+    WHERE d.id = pages.document_id AND d.owner_user_id = auth.uid()));
+DROP POLICY IF EXISTS pages_delete_own ON pages;
+CREATE POLICY pages_delete_own ON pages
+  FOR DELETE TO authenticated USING (
+    EXISTS (SELECT 1 FROM documents d
+      WHERE d.id = pages.document_id AND d.owner_user_id = auth.uid()));
+
+DROP POLICY IF EXISTS chunks_select_own ON chunks;
+CREATE POLICY chunks_select_own ON chunks
+  FOR SELECT TO authenticated USING (
+    EXISTS (SELECT 1 FROM documents d
+      WHERE d.id = chunks.document_id AND d.owner_user_id = auth.uid()));
+DROP POLICY IF EXISTS chunks_insert_own ON chunks;
+CREATE POLICY chunks_insert_own ON chunks
+  FOR INSERT TO authenticated WITH CHECK (
+    EXISTS (SELECT 1 FROM documents d
+      WHERE d.id = chunks.document_id AND d.owner_user_id = auth.uid()));
+DROP POLICY IF EXISTS chunks_update_own ON chunks;
+CREATE POLICY chunks_update_own ON chunks
+  FOR UPDATE TO authenticated
+  USING (EXISTS (SELECT 1 FROM documents d
+    WHERE d.id = chunks.document_id AND d.owner_user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM documents d
+    WHERE d.id = chunks.document_id AND d.owner_user_id = auth.uid()));
+DROP POLICY IF EXISTS chunks_delete_own ON chunks;
+CREATE POLICY chunks_delete_own ON chunks
+  FOR DELETE TO authenticated USING (
+    EXISTS (SELECT 1 FROM documents d
+      WHERE d.id = chunks.document_id AND d.owner_user_id = auth.uid()));
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON documents TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON pages TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON chunks TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE pages_id_seq TO authenticated;
+GRANT EXECUTE ON FUNCTION match_chunks(vector, integer, text, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION fts_search_chunks(text, integer, text, text) TO authenticated;

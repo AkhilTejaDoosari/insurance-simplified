@@ -1531,7 +1531,7 @@ function runV2Eval() {
 // containment (same norm(), same expectedChunkKeys()), then deletes the
 // scope (ON DELETE CASCADE). Target surface forms: F-1, OPT, PPO,
 // precertification, amounts, %, plan names, visa codes, dates.
-// WITHOUT SUPABASE_URL + SUPABASE_SERVICE_KEY (env or .env.local) this
+// WITHOUT SUPABASE_URL + SUPABASE_SECRET_KEY (env or .env.local) this
 // prints SKIP (never fake zeros) and never scores TEST (DEV + VALIDATION
 // only). Default output (no flag) is byte-identical; this path only runs
 // with --leg=fts or --retriever=fts. Production answer paths
@@ -1556,7 +1556,7 @@ function loadSupabaseEnv() {
     // No .env.local: fall back to process env only.
   }
   const url = process.env.SUPABASE_URL ?? fromFile.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_KEY ?? fromFile.SUPABASE_SERVICE_KEY;
+  const serviceKey = process.env.SUPABASE_SECRET_KEY ?? fromFile.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_KEY ?? fromFile.SUPABASE_SERVICE_KEY;
   if (!url || !serviceKey) return null;
   return { url: url.replace(/\/$/, ""), serviceKey };
 }
@@ -1666,7 +1666,7 @@ function printFtsTable(partition, r) {
 async function runFtsLeg(parts) {
   const env = loadSupabaseEnv();
   if (!env) {
-    console.log("fts: SKIP (SUPABASE_URL + SUPABASE_SERVICE_KEY unset in env and .env.local; no fake zeros recorded)");
+    console.log("fts: SKIP (SUPABASE_URL + SUPABASE_SECRET_KEY unset in env and .env.local; no fake zeros recorded)");
     return;
   }
   const chunks = chunkCorpusMirror(CORPUS);
