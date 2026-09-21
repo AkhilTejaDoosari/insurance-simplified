@@ -14,16 +14,19 @@ PDFs or the whole set fails with 422).
 
 Default state is server-local: session JSON + raw PDFs under
 `os.tmpdir()/insurance-simplified-sessions/`, deleted on session close;
-saving means downloading an export file. Supabase is opt-in durability,
-never on the default request path.
+saving means downloading an export file. When Supabase is configured, the
+same request path additionally persists durably (fail-closed: the upload
+fails explicitly instead of going READY without durability); when it is
+not, the server-local path is the whole story.
 
 ## Data planes
 
 - Supabase Postgres — durable source of truth when configured
   (`documents` / `pages` / `chunks`, `db/schema.sql`, migrations
   `0001_init` → `0002_object_key` → `0003_rls`, all idempotent).
-  Reached only via the persistence adapters or cleanup; production
-  read paths below do not query it.
+  Upload writes documents/pages/chunks rows (durable IDs
+  `<sessionId>--<documentId>`); chat reads via `match_chunks`; delete
+  removes by `owner_session` (cascades to pages/chunks).
 - Supabase Storage (`insurance-documents`, private, PDF-only) — original
   PDF bytes, content-addressed (`docs/<aa>/<sha256>.pdf`). Best-effort on
   upload (temp bytes keep existing behavior); reads go through the
@@ -57,30 +60,32 @@ anon key only. No secret ever reaches the browser.
 
 ## Retrieval
 
-- Production: lexical line-overlap + semantic (chunk → embed via
-  `EMBEDDING_*` endpoint → in-memory cosine), top-5, then deterministic
-  answer or fixed refusal. Purely from session pages.
-- `match_chunks` (pgvector) and `fts_search_chunks` (FTS): persistence
-  legs used by evals/tests/cleanup, SECURITY INVOKER, still
-  `filter_session`-bound. FTS is an evaluation candidate, not a
-  production path.
+- Production semantic: persistent pgvector first when configured
+  (`match_chunks` scoped by `owner_session`, mapped back to session
+  documentIds); persistent errors fall back to the in-memory cosine leg,
+  then lexical line-overlap; empty evidence refuses. Unconfigured →
+  in-memory semantic → lexical → refusal, as before. FTS stays an
+  evaluation candidate, never a production path.
 
 ## Evidence and deletion
 
 Quotes resolve chunk → document → page → source text; the session evidence
 registry binds opaque `&evidence=` IDs to exact quotes (URLs are never
-trusted). Session delete removes metadata + temp bytes, then best-effort
-object bytes and vectors; DB deletes cascade
-(documents → pages/chunks); storage missing-keys are no-ops so deletes stay
-retryable.
+trusted). Citations are verified against session documents before any
+answer is returned. Session delete removes durable vectors/objects first
+(identifiers preserved for retry; explicit 503 otherwise), session
+metadata last; DB deletes cascade (documents → pages/chunks); storage
+missing-keys are no-ops so deletes stay retryable.
 
 ## Failure behavior
 
 Extraction failures fail the upload set (quality gate: unreadable /
 failed / unsupported / implausible-volume, plain-language messages).
-Unconfigured LLM/embeddings/Supabase degrade to built-in engines, never to
-fake data: persistence throws `*UnconfiguredError` (tests SKIP), FTS
-resolves `[]`, unknown stays NULL (no invented defaults).
+Durable-write failures fail the upload explicitly (503, retryable, session
+removed so nothing is READY without durability). Unconfigured
+LLM/embeddings/Supabase degrade to built-in engines, never to fake data:
+persistence throws `*UnconfiguredError` (tests SKIP), FTS resolves `[]`,
+unknown stays NULL (no invented defaults).
 
 ## Secrets and deployment
 
@@ -94,4 +99,5 @@ the operator's TLS.
 
 Login/auth UX and end-user RLS enforcement in the running app; queues or
 workers; active Langfuse; deployment; FTS in production; public storage
-URLs; server-side saved state beyond the export download.
+URLs; any saved state beyond the session (local temp, or the durable
+Supabase rows/objects when configured) plus the export download.

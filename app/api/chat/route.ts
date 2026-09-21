@@ -24,19 +24,21 @@ import {
 } from "@/app/lib/rag/answer";
 import { isLlmConfigured } from "@/app/lib/llm/client";
 import { buildTraceEvent, emitTrace } from "@/app/lib/observability/trace";
+import { errorResponse, logFailure, newRequestId } from "@/app/lib/api-errors";
 
 export async function POST(request: NextRequest) {
+  const requestId = newRequestId();
   const body = (await request.json().catch(() => null)) as {
     sessionId?: string;
     question?: string;
     engine?: string;
   } | null;
   if (!body?.sessionId || typeof body.question !== "string" || !body.question.trim()) {
-    return NextResponse.json({ error: "sessionId and question required" }, { status: 400 });
+    return errorResponse("BAD_INPUT", 400, { requestId });
   }
   const session = getSession(body.sessionId);
   if (!session) {
-    return NextResponse.json({ error: "Unknown session" }, { status: 404 });
+    return errorResponse("UNKNOWN_SESSION", 404, { requestId });
   }
 
   const useLlm =
@@ -79,15 +81,25 @@ export async function POST(request: NextRequest) {
     let response;
     if (useLlm) {
       try {
-        response = await answerViaLlm(session.documents, body.question);
-      } catch (err) {
+        response = await answerViaLlm(session.documents, body.question, {
+          sessionId: body.sessionId,
+        });
+  } catch (err) {
+    // Contract: degraded successes above stay 200; only a total failure lands
+    // here. Raw error text is logged server-side only — the client gets the
+    // fixed CHAT_FAILED message (no secret/structure leakage).
+    logFailure(requestId, "chat", err);
         console.warn(
           `[chat] llm engine failed; degrading to semantic: ${err instanceof Error ? err.message : "unknown"}`
         );
-        response = await answerQuestionSemantic(session.documents, body.question);
+        response = await answerQuestionSemantic(session.documents, body.question, {
+          sessionId: body.sessionId,
+        });
       }
     } else {
-      response = await answerQuestionSemantic(session.documents, body.question);
+      response = await answerQuestionSemantic(session.documents, body.question, {
+        sessionId: body.sessionId,
+      });
     }
     const validated = validateChatResponse(response);
     if (validated.kind === "answer") {
@@ -96,6 +108,12 @@ export async function POST(request: NextRequest) {
       // may depend on every citation, so ANY unverifiable citation fails the
       // whole answer closed — return the existing refusal shape rather than
       // a partially unsupported answer. No new response states.
+      //
+      // P3-E ACCESS INVARIANT: access/scope decisions live ONLY in this route
+      // (getSession above) and ownership/session code — NEVER in model output.
+      // Model-supplied documentIds/quotes grant nothing; citations below are
+      // re-verified against session.documents, and evidenceIds are minted here
+      // via withEvidenceId, never accepted from the model.
       const canonical = [];
       let allVerified = true;
       for (const citation of validated.citations) {
@@ -155,9 +173,6 @@ export async function POST(request: NextRequest) {
     } catch {
       // tracing never breaks the response
     }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Chat failed" },
-      { status: 500 }
-    );
+    return errorResponse("CHAT_FAILED", 500, { retryable: true, requestId });
   }
 }

@@ -4,7 +4,24 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { extractPages } from "@/app/lib/pdf/extract-pages";
-import { createSession, saveDocumentFile } from "@/app/lib/session";
+import {
+  attachDocumentObjectMetadata,
+  createSession,
+  deleteSession,
+  getSession,
+  saveDocumentFile,
+} from "@/app/lib/session";
+import {
+  deleteDocumentObjects,
+  getDefaultObjectStore,
+  putDocumentBytes,
+} from "@/app/lib/storage/objects";
+import {
+  checkExtraction,
+  classifyExtractorError,
+  userVisibleMessage,
+} from "@/app/lib/ingestion/quality-gate";
+import { transition, type IngestionState } from "@/app/lib/ingestion/lifecycle";
 
 const MIN_FILES = 2;
 const MAX_FILES = 4;
@@ -53,16 +70,31 @@ export async function POST(request: NextRequest) {
   await Promise.all(
     files.map(async (file, i) => {
       const documentId = `doc-${i + 1}`;
+      // P3-B/C: explicit per-file lifecycle (UPLOADING→PROCESSING→READY/FAILED)
+      // with the quality gate enforced before anything becomes searchable.
+      let state: IngestionState = "UPLOADING";
       try {
+        state = transition(state, "PROCESSING");
         const buffer = await file.arrayBuffer();
         const { pageCount, pages } = await extractPages(buffer, file.name);
+        const gate = checkExtraction(pages);
+        if (!gate.ok) {
+          state = transition(state, "FAILED");
+          failures.push({ filename: file.name, reason: userVisibleMessage(gate.reason) });
+          return;
+        }
+        state = transition(state, "READY");
         documents.push({ documentId, filename: file.name, pageCount, pages });
         rawFiles.set(documentId, new Uint8Array(buffer));
       } catch (err) {
-        failures.push({
-          filename: file.name,
-          reason: err instanceof Error ? err.message : "Could not be read",
-        });
+        try {
+          state = transition(state, "FAILED");
+        } catch {
+          // Already terminal — the failure below is what matters.
+        }
+        void state;
+        const classified = classifyExtractorError(err);
+        failures.push({ filename: file.name, reason: userVisibleMessage(classified.reason) });
       }
     })
   );
@@ -77,8 +109,51 @@ export async function POST(request: NextRequest) {
 
   documents.sort((a, b) => a.documentId.localeCompare(b.documentId));
   const session = createSession(documents, userContext);
+  // P3-A: durable write first (object store survives restarts), legacy
+  // session-temp second (unchanged fallback for the document route + viewer).
+  // Object-store failure never fails the upload — temp bytes keep the
+  // existing behavior, metadata is recorded only for successful puts.
+  const store = getDefaultObjectStore();
   for (const [documentId, bytes] of rawFiles) {
+    try {
+      const metadata = await putDocumentBytes(bytes, store);
+      attachDocumentObjectMetadata(session.sessionId, documentId, metadata);
+    } catch {
+      // Durability upgrade is best-effort per file; temp fallback below.
+    }
     saveDocumentFile(session.sessionId, documentId, bytes);
+  }
+  // Runtime persistence cutover: when the durable stack is configured the
+  // session must NOT become READY until storage + documents/pages/chunks
+  // rows all succeed. Durable failure deletes the session and fails
+  // explicitly — never a silent temp-only fallback.
+  const { isDurableConfigured, persistSessionUpload } = await import(
+    "@/app/lib/rag/persist-session"
+  );
+  if (isDurableConfigured()) {
+    try {
+      const persisted = await persistSessionUpload(
+        session.sessionId,
+        documents.map((d) => ({
+          documentId: d.documentId,
+          filename: d.filename,
+          pages: d.pages,
+          bytes: rawFiles.get(d.documentId) ?? new Uint8Array(),
+        })),
+      );
+      for (const meta of persisted) {
+        attachDocumentObjectMetadata(session.sessionId, meta.documentId, meta);
+      }
+    } catch (err) {
+      deleteSession(session.sessionId);
+      return NextResponse.json(
+        {
+          error: "Durable persistence failed; upload was not saved.",
+          retryable: true,
+        },
+        { status: 503 },
+      );
+    }
   }
 
   return NextResponse.json(
@@ -101,8 +176,57 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "sessionId required" }, { status: 400 });
   }
   const { deleteSession } = await import("@/app/lib/session");
+  // Snapshot object keys BEFORE metadata removal so every durable object is
+  // cleaned up alongside metadata + chunks/vectors (existing seam below).
+  const snapshot = getSession(sessionId)?.documents ?? [];
+  const objectKeys = snapshot
+    .map((d) => d.objectKey)
+    .filter((k): k is string => typeof k === "string");
+  // Runtime persistence cutover: durable cleanup runs BEFORE metadata
+  // removal so a failed step keeps every identifier needed for retry.
+  const { isDurableConfigured, deleteDurableObjects, deleteDurableVectors } = await import(
+    "@/app/lib/rag/persist-session"
+  );
+  if (isDurableConfigured()) {
+    try {
+      await deleteDurableVectors(sessionId);
+    } catch {
+      return NextResponse.json(
+        { error: "Durable vector cleanup failed.", retryable: true, sessionId, pending: ["vectors"] },
+        { status: 503 },
+      );
+    }
+    try {
+      await deleteDurableObjects(sessionId, objectKeys);
+    } catch {
+      return NextResponse.json(
+        { error: "Durable object cleanup failed.", retryable: true, sessionId, pending: ["objects"] },
+        { status: 503 },
+      );
+    }
+  }
   if (!deleteSession(sessionId)) {
     return NextResponse.json({ error: "Unknown session" }, { status: 404 });
+  }
+  if (isDurableConfigured()) {
+    return NextResponse.json({ deleted: true });
+  }
+  // Legacy temp-only path: object + vector deletes stay best-effort so a
+  // store outage never masks the authoritative metadata delete above.
+  try {
+    await deleteDocumentObjects(sessionId, objectKeys, getDefaultObjectStore());
+  } catch {
+    // Authoritative metadata delete above already succeeded.
+  }
+  try {
+    const { PostgresVectorStore, isPostgresConfigured } = await import(
+      "@/app/lib/rag/postgres-vector"
+    );
+    if (isPostgresConfigured()) {
+      await new PostgresVectorStore().deleteSession(sessionId);
+    }
+  } catch {
+    // Vector cleanup is best-effort; session metadata is already gone.
   }
   return NextResponse.json({ deleted: true });
 }

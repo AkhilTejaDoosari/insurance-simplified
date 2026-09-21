@@ -16,8 +16,18 @@ export default defineConfig({
     command: `npm run dev -- -p ${E2E_PORT}`,
     // e2e assertions are written against the deterministic engine; blank
     // credentials here win over .env.local so /api/extract never auto-picks
-    // the LLM in CI or locally.
-    env: { LLM_BASE_URL: "", LLM_API_KEY: "" },
+    // the LLM in CI or locally. Supabase is blanked for the same reason so
+    // uploads exercise the local temp path deterministically and never
+    // touch live storage/database; live persistence is proven by the
+    // integration suite instead.
+    env: {
+      LLM_BASE_URL: "",
+      LLM_API_KEY: "",
+      SUPABASE_URL: "",
+      SUPABASE_SECRET_KEY: "",
+      SUPABASE_SERVICE_KEY: "",
+      SUPABASE_STORAGE_BUCKET: "",
+    },
     url: E2E_BASE_URL,
     // Never reuse an arbitrary app that happens to be listening on the test
     // port. The previous config reused localhost:3000, so a developer's
