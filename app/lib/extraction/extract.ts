@@ -21,6 +21,7 @@ import {
 } from "@/app/lib/extraction/fact-list";
 import { wrapDocuments } from "@/app/lib/llm/safe-prompt";
 import { completeJson } from "@/app/lib/llm/client";
+import { withEligibilityRow } from "@/app/lib/extraction/eligibility";
 
 export interface ExtractInputDocument {
   documentId: string;
@@ -173,16 +174,19 @@ export function extractFallback(
     };
   });
 
-  return {
-    schemaVersion: "v1",
-    factListVersion: FACT_LIST_VERSION,
-    documents: documents.map(({ documentId, filename, pageCount }) => ({
-      documentId,
-      filename,
-      pageCount,
-    })),
-    rows,
-  };
+  return withEligibilityRow(
+    {
+      schemaVersion: "v1",
+      factListVersion: FACT_LIST_VERSION,
+      documents: documents.map(({ documentId, filename, pageCount }) => ({
+        documentId,
+        filename,
+        pageCount,
+      })),
+      rows,
+    },
+    userContext
+  );
 }
 
 const EXTRACTION_INSTRUCTIONS = [
@@ -211,7 +215,9 @@ const EXTRACTION_INSTRUCTIONS = [
  *  qualifier key with an empty string for tier-agnostic values). Coerce
  *  missing, null, or non-object qualifiers on any value to {} before
  *  validation; trim known scope fields and drop them when blank so an
- *  absent tier stays absent (never an invented tier). */
+ *  absent tier stays absent (never an invented tier). A planTier of "All"
+ *  or "All tiers" is the UI selector, never a tier column, so it normalizes
+ *  to tier-agnostic as well. */
 const QUALIFIER_SCOPE_KEYS: readonly string[] = [
   "planTier",
   "networkTier",
@@ -244,8 +250,15 @@ export function normalizeLlmTable(raw: unknown): unknown {
             const field = cleaned[key];
             if (typeof field !== "string") continue;
             const trimmed = field.trim();
-            if (trimmed) cleaned[key] = trimmed;
-            else delete cleaned[key];
+            if (!trimmed) {
+              delete cleaned[key];
+              continue;
+            }
+            if (key === "planTier" && /^all(\s+tiers?)?$/i.test(trimmed)) {
+              delete cleaned[key];
+              continue;
+            }
+            cleaned[key] = trimmed;
           }
           return { ...v, qualifiers: cleaned };
         }),
@@ -398,8 +411,11 @@ export async function extractViaLlm(
     documents.map(({ documentId, pages }) => ({ documentId, pages }))
   );
   const raw = await completeJson([{ role: "user", content: prompt }]);
-  return validateTable(
-    reconcileLlmTable(dropEvidenceLessValues(normalizeLlmTable(raw)), documents)
+  return withEligibilityRow(
+    validateTable(
+      reconcileLlmTable(dropEvidenceLessValues(normalizeLlmTable(raw)), documents)
+    ),
+    userContext
   );
 }
 

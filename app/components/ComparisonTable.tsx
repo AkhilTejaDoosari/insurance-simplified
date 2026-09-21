@@ -7,13 +7,21 @@ import type {
   RegisteredTableRow,
 } from "@/app/lib/extraction/types";
 import { FACTS } from "@/app/lib/extraction/fact-list";
-import { groupRows, SECTIONS } from "@/app/lib/extraction/sections";
+import {
+  ELIGIBILITY_ROW_LABEL,
+  ELIGIBILITY_ROW_NAME,
+  eligibilityMissingField,
+} from "@/app/lib/extraction/eligibility";
+import { summarizeNetworkDisplay } from "@/app/lib/extraction/network-display";
+import { groupRows, OTHER, SECTIONS } from "@/app/lib/extraction/sections";
 import { documentTiers, cellValues } from "@/app/lib/extraction/tiers";
 import { getPlanDisplayName } from "@/app/lib/extraction/plan-names";
 import { documentUrl } from "@/app/lib/document-url";
 import VerdictBadge from "@/app/components/VerdictBadge";
 
 const LABELS = new Map(FACTS.map((f) => [f.name, f.label]));
+const labelFor = (factName: string): string =>
+  LABELS.get(factName) ?? (factName === ELIGIBILITY_ROW_NAME ? ELIGIBILITY_ROW_LABEL : factName);
 const FACT_CONTEXT = new Map(FACTS.map((f) => [f.name, f.contextField]));
 const ALL_TIERS = "__all__";
 
@@ -78,7 +86,7 @@ function MissingContextPrompt({
             {FIELD_LABELS[field] ?? field}
             <input
               className="input"
-              aria-label={`${FIELD_LABELS[field] ?? field} for ${LABELS.get(factName) ?? factName}`}
+              aria-label={`${FIELD_LABELS[field] ?? field} for ${labelFor(factName)}`}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
@@ -122,7 +130,10 @@ function TierCells({
   sessionId: string;
   planNames: Map<string, { name: string; source: "extracted" | "filename" }>;
 }) {
-  const label = LABELS.get(row.factName) ?? row.factName;
+  const label = labelFor(row.factName);
+  const conciseNetwork = row.factName === "network";
+  const cellText = (display: string): string =>
+    conciseNetwork ? summarizeNetworkDisplay(display) : display;
   const render = (values: RegisteredCellValue[], key: string, colSpan = 1, first = false) => (
     <td key={key} colSpan={colSpan} className={first ? "table__group-start" : undefined}>
       {values.length > 0 ? (
@@ -135,7 +146,7 @@ function TierCells({
           if (!primary) {
             return (
               <span key={i} className="cell-value">
-                {v.display}
+                {cellText(v.display)}
               </span>
             );
           }
@@ -151,7 +162,7 @@ function TierCells({
               title={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
               aria-label={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
             >
-              {v.display}
+              {cellText(v.display)}
             </a>
           );
         })
@@ -197,9 +208,19 @@ export default function ComparisonTable({
   onTableUpdate?: (next: Table) => void;
 }) {
   const groups = groupRows(table.rows);
-  const [activeSection, setActiveSection] = useState(SECTIONS[0].title);
+  const [activeSection, setActiveSection] = useState(
+    () =>
+      (groups.some(({ section }) => section.title === SECTIONS[0].title)
+        ? SECTIONS[0].title
+        : groups[0]?.section.title) ?? SECTIONS[0].title,
+  );
+  const visibleSections =
+    groups.some(({ section }) => section.title === OTHER.title)
+      ? [...SECTIONS, OTHER]
+      : SECTIONS;
   const activeGroup = groups.find(({ section }) => section.title === activeSection);
-  const activeSectionDef = SECTIONS.find((s) => s.title === activeSection) ?? SECTIONS[0];
+  const activeSectionDef =
+    visibleSections.find((s) => s.title === activeSection) ?? SECTIONS[0];
   const activeRows = activeGroup?.rows ?? [];
   const tiersByDoc = useMemo(() => documentTiers(table), [table]);
   const [selection, setSelection] = useState<Record<string, string>>({});
@@ -256,7 +277,7 @@ export default function ComparisonTable({
       </div>
 
       <div className="comparison__tabs" role="group" aria-label="Comparison sections">
-        {SECTIONS.map((section) => {
+        {visibleSections.map((section) => {
           const active = section.title === activeSection;
           return (
             <button
@@ -361,16 +382,18 @@ export default function ComparisonTable({
             {activeRows.map((row) => {
               const contextField = FACT_CONTEXT.get(row.factName);
               const missingField =
-                contextField && !(userContext?.[contextField] ?? "").trim()
-                  ? contextField
-                  : null;
+                row.factName === ELIGIBILITY_ROW_NAME
+                  ? eligibilityMissingField(row, userContext ?? {})
+                  : contextField && !(userContext?.[contextField] ?? "").trim()
+                    ? contextField
+                    : null;
               return (
               <tr key={row.factName}>
                 <th scope="row" className="table__fact">
-                  {LABELS.get(row.factName) ?? row.factName}
+                  {labelFor(row.factName)}
                 </th>
                 <td>
-                  <VerdictBadge verdict={row.verdict} />
+                  <VerdictBadge verdict={row.verdict} factName={row.factName} />
                   {row.verdict === "DOES NOT APPEAR TO FIT" && row.rationale ? (
                     <span className="table__rationale">{row.rationale}</span>
                   ) : null}

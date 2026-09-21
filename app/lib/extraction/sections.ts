@@ -3,6 +3,7 @@
 // Fact names must match app/lib/extraction/fact-list.ts (tested).
 
 import type { TableRow } from "@/app/lib/extraction/types";
+import { ELIGIBILITY_ROW_NAME, NON_DISPLAY_FEEDERS } from "@/app/lib/extraction/eligibility";
 
 export interface Section {
   title: string;
@@ -17,13 +18,13 @@ export const SECTIONS: Section[] = [
     description:
       "The costs and conditions that decide whether a plan works for you at all.",
     factNames: [
-      "premium",
+      ELIGIBILITY_ROW_NAME,
       "annual-deductible",
       "out-of-pocket-maximum",
       "network",
-      "eligibility",
-      "student-eligibility",
-      "coverage-dates",
+      "coinsurance",
+      "policy-limit",
+      "premium",
       "pre-existing-conditions",
     ],
   },
@@ -66,7 +67,7 @@ export const SECTIONS: Section[] = [
   },
 ];
 
-const OTHER: Section = {
+export const OTHER: Section = {
   title: "Other",
   description: "Facts not covered by the groups above.",
   factNames: [],
@@ -79,9 +80,11 @@ export interface SectionGroup<R extends TableRow = TableRow> {
 
 /** Split rows into sections in display order; empty sections are dropped.
  *  Generic over the row type so enriched (registered) tables keep their
- *  evidence IDs. Each fact has exactly one canonical section. */
+ *  evidence IDs. Each fact has exactly one canonical section. Eligibility
+ *  evidence feeders never render as own rows; only the composite does. */
 export function groupRows<R extends TableRow>(rows: R[]): SectionGroup<R>[] {
   const byName = new Map(rows.map((r) => [r.factName, r]));
+  for (const feeder of NON_DISPLAY_FEEDERS) byName.delete(feeder);
   const groups: SectionGroup<R>[] = [];
   for (const section of SECTIONS) {
     const matched = section.factNames.flatMap((n) => {

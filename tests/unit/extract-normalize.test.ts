@@ -73,6 +73,37 @@ describe("extractViaLlm qualifiers normalization", () => {
     expect(table.rows[0].values[0].qualifiers).toEqual({ planTier: "Plus" });
   });
 
+  it("never turns a synthetic All tier into a tier column", async () => {
+    for (const tier of ["All", "all", "All tiers", "  all  ", ""]) {
+      mockedComplete.mockResolvedValue(llmPayload({ planTier: tier }));
+      const table = await extractViaLlm(DOCS, {});
+      expect(table.rows[0].values[0].qualifiers).toEqual({});
+    }
+  });
+
+  it("keeps real tiers intact while dropping the synthetic one", async () => {
+    mockedComplete.mockResolvedValue({
+      schemaVersion: "v1",
+      factListVersion: "v1",
+      documents: [{ documentId: "doc-1", filename: "a.pdf", pageCount: 1 }],
+      rows: [
+        {
+          factName: "annual-deductible",
+          verdict: "SUPPORTED",
+          values: [
+            valueWith({ planTier: "Lite" }),
+            valueWith({ planTier: "Plus" }),
+            valueWith({ planTier: "All" }),
+            valueWith({ planTier: "Platinum" }),
+          ],
+        },
+      ],
+    });
+    const table = await extractViaLlm(DOCS, {});
+    const tiers = table.rows[0].values.map((val) => val.qualifiers.planTier);
+    expect(tiers).toEqual(["Lite", "Plus", undefined, "Platinum"]);
+  });
+
   it("still rejects genuinely invalid payloads", async () => {
     mockedComplete.mockResolvedValue({
       schemaVersion: "v1",

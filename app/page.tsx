@@ -106,11 +106,7 @@ export default function Home() {
             </aside>
           </div>
           <p className="notice">
-            This session is temporary. Closing this page deletes your documents
-            unless you download an export.{" "}
-            <a href={`/api/export?sessionId=${sessionId}`} download>
-              Download export (JSON)
-            </a>
+            This session is temporary. Closing this page deletes your documents.
           </p>
         </>
       )}

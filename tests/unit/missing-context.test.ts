@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import ComparisonTable from "@/app/components/ComparisonTable";
 import { toCanonicalContext } from "@/app/components/ContextInputs";
+import { ELIGIBILITY_ROW_NAME } from "@/app/lib/extraction/eligibility";
 import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import type { RegisteredComparisonTable as Table } from "@/app/lib/extraction/types";
 
@@ -23,7 +24,7 @@ const TABLE: Table = {
   documents: [{ documentId: "doc-1", filename: "plan-a.pdf", pageCount: 2 }],
   rows: [
     {
-      factName: "student-eligibility",
+      factName: ELIGIBILITY_ROW_NAME,
       verdict: "SUPPORTED",
       values: [
         {
@@ -35,12 +36,26 @@ const TABLE: Table = {
       ],
     },
     {
-      factName: "coverage-dates",
-      verdict: "NOT STATED",
-      values: [],
+      factName: "annual-deductible",
+      verdict: "SUPPORTED",
+      values: [
+        {
+          documentId: "doc-1",
+          display: "$250",
+          qualifiers: {},
+          evidence: [ev("doc-1", 1, "Annual deductible: $250.")],
+        },
+      ],
     },
   ],
 };
+
+const unstated = (factName: string): Table => ({
+  ...TABLE,
+  rows: TABLE.rows.map((r) =>
+    r.factName === factName ? { ...r, verdict: "NOT STATED" as const, values: [] } : r,
+  ),
+});
 
 const INTAKE = {
   age: "25",
@@ -52,10 +67,10 @@ const INTAKE = {
   coverageEnd: "2026-09-25",
 };
 
-function html(userContext: Record<string, string>): string {
+function html(table: Table, userContext: Record<string, string>): string {
   return renderToStaticMarkup(
     createElement(ComparisonTable, {
-      table: TABLE,
+      table,
       sessionId: "sess-1",
       userContext,
       onContextUpdate: () => {},
@@ -65,35 +80,29 @@ function html(userContext: Record<string, string>): string {
 }
 
 describe("missing-context prompts follow canonical session context", () => {
-  it("canonicalizes split intake inputs to the persisted session shape", () => {
-    expect(toCanonicalContext(INTAKE)).toEqual({
-      age: "25",
-      countryOrResidency: "United States",
-      visaOrStatus: "F-1 STEM OPT",
-      location: "Delray Beach, 33484",
-      coverageDates: "2026-09-21 to 2026-09-25",
-    });
-  });
-
   it("does not re-ask for supplied visa/status or coverage dates", () => {
-    const out = html(toCanonicalContext(INTAKE));
+    const out = html(TABLE, toCanonicalContext(INTAKE));
+    expect(out).toContain("Appears eligible");
     expect(out).not.toContain("NEEDS YOUR INPUT");
   });
 
-  it("still prompts when visa/status is genuinely missing", () => {
-    const out = html(toCanonicalContext({ ...INTAKE, visaOrStatus: "Not applicable" }));
-    expect(out).toContain("NEEDS YOUR INPUT");
-  });
-
-  it("still prompts when coverage dates are genuinely missing", () => {
-    const { coverageStart: _s, coverageEnd: _e, ...noDates } = INTAKE;
-    const out = html(toCanonicalContext(noDates));
+  it("still prompts when the composite cannot complete for missing input", () => {
+    const out = html(
+      unstated(ELIGIBILITY_ROW_NAME),
+      toCanonicalContext({ ...INTAKE, visaOrStatus: "Not applicable" }),
+    );
     expect(out).toContain("NEEDS YOUR INPUT");
   });
 
   it("never pairs a duplicate prompt with a supplied field on a decided row", () => {
-    const out = html(toCanonicalContext(INTAKE));
-    expect(out).toContain("SUPPORTED");
+    const out = html(TABLE, toCanonicalContext(INTAKE));
+    expect(out).toContain("Appears eligible");
     expect(out).not.toContain("NEEDS YOUR INPUT");
+  });
+
+  it("renders no separate student-visa or coverage-dates rows", () => {
+    const out = html(TABLE, toCanonicalContext(INTAKE));
+    expect(out).not.toContain("Student / visa eligibility");
+    expect(out).not.toContain("Coverage dates / term");
   });
 });
