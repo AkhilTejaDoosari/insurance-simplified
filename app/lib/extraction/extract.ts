@@ -21,7 +21,8 @@ import {
 } from "@/app/lib/extraction/fact-list";
 import { wrapDocuments } from "@/app/lib/llm/safe-prompt";
 import { completeJson } from "@/app/lib/llm/client";
-import { withEligibilityRow } from "@/app/lib/extraction/eligibility";
+import { withEligibilityRow, contextFieldRulesOut } from "@/app/lib/extraction/eligibility";
+import { interpretCoinsuranceShare } from "@/app/lib/extraction/coinsurance";
 
 export interface ExtractInputDocument {
   documentId: string;
@@ -106,22 +107,6 @@ function findMatches(
   return null;
 }
 
-/** FR-003: a context field rules the fact out when the user supplied it and
- *  the matched line does not contain the user's value. */
-function ruledOutByContext(
-  contextField: string | undefined,
-  userContext: Record<string, string>,
-  quote: string
-): string | null {
-  if (!contextField) return null;
-  const userValue = (userContext[contextField] ?? "").trim();
-  if (!userValue) return null;
-  if (!quote.toLowerCase().includes(userValue.toLowerCase())) {
-    return contextField;
-  }
-  return null;
-}
-
 export function extractFallback(
   documents: ExtractInputDocument[],
   userContext: Record<string, string>
@@ -136,7 +121,7 @@ export function extractFallback(
       if (!match) continue;
       const vague = isVague(match.quote);
       if (!vague) allVague = false;
-      const ruledOut = ruledOutByContext(fact.contextField, userContext, match.quote);
+      const ruledOut = contextFieldRulesOut(fact.contextField, userContext, match.quote);
       if (ruledOut) ruledOutField = ruledOut;
       values.push({
         documentId: doc.documentId,
@@ -150,7 +135,7 @@ export function extractFallback(
       return { factName: fact.name, verdict: "NOT STATED", values: [] };
     }
     if (ruledOutField && values.every((v) =>
-      ruledOutByContext(fact.contextField, userContext, v.display))) {
+      contextFieldRulesOut(fact.contextField, userContext, v.display))) {
       return {
         factName: fact.name,
         verdict: "DOES NOT APPEAR TO FIT",
@@ -160,6 +145,20 @@ export function extractFallback(
     }
     if (allVague) {
       return { factName: fact.name, verdict: "NEEDS VERIFICATION", values };
+    }
+    if (fact.name === "coinsurance") {
+      const readings = values.map((v) => ({
+        value: v,
+        reading: interpretCoinsuranceShare(v.display),
+      }));
+      const certain = readings.map(({ value, reading }) => ({
+        ...value,
+        display: reading.display,
+      }));
+      if (readings.some(({ reading }) => reading.isMemberShare)) {
+        return { factName: fact.name, verdict: "SUPPORTED", values: certain };
+      }
+      return { factName: fact.name, verdict: "NEEDS VERIFICATION", values: certain };
     }
     // Cross-document differences are comparison data, not evidence
     // conflict: separate plans are expected to state different figures
@@ -377,6 +376,32 @@ export function reconcileLlmTable(
       }
 
       const out: Record<string, unknown> = { ...r, values };
+      if (r.factName === "coinsurance" && values.length > 0) {
+        let memberShare = false;
+        out.values = values.map((value) => {
+          if (typeof value !== "object" || value === null) return value;
+          const v = value as Record<string, unknown>;
+          const quotes = Array.isArray(v.evidence)
+            ? v.evidence.flatMap((e) =>
+                typeof e === "object" && e !== null && typeof (e as Record<string, unknown>).quote === "string"
+                  ? [(e as Record<string, unknown>).quote as string]
+                  : [],
+              )
+            : [];
+          if (quotes.length === 0) return value;
+          const reading = interpretCoinsuranceShare(quotes.join("\n"));
+          if (reading.isMemberShare) memberShare = true;
+          else if (reading.display === quotes.join("\n")) return value;
+          return { ...v, display: reading.display };
+        });
+        if (!memberShare) {
+          console.warn(
+            `[extractViaLlm] coinsurance on fact "${String(r.factName)}" states no member share; recorded as NEEDS VERIFICATION`
+          );
+          out.verdict = "NEEDS VERIFICATION";
+          delete out.rationale;
+        }
+      }
       if (r.verdict === "DOES NOT APPEAR TO FIT" && typeof r.rationale !== "string") {
         console.warn(
           `[extractViaLlm] DOES NOT APPEAR TO FIT on fact "${String(r.factName)}" names no context field; downgraded`

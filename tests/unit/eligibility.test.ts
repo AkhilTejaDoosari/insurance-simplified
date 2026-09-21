@@ -1,11 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildEligibilityRow,
   ELIGIBILITY_ROW_NAME,
   withEligibilityRow,
 } from "@/app/lib/extraction/eligibility";
-import { extractFallback } from "@/app/lib/extraction/extract";
+import { extractFallback, extractViaLlm } from "@/app/lib/extraction/extract";
+import { completeJson } from "@/app/lib/llm/client";
 import type { TableRow } from "@/app/lib/extraction/types";
+
+vi.mock("@/app/lib/llm/client", () => ({
+  completeJson: vi.fn(),
+  isLlmConfigured: () => true,
+}));
+
+const mockedComplete = vi.mocked(completeJson);
 
 const row = (
   factName: string,
@@ -80,5 +88,65 @@ describe("Eligibility for you composite", () => {
     );
     expect(table.rows.find((r) => r.factName === "coinsurance")?.verdict).toBe("SUPPORTED");
     expect(table.rows.find((r) => r.factName === "policy-limit")?.verdict).toBe("SUPPORTED");
+  });
+});
+
+describe("eligibility engine parity", () => {
+  const DOCS = [
+    {
+      documentId: "doc-1",
+      filename: "a.pdf",
+      pageCount: 1,
+      pages: ["International student eligibility: must hold a valid F-1 visa."],
+    },
+  ];
+
+  const llmPayload = (verdict: string) => ({
+    schemaVersion: "v1",
+    factListVersion: "v1",
+    documents: [{ documentId: "doc-1", filename: "a.pdf", pageCount: 1 }],
+    rows: [
+      {
+        factName: "student-eligibility",
+        verdict,
+        ...(verdict === "DOES NOT APPEAR TO FIT"
+          ? { rationale: "model context judgment" }
+          : {}),
+        values: [
+          {
+            documentId: "doc-1",
+            display: "must hold a valid F-1 visa",
+            qualifiers: {},
+            evidence: [
+              {
+                documentId: "doc-1",
+                page: 1,
+                quote: "International student eligibility: must hold a valid F-1 visa.",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  const compositeOf = (table: { rows: TableRow[] }) =>
+    table.rows.find((r) => r.factName === ELIGIBILITY_ROW_NAME)!;
+
+  it("ruled-out context yields DOES NOT APPEAR TO FIT on both engines", async () => {
+    const fallback = extractFallback(DOCS, { visaOrStatus: "H-1B" });
+    mockedComplete.mockResolvedValue(llmPayload("SUPPORTED"));
+    const viaLlm = await extractViaLlm(DOCS, { visaOrStatus: "H-1B" });
+    expect(compositeOf(fallback).verdict).toBe("DOES NOT APPEAR TO FIT");
+    expect(compositeOf(viaLlm).verdict).toBe("DOES NOT APPEAR TO FIT");
+    expect(compositeOf(viaLlm).rationale).toContain("visaOrStatus");
+  });
+
+  it("matching context yields SUPPORTED on both engines", async () => {
+    const fallback = extractFallback(DOCS, { visaOrStatus: "F-1" });
+    mockedComplete.mockResolvedValue(llmPayload("SUPPORTED"));
+    const viaLlm = await extractViaLlm(DOCS, { visaOrStatus: "F-1" });
+    expect(compositeOf(fallback).verdict).toBe("SUPPORTED");
+    expect(compositeOf(viaLlm).verdict).toBe("SUPPORTED");
   });
 });

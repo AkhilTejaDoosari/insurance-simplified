@@ -11,6 +11,7 @@ import type {
   TableRow,
 } from "@/app/lib/extraction/types";
 import type { Verdict } from "@/app/lib/verdicts";
+import { FACTS } from "@/app/lib/extraction/fact-list";
 
 export const ELIGIBILITY_ROW_NAME = "eligibility-for-you";
 
@@ -47,14 +48,69 @@ const SEVERITY: Record<Verdict, number> = {
   "NOT STATED": 0,
 };
 
+/** Single deterministic context rule-out (FR-003): a context field rules
+ *  text out when the user supplied it and the text does not contain the
+ *  user's value. Both extraction engines defer to this — the LLM provides
+ *  evidence, this decides fit. */
+export function contextFieldRulesOut(
+  contextField: string | undefined,
+  userContext: Record<string, string>,
+  text: string
+): string | null {
+  if (!contextField) return null;
+  const userValue = (userContext[contextField] ?? "").trim();
+  if (!userValue) return null;
+  if (!text.toLowerCase().includes(userValue.toLowerCase())) {
+    return contextField;
+  }
+  return null;
+}
+
+const feederContextField = (factName: string): string | undefined =>
+  FACTS.find((f) => f.name === factName)?.contextField;
+
+/** A feeder row is ruled out when every cited value misses the supplied
+ *  context value across its display and evidence quotes. */
+export function feederRuledOut(
+  row: TableRow,
+  userContext: Record<string, string>
+): string | null {
+  const field = feederContextField(row.factName);
+  if (!field) return null;
+  if ((userContext[field] ?? "").trim() === "") return null;
+  if (row.values.length === 0) return null;
+  const allOut = row.values.every((v) => {
+    const haystack = [v.display, ...v.evidence.map((e) => e.quote)].join("\n");
+    return contextFieldRulesOut(field, userContext, haystack) !== null;
+  });
+  return allOut ? field : null;
+}
+
 /** Build the composite from feeder rows; feeders stay in the table for
- *  evidence/contract stability and are hidden at the display layer. */
+ *  evidence/contract stability and are hidden at the display layer.
+ *  Deterministic evaluation runs here for BOTH engines: engine verdicts
+ *  never override the context rule-out. */
 export function buildEligibilityRow(
   rows: TableRow[],
   userContext: Record<string, string>
 ): TableRow {
-  void userContext;
   const feeders = rows.filter((r) => (ELIGIBILITY_FEEDERS as readonly string[]).includes(r.factName));
+  for (const feeder of feeders) {
+    const ruledOut = feederRuledOut(feeder, userContext);
+    if (ruledOut) {
+      return {
+        factName: ELIGIBILITY_ROW_NAME,
+        verdict: "DOES NOT APPEAR TO FIT",
+        rationale: `User context field '${ruledOut}' rules this fact out.`,
+        values: feeder.values.map((v) => ({
+          documentId: v.documentId,
+          display: v.display,
+          qualifiers: { ...v.qualifiers },
+          evidence: v.evidence.map((e) => ({ ...e })),
+        })),
+      };
+    }
+  }
   const cited = feeders.filter((r) => r.verdict !== "NOT STATED" && r.values.length > 0);
   if (cited.length === 0) {
     return { factName: ELIGIBILITY_ROW_NAME, verdict: "NOT STATED", values: [] };
