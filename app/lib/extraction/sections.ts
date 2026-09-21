@@ -20,10 +20,10 @@ export const SECTIONS: Section[] = [
       "premium",
       "annual-deductible",
       "out-of-pocket-maximum",
+      "network",
       "eligibility",
       "student-eligibility",
       "coverage-dates",
-      "network",
       "pre-existing-conditions",
     ],
   },
@@ -31,12 +31,13 @@ export const SECTIONS: Section[] = [
     title: "Care & Coverage",
     description: "What each plan pays for when you actually need care.",
     factNames: [
+      "primary-care-visit",
+      "specialist-visit",
       "emergency-care",
       "emergency-copay",
       "hospitalization",
       "prescriptions",
-      "primary-care-visit",
-      "specialist-visit",
+      "urgent-care",
       "mental-health",
       "maternity-coverage",
       "preventive-care",
@@ -44,7 +45,6 @@ export const SECTIONS: Section[] = [
       "ambulance",
       "dental-coverage",
       "vision-coverage",
-      "urgent-care",
     ],
   },
   {
@@ -62,14 +62,7 @@ export const SECTIONS: Section[] = [
     title: "Plan Highlights",
     description:
       "What is unusual or unique about this plan that does not belong in the main comparison.",
-    factNames: [
-      "dental-coverage",
-      "vision-coverage",
-      "preventive-care",
-      "urgent-care",
-      "ambulance",
-      "lab-and-imaging",
-    ],
+    factNames: [],
   },
 ];
 
@@ -86,20 +79,15 @@ export interface SectionGroup<R extends TableRow = TableRow> {
 
 /** Split rows into sections in display order; empty sections are dropped.
  *  Generic over the row type so enriched (registered) tables keep their
- *  evidence IDs. Plan Highlights re-surfaces its facts without consuming
- *  them, so lower-priority extras appear both in Care & Coverage and in
- *  the trailing highlights tab. */
+ *  evidence IDs. Each fact has exactly one canonical section. */
 export function groupRows<R extends TableRow>(rows: R[]): SectionGroup<R>[] {
   const byName = new Map(rows.map((r) => [r.factName, r]));
-  const all = new Map(byName);
   const groups: SectionGroup<R>[] = [];
   for (const section of SECTIONS) {
-    const isHighlights = section.title === "Plan Highlights";
-    const source = isHighlights ? all : byName;
     const matched = section.factNames.flatMap((n) => {
-      const r = source.get(n);
+      const r = byName.get(n);
       if (!r) return [];
-      if (!isHighlights) byName.delete(n);
+      byName.delete(n);
       return [r];
     });
     if (matched.length > 0) groups.push({ section, rows: matched });

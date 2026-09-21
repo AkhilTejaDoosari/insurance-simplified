@@ -586,6 +586,10 @@ select {
   align-items: end;
   margin-top: 6px;
 }
+.comparison__empty {
+  color: var(--muted);
+  padding: 12px 0;
+}
 .table__empty {
   color: var(--muted);
 }

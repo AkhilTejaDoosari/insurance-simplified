@@ -1,14 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import UploadDropzone, { type UploadResult } from "@/app/components/UploadDropzone";
 import ComparisonTable from "@/app/components/ComparisonTable";
 import ChatPanel from "@/app/components/ChatPanel";
 import ChecklistFlow from "@/app/components/ChecklistFlow";
 import WelcomePage from "@/app/components/WelcomePage";
-import InsurerQuestions from "@/app/components/InsurerQuestions";
 import { DEFAULT_COUNTRY } from "@/app/components/ContextInputs";
-import { suggestQuestions } from "@/app/lib/extraction/insurer-questions";
 import type { RegisteredComparisonTable as Table } from "@/app/lib/extraction/types";
 
 type Page = "welcome" | "upload" | "checklist" | "results";
@@ -27,7 +25,6 @@ export default function Home() {
   // Context actually submitted with the upload; passed to Results so
   // NEEDS YOUR INPUT can ask only for what is still missing (A-022).
   const [sessionContext, setSessionContext] = useState<Record<string, string>>({});
-  const questions = useMemo(() => (table ? suggestQuestions(table) : []), [table]);
 
   async function handleUploaded(result: UploadResult, context: Record<string, string>) {
     setSessionId(result.sessionId);
@@ -111,7 +108,6 @@ export default function Home() {
               <ChatPanel sessionId={sessionId} documents={table.documents} />
             </aside>
           </div>
-          <InsurerQuestions questions={questions} />
           <p className="notice">
             This session is temporary. Closing this page deletes your documents
             unless you download an export.{" "}

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("upload → table → evidence → chat → export (quickstart Flows 1–4, 6)", async ({
+test("upload → table → evidence → chat → export (quickstart Flows 1–3, 6)", async ({
   page,
 }) => {
   await page.goto("/");
@@ -63,11 +63,6 @@ test("upload → table → evidence → chat → export (quickstart Flows 1–4,
   await page.getByLabel("Your question").fill("Does this cover space tourism?");
   await page.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(page.getByText("no supporting evidence")).toBeVisible();
-
-  // Flow 4: insurer questions name facts.
-  await expect(page.getByLabel("Questions to ask your insurer")).toContainText(
-    "maternity-coverage"
-  );
 
   // Flow 6: export downloads valid JSON.
   const download = await Promise.all([

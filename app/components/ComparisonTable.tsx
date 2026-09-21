@@ -7,7 +7,7 @@ import type {
   RegisteredTableRow,
 } from "@/app/lib/extraction/types";
 import { FACTS } from "@/app/lib/extraction/fact-list";
-import { groupRows } from "@/app/lib/extraction/sections";
+import { groupRows, SECTIONS } from "@/app/lib/extraction/sections";
 import { documentTiers, cellValues } from "@/app/lib/extraction/tiers";
 import { getPlanDisplayName } from "@/app/lib/extraction/plan-names";
 import { documentUrl } from "@/app/lib/document-url";
@@ -197,8 +197,10 @@ export default function ComparisonTable({
   onTableUpdate?: (next: Table) => void;
 }) {
   const groups = groupRows(table.rows);
-  const [activeSection, setActiveSection] = useState(groups[0]?.section.title ?? "");
-  const activeGroup = groups.find(({ section }) => section.title === activeSection) ?? groups[0];
+  const [activeSection, setActiveSection] = useState(SECTIONS[0].title);
+  const activeGroup = groups.find(({ section }) => section.title === activeSection);
+  const activeSectionDef = SECTIONS.find((s) => s.title === activeSection) ?? SECTIONS[0];
+  const activeRows = activeGroup?.rows ?? [];
   const tiersByDoc = useMemo(() => documentTiers(table), [table]);
   const [selection, setSelection] = useState<Record<string, string>>({});
   
@@ -254,8 +256,8 @@ export default function ComparisonTable({
       </div>
 
       <div className="comparison__tabs" role="group" aria-label="Comparison sections">
-        {groups.map(({ section }) => {
-          const active = section.title === activeGroup?.section.title;
+        {SECTIONS.map((section) => {
+          const active = section.title === activeSection;
           return (
             <button
               key={section.title}
@@ -270,15 +272,19 @@ export default function ComparisonTable({
         })}
       </div>
 
-      {activeGroup && (
-        <div className="comparison__section-summary" aria-live="polite">
-          <h3>{activeGroup.section.title}</h3>
-          <p>{activeGroup.section.description}</p>
-        </div>
-      )}
+      <div className="comparison__section-summary" aria-live="polite">
+        <h3>{activeSectionDef.title}</h3>
+        <p>{activeSectionDef.description}</p>
+      </div>
 
+      {activeRows.length === 0 ? (
+        <p className="comparison__empty" role="status">
+          Nothing unique to highlight in these documents — the comparison above
+          covers what was stated.
+        </p>
+      ) : (
       <div className="comparison__table-wrap">
-        <table className="table" ref={tableEl} aria-label={activeGroup?.section.title ?? "Comparison"}>
+        <table className="table" ref={tableEl} aria-label={activeSectionDef.title}>
           <colgroup>
             <col className="col-fact" />
             <col className="col-verdict" />
@@ -352,7 +358,7 @@ export default function ComparisonTable({
             )}
           </thead>
           <tbody>
-            {(activeGroup?.rows ?? []).map((row) => {
+            {activeRows.map((row) => {
               const contextField = FACT_CONTEXT.get(row.factName);
               const missingField =
                 contextField && !(userContext?.[contextField] ?? "").trim()
@@ -389,6 +395,7 @@ export default function ComparisonTable({
           </tbody>
         </table>
       </div>
+      )}
     </section>
   );
 }

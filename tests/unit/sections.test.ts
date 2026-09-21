@@ -19,19 +19,28 @@ describe("comparison table sections", () => {
     expect(SECTIONS[0].factNames).toContain("premium");
   });
 
-  it("covers every fact in at least one section; the first three are exclusive", () => {
-    const [essentials, care, rules] = SECTIONS;
-    const core = [...essentials.factNames, ...care.factNames, ...rules.factNames];
-    expect(new Set(core).size).toBe(core.length);
-    const covered = new Set(SECTIONS.flatMap((s) => s.factNames));
-    for (const f of FACTS.map((f) => f.name)) {
-      expect(covered.has(f)).toBe(true);
-    }
+  it("gives every fact exactly one canonical section with no duplicates", () => {
+    const assigned = SECTIONS.flatMap((s) => s.factNames);
+    expect(new Set(assigned).size).toBe(assigned.length);
+    expect([...assigned].sort()).toEqual(FACTS.map((f) => f.name).sort());
   });
 
-  it("re-surfaces highlight facts without consuming them", () => {
-    const groups = groupRows([row("dental-coverage")]);
-    expect(groups.map((g) => g.section.title)).toEqual(["Care & Coverage", "Plan Highlights"]);
+  it("never duplicates a row across groups", () => {
+    const rows = FACTS.map((f) => row(f.name));
+    const groups = groupRows(rows);
+    const seen = groups.flatMap((g) => g.rows.map((r) => r.factName));
+    expect(new Set(seen).size).toBe(seen.length);
+    expect([...seen].sort()).toEqual(FACTS.map((f) => f.name).sort());
+  });
+
+  it("keeps Plan Highlights for genuinely unique facts only", () => {
+    const highlights = SECTIONS.find((s) => s.title === "Plan Highlights")!;
+    const others = new Set(
+      SECTIONS.filter((s) => s.title !== "Plan Highlights").flatMap((s) => s.factNames),
+    );
+    for (const n of highlights.factNames) {
+      expect(others.has(n)).toBe(false);
+    }
   });
 
   it("orders rows by section then by the section's own order", () => {
