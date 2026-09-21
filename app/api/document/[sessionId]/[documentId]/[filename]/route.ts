@@ -8,23 +8,60 @@
 // long as the session (see app/lib/session.ts). Unknown sessions and
 // unknown documents fail with distinct explicit 404s, never a silent
 // wrong file.
+//
+// Requires valid session capability (cookie / Authorization: Bearer / x-session-capability).
+// Session ID alone is insufficient for authorization.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, readDocumentFile } from "@/app/lib/session";
+import { requireScopeId } from "@/app/lib/rag/ownership";
+import { getDefaultObjectStore } from "@/app/lib/storage/objects";
+import { requireSessionCapability } from "@/app/lib/session-auth";
+import { errorResponse, newRequestId } from "@/app/lib/api-errors";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ sessionId: string; documentId: string }> }
 ) {
+  const requestId = newRequestId();
   const { sessionId, documentId } = await params;
+
+  // Verify capability before accessing session data
+  const auth = await requireSessionCapability(request, sessionId);
+  if (!auth.ok) {
+    return auth.errorResponse!;
+  }
+
+  // P3-A ownership seam: authorization/scope is checked BEFORE any byte
+  // fetch — unscoped callers fail closed here and never reach the store.
+  try {
+    requireScopeId(sessionId, "GET /api/document");
+  } catch {
+    return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown session" });
+  }
+
   const session = getSession(sessionId);
   if (!session) {
-    return NextResponse.json({ error: "Unknown session" }, { status: 404 });
+    return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown session" });
   }
   const doc = session.documents.find((d) => d.documentId === documentId);
-  const bytes = doc ? readDocumentFile(sessionId, documentId) : undefined;
-  if (!doc || !bytes) {
-    return NextResponse.json({ error: "Unknown document" }, { status: 404 });
+  if (!doc) {
+    return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown document" });
+  }
+  // P3-A: durable object store first (survives restarts), legacy
+  // session-temp fallback second. Either leg returns the ORIGINAL bytes —
+  // the viewer/PDF.js path stays byte-identical.
+  let bytes: Uint8Array | Buffer | undefined;
+  if (doc.objectKey) {
+    try {
+      bytes = await getDefaultObjectStore().get(doc.objectKey);
+    } catch {
+      bytes = undefined;
+    }
+  }
+  bytes ??= readDocumentFile(sessionId, documentId);
+  if (!bytes) {
+    return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown document" });
   }
   return new NextResponse(new Uint8Array(bytes), {
     headers: {

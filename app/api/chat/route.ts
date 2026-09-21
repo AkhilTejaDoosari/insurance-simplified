@@ -4,6 +4,9 @@
 // LLM_BASE_URL and LLM_API_KEY are set, else the deterministic fallback.
 // `engine` in the body ("llm" | "fallback") is an explicit override for testing.
 //
+// Requires valid session capability (cookie / Authorization: Bearer / x-session-capability).
+// Session ID alone is insufficient for authorization.
+//
 // R4 DEGRADATION (semantic-selected per VALIDATION):
 // - Semantic retriever is the selected path (semantic MRR@10=0.8438 > RRF MRR@10=0.6875).
 // - Embeddings are separate keys: EMBEDDING_BASE_URL + EMBEDDING_API_KEY.
@@ -25,6 +28,7 @@ import {
 import { isLlmConfigured } from "@/app/lib/llm/client";
 import { buildTraceEvent, emitTrace } from "@/app/lib/observability/trace";
 import { errorResponse, logFailure, newRequestId } from "@/app/lib/api-errors";
+import { requireSessionCapability } from "@/app/lib/session-auth";
 
 export async function POST(request: NextRequest) {
   const requestId = newRequestId();
@@ -36,9 +40,16 @@ export async function POST(request: NextRequest) {
   if (!body?.sessionId || typeof body.question !== "string" || !body.question.trim()) {
     return errorResponse("BAD_INPUT", 400, { requestId });
   }
+
+  // Verify capability before accessing session data
+  const auth = await requireSessionCapability(request, body.sessionId);
+  if (!auth.ok) {
+    return auth.errorResponse!;
+  }
+
   const session = getSession(body.sessionId);
   if (!session) {
-    return errorResponse("UNKNOWN_SESSION", 404, { requestId });
+    return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown session" });
   }
 
   const useLlm =
@@ -84,11 +95,11 @@ export async function POST(request: NextRequest) {
         response = await answerViaLlm(session.documents, body.question, {
           sessionId: body.sessionId,
         });
-  } catch (err) {
-    // Contract: degraded successes above stay 200; only a total failure lands
-    // here. Raw error text is logged server-side only — the client gets the
-    // fixed CHAT_FAILED message (no secret/structure leakage).
-    logFailure(requestId, "chat", err);
+      } catch (err) {
+        // Contract: degraded successes above stay 200; only a total failure lands
+        // here. Raw error text is logged server-side only — the client gets the
+        // fixed CHAT_FAILED message (no secret/structure leakage).
+        logFailure(requestId, "chat", err);
         console.warn(
           `[chat] llm engine failed; degrading to semantic: ${err instanceof Error ? err.message : "unknown"}`
         );

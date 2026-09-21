@@ -3,6 +3,9 @@
 // LLM_API_KEY are set, else the deterministic fallback. `engine` in the body
 // ("llm" | "fallback") is an explicit override for testing only.
 // Output always validated (contracts/comparison-schema.md).
+//
+// Requires valid session capability (cookie / Authorization: Bearer / x-session-capability).
+// Session ID alone is insufficient for authorization.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, registerEvidence } from "@/app/lib/session";
@@ -15,18 +18,28 @@ import {
 } from "@/app/lib/extraction/extract";
 import { validateTable } from "@/app/lib/extraction/types";
 import { isLlmConfigured } from "@/app/lib/llm/client";
+import { requireSessionCapability } from "@/app/lib/session-auth";
+import { errorResponse, newRequestId } from "@/app/lib/api-errors";
 
 export async function POST(request: NextRequest) {
+  const requestId = newRequestId();
   const body = (await request.json().catch(() => null)) as {
     sessionId?: string;
     engine?: string;
   } | null;
   if (!body?.sessionId) {
-    return NextResponse.json({ error: "sessionId required" }, { status: 400 });
+    return errorResponse("VALIDATION_ERROR", 400, { requestId, message: "sessionId required" });
   }
+
+  // Verify capability before accessing session data
+  const auth = await requireSessionCapability(request, body.sessionId);
+  if (!auth.ok) {
+    return auth.errorResponse!;
+  }
+
   const session = getSession(body.sessionId);
   if (!session) {
-    return NextResponse.json({ error: "Unknown session" }, { status: 404 });
+    return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown session" });
   }
 
   const useLlm =
@@ -102,16 +115,14 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed";
     const status = message.startsWith("LLM") ? 503 : 500;
-    return NextResponse.json(
+    return errorResponse(
+      status === 503 ? "PROVIDER_UNAVAILABLE" : "EXTRACTION_FAILED",
+      status,
       {
-        error: message,
-        llmConfigured: isLlmConfigured(),
-        hint:
-          status === 503
-            ? "Set LLM_BASE_URL and LLM_API_KEY, or send engine: \"fallback\" to use the built-in extraction."
-            : undefined,
-      },
-      { status }
+        requestId,
+        retryable: status === 503,
+        message,
+      }
     );
   }
 }

@@ -1,0 +1,14 @@
+.git
+.next
+node_modules
+.codegraph
+.omo
+.opencode
+test-results
+playwright-report
+coverage
+data
+.env
+.env.*
+*.log
+.DS_Store

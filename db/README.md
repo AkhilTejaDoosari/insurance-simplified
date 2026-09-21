@@ -33,9 +33,10 @@ Rules:
 psql "$SUPABASE_DB_URL" -f db/migrations/0001_init.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0002_object_key.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0003_rls.sql
+psql "$SUPABASE_DB_URL" -f db/migrations/0004_sessions.sql
 # 3. Verify:
 psql "$SUPABASE_DB_URL" -c "SELECT version FROM schema_migrations;"
-#    expect three rows: 0001_init, 0002_object_key, 0003_rls
+#    expect four rows: 0001_init, 0002_object_key, 0003_rls, 0004_sessions
 ```
 
 `db/schema.sql` is the canonical readable reference; `db/migrations/*.sql`
@@ -53,10 +54,12 @@ handles this automatically on next upsert).
 
 ## Layout
 
-- `schema.sql` — canonical schema (tables `documents`/`pages`/`chunks`,
+- `schema.sql` — canonical schema (tables `documents`/`pages`/`chunks`/`sessions`,
   `match_chunks` + `fts_search_chunks` RPC helpers).
 - `migrations/0001_init.sql` — idempotent base (pgvector guard + same
   DDL + `schema_migrations` bookkeeping).
 - `migrations/0002_object_key.sql` — additive `documents.object_key` pointer.
 - `migrations/0003_rls.sql` — additive `documents.owner_user_id` + RLS
   policies/grants (defense-in-depth; app seam scoping unchanged).
+- `migrations/0004_sessions.sql` — additive sessions table + RLS policies
+  (request-scoped persistence; idempotent DDL).

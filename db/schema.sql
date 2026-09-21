@@ -114,6 +114,27 @@ CREATE INDEX IF NOT EXISTS chunks_fts_idx
 CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw_idx
   ON chunks USING hnsw (embedding vector_cosine_ops);
 
+-- ------------------------------------------------- 5. sessions (P4)
+-- Request-scoped persistence sessions. Idempotent: every statement is
+-- IF NOT EXISTS / OR REPLACE. owner_user_id FK to auth.users is NULLABLE
+-- so pre-P4 rows stay visible to service_role. RLS policies below enforce
+-- authenticated-scoped ownership; service_role bypasses RLS by design.
+CREATE TABLE IF NOT EXISTS sessions (
+  id            TEXT        PRIMARY KEY,
+  status        TEXT        NOT NULL DEFAULT 'DRAFT'
+    CONSTRAINT sessions_status_check
+    CHECK (status IN ('DRAFT', 'PROCESSING', 'READY', 'PARTIAL', 'FAILED', 'DELETING', 'DELETED')),
+  context_json  JSONB       NOT NULL DEFAULT '{}',
+  capability_hash TEXT      NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at    TIMESTAMPTZ NULL,
+  owner_user_id UUID        NULL REFERENCES auth.users (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS sessions_status_idx
+  ON sessions (status);
+
 -- ------------------------------------------------------- retrieval helpers
 -- Cosine match over chunk embeddings with optional document / session
 -- scoping. Score is cosine similarity (1 = identical direction). Ordering
