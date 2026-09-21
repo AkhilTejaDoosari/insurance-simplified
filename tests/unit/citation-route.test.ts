@@ -6,6 +6,7 @@ import {
   deleteSession,
   saveDocumentFile,
   type Session,
+  SESSION_CAPABILITY_COOKIE,
 } from "@/app/lib/session";
 import { resolveCitationPage } from "@/app/lib/citation";
 import { GET } from "@/app/api/document/[sessionId]/[documentId]/[filename]/route";
@@ -21,8 +22,8 @@ function fixtureBytes(): Uint8Array {
 }
 
 /** Real session with persisted PDF bytes, as POST /api/upload leaves it. */
-function seedSession(filename = "plan-a.pdf"): Session {
-  const session = createSession(
+function seedSession(filename = "plan-a.pdf"): { session: Session; capability: string } {
+  const { session, capability } = createSession(
     [
       {
         documentId: "doc-1",
@@ -35,65 +36,73 @@ function seedSession(filename = "plan-a.pdf"): Session {
   );
   created.push(session.sessionId);
   saveDocumentFile(session.sessionId, "doc-1", fixtureBytes());
-  return session;
+  return { session, capability };
 }
 
-function get(sessionId: string, documentId: string, page: string | null) {
+function get(sessionId: string, documentId: string, page: string | null, capability: string) {
   const url =
     page === null
       ? "http://localhost/api/document/x/y/z"
       : `http://localhost/api/document/x/y/z?page=${page}`;
-  return GET(new NextRequest(url), {
-    params: Promise.resolve({ sessionId, documentId }),
-  });
+  return GET(
+    new NextRequest(url, {
+      headers: {
+        cookie: `${SESSION_CAPABILITY_COOKIE}=${capability}`,
+      },
+    }),
+    {
+      params: Promise.resolve({ sessionId, documentId }),
+    }
+  );
 }
 
 describe("GET /api/document (byte-for-byte original PDF)", () => {
   it("returns the complete original PDF when no page is requested", async () => {
-    const session = seedSession();
-    const res = await get(session.sessionId, "doc-1", null);
+    const { session, capability } = seedSession();
+    const res = await get(session.sessionId, "doc-1", null, capability);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/pdf");
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(fixtureBytes());
   });
 
   it("ignores ?page and still returns the exact original bytes (page selection belongs to the viewer)", async () => {
-    const session = seedSession();
+    const { session, capability } = seedSession();
     for (const page of ["1", "2", "99", "nonsense"]) {
-      const res = await get(session.sessionId, "doc-1", page);
+      const res = await get(session.sessionId, "doc-1", page, capability);
       expect(res.status).toBe(200);
       expect(new Uint8Array(await res.arrayBuffer())).toEqual(fixtureBytes());
     }
   });
 
   it("serves documents whose filenames need URL encoding", async () => {
-    const session = seedSession("Patriot Travel #2 (2026).pdf");
-    const res = await get(session.sessionId, "doc-1", null);
+    const { session, capability } = seedSession("Patriot Travel #2 (2026).pdf");
+    const res = await get(session.sessionId, "doc-1", null, capability);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/pdf");
     expect(res.headers.get("content-disposition")).toContain("inline;");
   });
 
   it("fails explicitly for an unknown session", async () => {
-    const res = await get("sess-does-not-exist", "doc-1", null);
-    expect(res.status).toBe(404);
-    expect((await res.json()).error).toMatch(/session/i);
+    const { capability } = seedSession();
+    const res = await get("sess-does-not-exist", "doc-1", null, capability);
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.code).toBe("SESSION_AUTH_REQUIRED");
   });
 
   it("fails explicitly for an unknown document in a known session", async () => {
-    const session = seedSession();
-    const res = await get(session.sessionId, "doc-9", null);
+    const { session, capability } = seedSession();
+    const res = await get(session.sessionId, "doc-9", null, capability);
     expect(res.status).toBe(404);
-    expect((await res.json()).error).toMatch(/document/i);
+    expect((await res.json()).error.code).toBe("NOT_FOUND");
   });
 
   it("fails explicitly when the session exists but the bytes are gone", async () => {
-    const session = createSession(
+    const { session, capability } = createSession(
       [{ documentId: "doc-1", filename: "plan-a.pdf", pageCount: 1, pages: ["x"] }],
       {}
     );
     created.push(session.sessionId);
-    const res = await get(session.sessionId, "doc-1", null);
+    const res = await get(session.sessionId, "doc-1", null, capability);
     expect(res.status).toBe(404);
   });
 });

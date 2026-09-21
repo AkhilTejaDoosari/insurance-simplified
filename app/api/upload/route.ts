@@ -1,6 +1,7 @@
 // PDF intake + validation (FR-001, FR-018, FR-019).
 // Accepts 2–4 English PDFs per set; rejects anything else per-file with a
-// stated reason. Creates a memory-only session (see app/lib/session.ts).
+// stated reason. Creates a durable session in the database with a high-entropy
+// capability cookie (see app/lib/session-db.ts, app/lib/session-auth.ts).
 
 import { NextRequest, NextResponse } from "next/server";
 import { extractPages } from "@/app/lib/pdf/extract-pages";
@@ -22,6 +23,12 @@ import {
   userVisibleMessage,
 } from "@/app/lib/ingestion/quality-gate";
 import { transition, type IngestionState } from "@/app/lib/ingestion/lifecycle";
+import {
+  createSessionDb,
+  SessionDbUnconfiguredError,
+  SESSION_CAPABILITY_COOKIE,
+} from "@/app/lib/session-db";
+import { errorResponse, newRequestId } from "@/app/lib/api-errors";
 
 const MIN_FILES = 2;
 const MAX_FILES = 4;
@@ -35,18 +42,17 @@ const CONTEXT_FIELDS = [
 ] as const;
 
 export async function POST(request: NextRequest) {
+  const requestId = newRequestId();
   const form = await request.formData();
   const files = form.getAll("documents").filter(
     (f): f is File => f instanceof File
   );
 
   if (files.length < MIN_FILES || files.length > MAX_FILES) {
-    return NextResponse.json(
-      {
-        error: `Upload 2–4 PDF documents per comparison set (received ${files.length}).`,
-      },
-      { status: 400 }
-    );
+    return errorResponse("VALIDATION_ERROR", 400, {
+      requestId,
+      message: `Upload 2–4 PDF documents per comparison set (received ${files.length}).`,
+    });
   }
 
   const userContext: Record<string, string> = {};
@@ -57,21 +63,37 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // 1. Create durable session FIRST (gets sessionId + capability)
+  let sessionId: string;
+  let capability: string;
+  try {
+    const created = await createSessionDb({ context: userContext });
+    sessionId = created.sessionId;
+    capability = created.capability;
+  } catch (err) {
+    if (err instanceof SessionDbUnconfiguredError) {
+      return errorResponse("DEPENDENCY_UNAVAILABLE", 503, {
+        requestId,
+        retryable: false,
+        message: "Durable session store is not configured",
+      });
+    }
+    return errorResponse("INTERNAL_ERROR", 500, { requestId, retryable: true });
+  }
+
+  // 2. Process files and extract pages
   const documents: {
     documentId: string;
     filename: string;
     pageCount: number;
     pages: string[];
   }[] = [];
-  // Raw bytes are kept with the session so citations can open the PDF at a page.
   const rawFiles = new Map<string, Uint8Array>();
   const failures: { filename: string; reason: string }[] = [];
 
   await Promise.all(
     files.map(async (file, i) => {
       const documentId = `doc-${i + 1}`;
-      // P3-B/C: explicit per-file lifecycle (UPLOADING→PROCESSING→READY/FAILED)
-      // with the quality gate enforced before anything becomes searchable.
       let state: IngestionState = "UPLOADING";
       try {
         state = transition(state, "PROCESSING");
@@ -90,7 +112,7 @@ export async function POST(request: NextRequest) {
         try {
           state = transition(state, "FAILED");
         } catch {
-          // Already terminal — the failure below is what matters.
+          // Already terminal
         }
         void state;
         const classified = classifyExtractorError(err);
@@ -101,18 +123,22 @@ export async function POST(request: NextRequest) {
 
   // Never produce a silent partial comparison: any failure fails the set.
   if (failures.length > 0) {
-    return NextResponse.json(
-      { error: "One or more files could not be processed.", failures },
-      { status: 422 }
-    );
+    // Clean up the session we created
+    try {
+      await deleteSessionDb(sessionId);
+    } catch {
+      // Best effort
+    }
+    return errorResponse("UNPROCESSABLE_DOCUMENTS", 422, {
+      requestId,
+      message: "One or more files could not be processed.",
+    });
   }
 
   documents.sort((a, b) => a.documentId.localeCompare(b.documentId));
-  const session = createSession(documents, userContext);
-  // P3-A: durable write first (object store survives restarts), legacy
-  // session-temp second (unchanged fallback for the document route + viewer).
-  // Object-store failure never fails the upload — temp bytes keep the
-  // existing behavior, metadata is recorded only for successful puts.
+
+  // 3. Store raw bytes in tmpdir for legacy document route + viewer fallback
+  const { session } = createSession(documents, userContext);
   const store = getDefaultObjectStore();
   for (const [documentId, bytes] of rawFiles) {
     try {
@@ -123,17 +149,15 @@ export async function POST(request: NextRequest) {
     }
     saveDocumentFile(session.sessionId, documentId, bytes);
   }
-  // Runtime persistence cutover: when the durable stack is configured the
-  // session must NOT become READY until storage + documents/pages/chunks
-  // rows all succeed. Durable failure deletes the session and fails
-  // explicitly — never a silent temp-only fallback.
+
+  // 4. Persist to durable storage (documents, pages, chunks, vectors)
   const { isDurableConfigured, persistSessionUpload } = await import(
     "@/app/lib/rag/persist-session"
   );
   if (isDurableConfigured()) {
     try {
       const persisted = await persistSessionUpload(
-        session.sessionId,
+        sessionId,
         documents.map((d) => ({
           documentId: d.documentId,
           filename: d.filename,
@@ -145,36 +169,58 @@ export async function POST(request: NextRequest) {
         attachDocumentObjectMetadata(session.sessionId, meta.documentId, meta);
       }
     } catch (err) {
-      deleteSession(session.sessionId);
-      return NextResponse.json(
-        {
-          error: "Durable persistence failed; upload was not saved.",
-          retryable: true,
-        },
-        { status: 503 },
-      );
+      await deleteSessionDb(sessionId);
+      await deleteSession(session.sessionId);
+      return errorResponse("INTERNAL_ERROR", 503, {
+        requestId,
+        retryable: true,
+        message: "Durable persistence failed; upload was not saved.",
+      });
     }
   }
 
-  return NextResponse.json(
+  // 5. Return response with capability cookie
+  const response = NextResponse.json(
     {
-      sessionId: session.sessionId,
+      sessionId,
       documents: documents.map(({ documentId, filename, pageCount }) => ({
         documentId,
         filename,
         pageCount,
       })),
     },
-    { status: 201 }
+    { status: 201 },
   );
+
+  response.cookies.set(SESSION_CAPABILITY_COOKIE, capability, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+
+  return response;
 }
 
+// Import deleteSessionDb for the error cleanup path
+import { deleteSessionDb } from "@/app/lib/session-db";
+
 export async function DELETE(request: NextRequest) {
+  const requestId = newRequestId();
   const { searchParams } = new URL(request.url);
   const sessionId = searchParams.get("sessionId");
   if (!sessionId) {
-    return NextResponse.json({ error: "sessionId required" }, { status: 400 });
+    return errorResponse("VALIDATION_ERROR", 400, { requestId, message: "sessionId required" });
   }
+
+  // Verify capability before allowing deletion
+  const { requireSessionCapability } = await import("@/app/lib/session-auth");
+  const auth = await requireSessionCapability(request, sessionId);
+  if (!auth.ok) {
+    return auth.errorResponse!;
+  }
+
   const { deleteSession } = await import("@/app/lib/session");
   // Snapshot object keys BEFORE metadata removal so every durable object is
   // cleaned up alongside metadata + chunks/vectors (existing seam below).
@@ -182,6 +228,7 @@ export async function DELETE(request: NextRequest) {
   const objectKeys = snapshot
     .map((d) => d.objectKey)
     .filter((k): k is string => typeof k === "string");
+
   // Runtime persistence cutover: durable cleanup runs BEFORE metadata
   // removal so a failed step keeps every identifier needed for retry.
   const { isDurableConfigured, deleteDurableObjects, deleteDurableVectors } = await import(
@@ -191,26 +238,40 @@ export async function DELETE(request: NextRequest) {
     try {
       await deleteDurableVectors(sessionId);
     } catch {
-      return NextResponse.json(
-        { error: "Durable vector cleanup failed.", retryable: true, sessionId, pending: ["vectors"] },
-        { status: 503 },
-      );
+      return errorResponse("INTERNAL_ERROR", 503, {
+        requestId,
+        retryable: true,
+        message: "Durable vector cleanup failed.",
+      });
     }
     try {
       await deleteDurableObjects(sessionId, objectKeys);
     } catch {
-      return NextResponse.json(
-        { error: "Durable object cleanup failed.", retryable: true, sessionId, pending: ["objects"] },
-        { status: 503 },
-      );
+      return errorResponse("INTERNAL_ERROR", 503, {
+        requestId,
+        retryable: true,
+        message: "Durable object cleanup failed.",
+      });
+    }
+    try {
+      await deleteSessionDb(sessionId);
+    } catch {
+      return errorResponse("INTERNAL_ERROR", 503, {
+        requestId,
+        retryable: true,
+        message: "Durable session cleanup failed.",
+      });
     }
   }
+
   if (!deleteSession(sessionId)) {
-    return NextResponse.json({ error: "Unknown session" }, { status: 404 });
+    return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown session" });
   }
+
   if (isDurableConfigured()) {
     return NextResponse.json({ deleted: true });
   }
+
   // Legacy temp-only path: object + vector deletes stay best-effort so a
   // store outage never masks the authoritative metadata delete above.
   try {

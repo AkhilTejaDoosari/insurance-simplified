@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { createSession, deleteSession, getEvidenceRecord } from "@/app/lib/session";
+import { createSession, deleteSession, getEvidenceRecord, SESSION_CAPABILITY_COOKIE } from "@/app/lib/session";
 import { evidenceIdFor } from "@/app/lib/evidence-ids";
 
 const created: string[] = [];
@@ -19,9 +19,9 @@ const SESSION_DOCS = [
 ];
 
 function seedSession() {
-  const session = createSession(SESSION_DOCS, {});
+  const { session, capability } = createSession(SESSION_DOCS, {});
   created.push(session.sessionId);
-  return session;
+  return { session, capability };
 }
 
 vi.mock("@/app/lib/extraction/extract", () => ({
@@ -43,11 +43,14 @@ function tableWith(rows: unknown[]) {
   };
 }
 
-function post(sessionId: string) {
+function post(sessionId: string, capability: string) {
   return POST(
     new NextRequest("http://localhost/api/extract", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        cookie: `${SESSION_CAPABILITY_COOKIE}=${capability}`,
+      },
       body: JSON.stringify({ sessionId, engine: "fallback" }),
     })
   );
@@ -55,7 +58,7 @@ function post(sessionId: string) {
 
 describe("POST /api/extract evidence verification boundary", () => {
   it("12. retains a value with only its canonical valid evidence", async () => {
-    const session = seedSession();
+    const { session, capability } = seedSession();
     mockedFallback.mockReturnValue(
       tableWith([
         {
@@ -75,7 +78,7 @@ describe("POST /api/extract evidence verification boundary", () => {
         },
       ]) as never
     );
-    const res = await post(session.sessionId);
+    const res = await post(session.sessionId, capability);
     expect(res.status).toBe(200);
     const body = await res.json();
     const row = body.rows[0];
@@ -88,7 +91,7 @@ describe("POST /api/extract evidence verification boundary", () => {
   });
 
   it("13+14. removes values with zero valid citations and flips emptied rows to NOT STATED", async () => {
-    const session = seedSession();
+    const { session, capability } = seedSession();
     mockedFallback.mockReturnValue(
       tableWith([
         {
@@ -124,7 +127,7 @@ describe("POST /api/extract evidence verification boundary", () => {
         },
       ]) as never
     );
-    const res = await post(session.sessionId);
+    const res = await post(session.sessionId, capability);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.rows[0].values).toHaveLength(1);
@@ -133,7 +136,7 @@ describe("POST /api/extract evidence verification boundary", () => {
   });
 
   it("17+18. registry and evidenceIds use the canonical source quote, never the model text", async () => {
-    const session = seedSession();
+    const { session, capability } = seedSession();
     mockedFallback.mockReturnValue(
       tableWith([
         {
@@ -150,7 +153,7 @@ describe("POST /api/extract evidence verification boundary", () => {
         },
       ]) as never
     );
-    const res = await post(session.sessionId);
+    const res = await post(session.sessionId, capability);
     expect(res.status).toBe(200);
     const body = await res.json();
     const evidence = body.rows[0].values[0].evidence[0];
@@ -165,7 +168,7 @@ describe("POST /api/extract evidence verification boundary", () => {
   });
 
   it("19. adversarial display with unsupported material token flips to NEEDS VERIFICATION, keeps evidence", async () => {
-    const session = seedSession();
+    const { session, capability } = seedSession();
     mockedFallback.mockReturnValue(
       tableWith([
         {
@@ -182,7 +185,7 @@ describe("POST /api/extract evidence verification boundary", () => {
         },
       ]) as never
     );
-    const res = await post(session.sessionId);
+    const res = await post(session.sessionId, capability);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.rows[0].verdict).toBe("NEEDS VERIFICATION");
@@ -195,7 +198,7 @@ describe("POST /api/extract evidence verification boundary", () => {
   });
 
   it("20. fully supported numeric display retains its verdict", async () => {
-    const session = seedSession();
+    const { session, capability } = seedSession();
     mockedFallback.mockReturnValue(
       tableWith([
         {
@@ -212,7 +215,7 @@ describe("POST /api/extract evidence verification boundary", () => {
         },
       ]) as never
     );
-    const res = await post(session.sessionId);
+    const res = await post(session.sessionId, capability);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.rows[0].verdict).toBe("SUPPORTED");

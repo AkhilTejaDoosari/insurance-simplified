@@ -24,7 +24,7 @@ describe("evidenceIdFor", () => {
 
 describe("session-bound evidence registry", () => {
   it("round-trips registered passages and stays idempotent", () => {
-    const session = createSession([], {});
+    const { session } = createSession([], {});
     try {
       const entry = { documentId: "doc-1", page: 2, quote: "Some quote." };
       registerEvidence(session.sessionId, [entry, entry]);
@@ -37,7 +37,7 @@ describe("session-bound evidence registry", () => {
   });
 
   it("returns undefined for unknown or malformed IDs", () => {
-    const session = createSession([], {});
+    const { session } = createSession([], {});
     try {
       expect(getEvidenceRecord(session.sessionId, "ev-0000000000000000")).toBeUndefined();
       expect(getEvidenceRecord(session.sessionId, "not-an-id")).toBeUndefined();
@@ -48,8 +48,8 @@ describe("session-bound evidence registry", () => {
   });
 
   it("does not resolve one session's evidence from another session", () => {
-    const a = createSession([], {});
-    const b = createSession([], {});
+    const { session: a } = createSession([], {});
+    const { session: b } = createSession([], {});
     try {
       registerEvidence(a.sessionId, [{ documentId: "doc-1", page: 1, quote: "Shared quote." }]);
       const id = evidenceIdFor("doc-1", 1, "Shared quote.");

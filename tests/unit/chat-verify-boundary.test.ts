@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { createSession, deleteSession, getEvidenceRecord } from "@/app/lib/session";
+import { createSession, deleteSession, getEvidenceRecord, SESSION_CAPABILITY_COOKIE } from "@/app/lib/session";
 import { REFUSAL_TEXT } from "@/app/lib/rag/answer";
 
 const created: string[] = [];
@@ -22,7 +22,7 @@ import { answerQuestion, answerQuestionSemantic } from "@/app/lib/rag/answer";
 const mockedAnswer = vi.mocked(answerQuestionSemantic);
 
 function seedSession() {
-  const session = createSession(
+  const { session, capability } = createSession(
     [
       {
         documentId: "doc-1",
@@ -34,14 +34,17 @@ function seedSession() {
     {}
   );
   created.push(session.sessionId);
-  return session;
+  return { session, capability };
 }
 
-function post(sessionId: string) {
+function post(sessionId: string, capability: string) {
   return POST(
     new NextRequest("http://localhost/api/chat", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        cookie: `${SESSION_CAPABILITY_COOKIE}=${capability}`,
+      },
       body: JSON.stringify({ sessionId, question: "What is the deductible?", engine: "fallback" }),
     })
   );
@@ -58,14 +61,14 @@ function answer(citations: unknown[]) {
 
 describe("POST /api/chat evidence verification boundary", () => {
   it("15. fails a partially unsupported answer closed with the existing refusal", async () => {
-    const session = seedSession();
+    const { session, capability } = seedSession();
     mockedAnswer.mockReturnValue(
       answer([
         { documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network." },
         { documentId: "doc-1", page: 1, quote: "Fabricated passage here." },
       ]) as never
     );
-    const res = await post(session.sessionId);
+    const res = await post(session.sessionId, capability);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       schemaVersion: "v1",
@@ -75,11 +78,11 @@ describe("POST /api/chat evidence verification boundary", () => {
   });
 
   it("16+17. returns canonical verbatim quotes and registers them", async () => {
-    const session = seedSession();
+    const { session, capability } = seedSession();
     mockedAnswer.mockReturnValue(
       answer([{ documentId: "doc-1", page: 1, quote: "Annual deductible ... $250 in-network." }]) as never
     );
-    const res = await post(session.sessionId);
+    const res = await post(session.sessionId, capability);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.kind).toBe("answer");
