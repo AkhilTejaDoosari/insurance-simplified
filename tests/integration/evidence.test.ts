@@ -30,7 +30,7 @@ describe("cell → evidence flow (User Story 2)", () => {
   it("differing plan values stay SUPPORTED with each side carrying its own source", async () => {
     const docs = [await loadFixture("plan-a.pdf", "doc-1"), await loadFixture("plan-b.pdf", "doc-2")];
     const table = extractFallback(docs, {});
-    const row = table.rows.find((r) => r.factName === "emergency-copay");
+    const row = table.rows.find((r) => r.factName === "emergency-care");
     expect(row?.verdict).toBe("SUPPORTED");
     expect(row!.values).toHaveLength(2);
     const docIds = new Set(row!.values.map((v) => v.documentId));

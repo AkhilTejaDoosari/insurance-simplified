@@ -32,6 +32,25 @@ describe("comparison table sections", () => {
     ]);
   });
 
+  it("renders Care & Coverage in the locked 14-row parent order", () => {
+    expect(SECTIONS[1].factNames).toEqual([
+      "primary-care-visit",
+      "specialist-visit",
+      "urgent-care",
+      "emergency-care",
+      "hospitalization",
+      "surgery",
+      "prescriptions",
+      "mental-health",
+      "maternity-coverage",
+      "preventive-care",
+      "lab-and-imaging",
+      "ambulance",
+      "dental-coverage",
+      "vision-coverage",
+    ]);
+  });
+
   it("gives every display fact exactly one canonical section with no duplicates", () => {
     const assigned = SECTIONS.flatMap((s) => s.factNames);
     expect(new Set(assigned).size).toBe(assigned.length);
