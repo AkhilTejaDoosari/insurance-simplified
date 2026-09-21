@@ -207,8 +207,19 @@ const EXTRACTION_INSTRUCTIONS = [
 ].join("\n");
 
 /** Boundary normalization for LLM output (defense in depth: the prompt
- *  requires qualifiers, but models still omit or null it). Coerce missing,
- *  null, or non-object qualifiers on any value to {} before validation. */
+ *  requires qualifiers, but models still omit or null it, or fill every
+ *  qualifier key with an empty string for tier-agnostic values). Coerce
+ *  missing, null, or non-object qualifiers on any value to {} before
+ *  validation; trim known scope fields and drop them when blank so an
+ *  absent tier stays absent (never an invented tier). */
+const QUALIFIER_SCOPE_KEYS: readonly string[] = [
+  "planTier",
+  "networkTier",
+  "period",
+  "ageBand",
+  "conditions",
+];
+
 export function normalizeLlmTable(raw: unknown): unknown {
   if (typeof raw !== "object" || raw === null) return raw;
   const table = raw as Record<string, unknown>;
@@ -228,7 +239,15 @@ export function normalizeLlmTable(raw: unknown): unknown {
           if (typeof q !== "object" || q === null || Array.isArray(q)) {
             return { ...v, qualifiers: {} };
           }
-          return value;
+          const cleaned: Record<string, unknown> = { ...(q as Record<string, unknown>) };
+          for (const key of QUALIFIER_SCOPE_KEYS) {
+            const field = cleaned[key];
+            if (typeof field !== "string") continue;
+            const trimmed = field.trim();
+            if (trimmed) cleaned[key] = trimmed;
+            else delete cleaned[key];
+          }
+          return { ...v, qualifiers: cleaned };
         }),
       };
     }),

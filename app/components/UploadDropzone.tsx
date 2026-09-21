@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import ContextInputs, {
   combineCoverageDates,
   combineLocation,
@@ -19,10 +19,14 @@ export default function UploadDropzone({
   onUploaded,
   context: controlledContext,
   onContextChange,
+  externalBusy,
+  externalBusyLabel,
 }: {
   onUploaded: (result: UploadResult, context: Record<string, string>) => void;
   context?: Record<string, string>;
   onContextChange?: (next: Record<string, string>) => void;
+  externalBusy?: boolean;
+  externalBusyLabel?: string;
 }) {
   const [files, setFiles] = useState<File[]>([]);
   const [internalContext, setInternalContext] = useState<Record<string, string>>({
@@ -32,13 +36,18 @@ export default function UploadDropzone({
   const setContext = onContextChange ?? setInternalContext;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  const effectiveBusy = busy || externalBusy === true;
+  const busyLabel = busy ? "Reading your documents…" : (externalBusyLabel ?? "Building your comparison…");
 
   async function submit() {
+    if (submitting.current) return;
     setError(null);
     if (files.length < 2 || files.length > 4) {
       setError(`Upload 2–4 PDF documents (selected ${files.length}).`);
       return;
     }
+    submitting.current = true;
     setBusy(true);
     try {
       const form = new FormData();
@@ -65,6 +74,7 @@ export default function UploadDropzone({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -98,10 +108,16 @@ export default function UploadDropzone({
           {error}
         </p>
       )}
-      <div className="actions">
-        <button className="btn" onClick={submit} disabled={busy}>
-          {busy ? "Processing…" : "Compare my plans"}
+      <div className="actions actions--compare">
+        <button className="btn" onClick={submit} disabled={effectiveBusy} aria-busy={effectiveBusy}>
+          {effectiveBusy ? "Processing…" : "Compare my plans"}
         </button>
+        {effectiveBusy && (
+          <p className="notice notice--inline" role="status">
+            <span className="spinner" aria-hidden="true" />
+            {busyLabel}
+          </p>
+        )}
       </div>
     </section>
   );

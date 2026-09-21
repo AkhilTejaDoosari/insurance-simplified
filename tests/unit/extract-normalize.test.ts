@@ -58,6 +58,21 @@ describe("extractViaLlm qualifiers normalization", () => {
     expect(table.rows[0].values[0].qualifiers).toEqual({ networkTier: "in-network" });
   });
 
+  it("omits an empty-string planTier so tier-agnostic rows stay valid", async () => {
+    mockedComplete.mockResolvedValue(
+      llmPayload({ planTier: "", networkTier: "in-network" }),
+    );
+    const table = await extractViaLlm(DOCS, {});
+    expect(table.rows[0].verdict).toBe("SUPPORTED");
+    expect(table.rows[0].values[0].qualifiers).toEqual({ networkTier: "in-network" });
+  });
+
+  it("trims a padded planTier instead of treating it as a different tier", async () => {
+    mockedComplete.mockResolvedValue(llmPayload({ planTier: "  Plus  " }));
+    const table = await extractViaLlm(DOCS, {});
+    expect(table.rows[0].values[0].qualifiers).toEqual({ planTier: "Plus" });
+  });
+
   it("still rejects genuinely invalid payloads", async () => {
     mockedComplete.mockResolvedValue({
       schemaVersion: "v1",

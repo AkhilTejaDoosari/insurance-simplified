@@ -68,6 +68,8 @@ export default function Home() {
             onUploaded={handleUploaded}
             context={sharedContext}
             onContextChange={setSharedContext}
+            externalBusy={busy}
+            externalBusyLabel="Building your comparison…"
           />
           <p className="notice">
             Still waiting on your plan documents?{" "}
@@ -83,11 +85,6 @@ export default function Home() {
           context={sharedContext}
           onContextChange={setSharedContext}
         />
-      )}
-      {busy && (
-        <p className="notice" role="status">
-          Extracting comparison…
-        </p>
       )}
       {error && (
         <p role="alert" className="alert">
