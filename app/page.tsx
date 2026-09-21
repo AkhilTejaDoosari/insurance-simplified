@@ -6,7 +6,7 @@ import ComparisonTable from "@/app/components/ComparisonTable";
 import ChatPanel from "@/app/components/ChatPanel";
 import ChecklistFlow from "@/app/components/ChecklistFlow";
 import WelcomePage from "@/app/components/WelcomePage";
-import { DEFAULT_COUNTRY } from "@/app/components/ContextInputs";
+import { DEFAULT_COUNTRY, toCanonicalContext } from "@/app/components/ContextInputs";
 import type { RegisteredComparisonTable as Table } from "@/app/lib/extraction/types";
 
 type Page = "welcome" | "upload" | "checklist" | "results";
@@ -28,7 +28,7 @@ export default function Home() {
 
   async function handleUploaded(result: UploadResult, context: Record<string, string>) {
     setSessionId(result.sessionId);
-    setSessionContext({ ...context });
+    setSessionContext(toCanonicalContext(context));
     setSharedContext({ ...context });
     setBusy(true);
     setError(null);

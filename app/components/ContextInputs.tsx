@@ -97,6 +97,28 @@ export function resolveVisaOrStatus(context: Record<string, string>): string {
   return selected;
 }
 
+/** Canonical session context: the exact shape the upload payload persists
+ *  to the session and the extraction/evaluation layer reads (age,
+ *  countryOrResidency, visaOrStatus, location, coverageDates). Derive it
+ *  from split intake inputs so Results Workspace checks the same keys the
+ *  server stored instead of re-asking for supplied values. */
+export function toCanonicalContext(
+  context: Record<string, string>
+): Record<string, string> {
+  const canonical: Record<string, string> = {};
+  const age = (context.age ?? "").trim();
+  if (age) canonical.age = age;
+  const country = (context.countryOrResidency ?? "").trim();
+  if (country) canonical.countryOrResidency = country;
+  const visaOrStatus = resolveVisaOrStatus(context);
+  if (visaOrStatus) canonical.visaOrStatus = visaOrStatus;
+  const location = combineLocation(context);
+  if (location) canonical.location = location;
+  const coverageDates = combineCoverageDates(context);
+  if (coverageDates) canonical.coverageDates = coverageDates;
+  return canonical;
+}
+
 export default function ContextInputs({
   context,
   onChange,
