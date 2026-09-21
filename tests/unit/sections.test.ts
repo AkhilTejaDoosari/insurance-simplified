@@ -51,6 +51,20 @@ describe("comparison table sections", () => {
     ]);
   });
 
+  it("renders Rules & Restrictions in the locked 9-row order", () => {
+    expect(SECTIONS[2].factNames).toEqual([
+      "network-rules",
+      "preauthorization",
+      "referral-requirement",
+      "material-exclusions",
+      "waiting-period",
+      "geographic-restrictions",
+      "international-coverage",
+      "coverage-duration",
+      "age-limits",
+    ]);
+  });
+
   it("gives every display fact exactly one canonical section with no duplicates", () => {
     const assigned = SECTIONS.flatMap((s) => s.factNames);
     expect(new Set(assigned).size).toBe(assigned.length);

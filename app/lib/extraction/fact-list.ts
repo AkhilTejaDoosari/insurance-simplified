@@ -38,10 +38,15 @@ export const FACTS: FactDefinition[] = [
   { name: "urgent-care", label: "Urgent / walk-in care", patterns: ["urgent care", "walk-in", "walk in clinic"] },
   { name: "lab-and-imaging", label: "Labs & imaging", patterns: ["\\blab\\b|laborator|radiolog|x-?ray|imaging|MRI|CT scan|diagnostic imaging"] },
   { name: "ambulance", label: "Ambulance", patterns: ["ambulance"] },
-  { name: "international-coverage", label: "International / travel coverage", patterns: ["outside the (country|U\\.S\\.)|abroad|international|travel coverage"], contextField: "countryOrResidency" },
-  { name: "waiting-period", label: "Waiting period", patterns: ["waiting period"] },
+  { name: "international-coverage", label: "International restrictions", patterns: ["outside the (country|U\\.S\\.)|abroad|international|travel coverage"], contextField: "countryOrResidency" },
+  { name: "network-rules", label: "Network / out-of-network rules", patterns: ["out-of-network", "out of network", "network use required", "must use (a )?network"] },
+  { name: "preauthorization", label: "Preauthorization", patterns: ["pre-?authorization", "prior authorization", "pre-certification", "precertification", "approved in advance"] },
+  { name: "material-exclusions", label: "Material exclusions", patterns: ["exclusion", "excluded from coverage", "not covered", "limitations and exclusions"] },
+  { name: "waiting-period", label: "Waiting periods", patterns: ["waiting period"] },
+  { name: "geographic-restrictions", label: "Geographic restrictions", patterns: ["service area", "home country", "coverage area", "state of residence", "destination country"] },
+  { name: "coverage-duration", label: "Coverage-duration limits", patterns: ["maximum trip", "minimum \\d+\\s*(day|week|month|year)", "maximum \\d+\\s*(day|week|month|year)", "renewable", "up to \\d+\\s*months? of coverage"] },
   { name: "age-limits", label: "Age limits", patterns: ["age \\d+|under \\d+|over \\d+"], contextField: "age" },
-  { name: "referral-requirement", label: "Referral requirement", patterns: ["referral"] },
+  { name: "referral-requirement", label: "Referrals", patterns: ["referral"] },
   { name: "coverage-dates", label: "Coverage dates / term", patterns: ["coverage (period|dates|term|begins|ends)|effective date"], contextField: "coverageDates" },
 ];
 

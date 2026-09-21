@@ -24,10 +24,14 @@ import { completeJson } from "@/app/lib/llm/client";
 import { withEligibilityRow, contextFieldRulesOut } from "@/app/lib/extraction/eligibility";
 import { interpretCoinsuranceShare } from "@/app/lib/extraction/coinsurance";
 import { summarizeCareDisplay } from "@/app/lib/extraction/care-display";
+import { summarizeRulesDisplay } from "@/app/lib/extraction/rules-display";
 import { SECTIONS } from "@/app/lib/extraction/sections";
 
 const CARE_FACTS: ReadonlySet<string> = new Set(
   SECTIONS.find((s) => s.title === "Care & Coverage")?.factNames ?? []
+);
+const RULES_FACTS: ReadonlySet<string> = new Set(
+  SECTIONS.find((s) => s.title === "Rules & Restrictions")?.factNames ?? []
 );
 
 export interface ExtractInputDocument {
@@ -140,13 +144,21 @@ export function extractFallback(
     if (values.length === 0) {
       return { factName: fact.name, verdict: "NOT STATED", values: [] };
     }
-    // Concise Care cells are presentational: rule-outs evaluate raw quotes.
-    const displayValues = CARE_FACTS.has(fact.name)
-      ? values.map((v) => {
-          const reading = summarizeCareDisplay(fact.name, v.display);
-          return reading.certain ? { ...v, display: reading.display } : v;
-        })
-      : values;
+    // Concise Care/Rules cells are presentational: rule-outs evaluate raw quotes.
+    const careDerived = CARE_FACTS.has(fact.name);
+    const rulesDerived = RULES_FACTS.has(fact.name);
+    const displayValues =
+      careDerived || rulesDerived
+        ? values.map((v) => {
+            const reading = careDerived
+              ? summarizeCareDisplay(fact.name, v.display)
+              : summarizeRulesDisplay(fact.name, v.display);
+            return reading.certain ? { ...v, display: reading.display } : v;
+          })
+        : values;
+    const rulesCertain =
+      !rulesDerived ||
+      values.every((v) => summarizeRulesDisplay(fact.name, v.display).certain);
     if (ruledOutField && values.every((v) =>
       contextFieldRulesOut(fact.contextField, userContext, v.display))) {
       return {
@@ -157,6 +169,9 @@ export function extractFallback(
       };
     }
     if (allVague) {
+      return { factName: fact.name, verdict: "NEEDS VERIFICATION", values: displayValues };
+    }
+    if (rulesDerived && !rulesCertain) {
       return { factName: fact.name, verdict: "NEEDS VERIFICATION", values: displayValues };
     }
     if (fact.name === "coinsurance") {
@@ -404,6 +419,28 @@ export function reconcileLlmTable(
           const reading = summarizeCareDisplay(r.factName as string, quotes.join("\n"));
           return reading.certain ? { ...v, display: reading.display } : value;
         });
+      }
+      if (typeof r.factName === "string" && RULES_FACTS.has(r.factName)) {
+        let certain = false;
+        out.values = (values as unknown[]).map((value) => {
+          if (typeof value !== "object" || value === null) return value;
+          const v = value as Record<string, unknown>;
+          const quotes = Array.isArray(v.evidence)
+            ? v.evidence.flatMap((e) =>
+                typeof e === "object" && e !== null && typeof (e as Record<string, unknown>).quote === "string"
+                  ? [(e as Record<string, unknown>).quote as string]
+                  : [],
+              )
+            : [];
+          if (quotes.length === 0) return value;
+          const reading = summarizeRulesDisplay(r.factName as string, quotes.join("\n"));
+          if (reading.certain) certain = true;
+          return reading.certain ? { ...v, display: reading.display } : value;
+        });
+        if (!certain) {
+          out.verdict = "NEEDS VERIFICATION";
+          delete out.rationale;
+        }
       }
       if (r.factName === "coinsurance" && values.length > 0) {
         let memberShare = false;

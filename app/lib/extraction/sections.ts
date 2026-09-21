@@ -53,10 +53,15 @@ export const SECTIONS: Section[] = [
     description:
       "What conditions could prevent you from using the coverage the way you expect.",
     factNames: [
+      "network-rules",
+      "preauthorization",
       "referral-requirement",
+      "material-exclusions",
       "waiting-period",
-      "age-limits",
+      "geographic-restrictions",
       "international-coverage",
+      "coverage-duration",
+      "age-limits",
     ],
   },
   {
