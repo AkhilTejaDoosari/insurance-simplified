@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-
-vi.mock("@/app/lib/session", () => ({
-  getSession: vi.fn(() => ({ sessionId: "sess-1", createdAt: "", documents: [], userContext: {} })),
-}));
+import {
+  createSession,
+  deleteSession,
+  SESSION_CAPABILITY_COOKIE,
+} from "@/app/lib/session";
 
 const REFUSAL = {
   schemaVersion: "v1",
@@ -22,12 +23,23 @@ import { answerQuestion, answerQuestionSemantic, answerViaLlm } from "@/app/lib/
 import { resolveEmbeddingConfig } from "@/app/lib/rag/embeddings";
 import { REFUSAL_TEXT, validateChatResponse } from "@/app/lib/rag/answer";
 
-function post(body: Record<string, unknown>) {
+const created: string[] = [];
+
+function seedSession() {
+  const { session, capability } = createSession([], {});
+  created.push(session.sessionId);
+  return { session, capability };
+}
+
+function post(sessionId: string, capability: string, body: Record<string, unknown>) {
   return POST(
     new NextRequest("http://localhost/api/chat", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      headers: {
+        "content-type": "application/json",
+        cookie: `${SESSION_CAPABILITY_COOKIE}=${capability}`,
+      },
+      body: JSON.stringify({ sessionId, ...body }),
     }),
   );
 }
@@ -37,12 +49,14 @@ describe("POST /api/chat engine selection", () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => {
     process.env = { ...env };
+    for (const id of created.splice(0)) deleteSession(id);
   });
 
   it("uses the LLM engine automatically when configured, with no engine field", async () => {
     process.env.LLM_BASE_URL = "https://llm.example";
     process.env.LLM_API_KEY = "key";
-    const res = await post({ sessionId: "sess-1", question: "What is the deductible?" });
+    const { session, capability } = seedSession();
+    const res = await post(session.sessionId, capability, { question: "What is the deductible?" });
     expect(res.status).toBe(200);
     expect((await res.json()).refusalText).toMatch(/^llm:/);
     expect(answerViaLlm).toHaveBeenCalledTimes(1);
@@ -52,7 +66,8 @@ describe("POST /api/chat engine selection", () => {
   it("falls back to the deterministic engine only when no LLM is configured", async () => {
     delete process.env.LLM_BASE_URL;
     delete process.env.LLM_API_KEY;
-    await post({ sessionId: "sess-1", question: "What is the deductible?" });
+    const { session, capability } = seedSession();
+    await post(session.sessionId, capability, { question: "What is the deductible?" });
     expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
     expect(answerViaLlm).not.toHaveBeenCalled();
   });
@@ -60,12 +75,14 @@ describe("POST /api/chat engine selection", () => {
   it("honours an explicit engine override in either direction", async () => {
     process.env.LLM_BASE_URL = "https://llm.example";
     process.env.LLM_API_KEY = "key";
-    await post({ sessionId: "sess-1", question: "q", engine: "fallback" });
+    const first = seedSession();
+    await post(first.session.sessionId, first.capability, { question: "q", engine: "fallback" });
     expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
 
     delete process.env.LLM_BASE_URL;
     delete process.env.LLM_API_KEY;
-    await post({ sessionId: "sess-1", question: "q", engine: "llm" });
+    const second = seedSession();
+    await post(second.session.sessionId, second.capability, { question: "q", engine: "llm" });
     expect(answerViaLlm).toHaveBeenCalledTimes(1);
   });
 });
@@ -75,6 +92,7 @@ describe("POST /api/chat embedding degradation (todo 23)", () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => {
     process.env = { ...env };
+    for (const id of created.splice(0)) deleteSession(id);
   });
 
   function clearAllEngineEnv() {
@@ -89,7 +107,8 @@ describe("POST /api/chat embedding degradation (todo 23)", () => {
   it("unset EMBEDDING_* env reports the clean-skip signal and serves the lexical path", async () => {
     clearAllEngineEnv();
     expect(resolveEmbeddingConfig()).toBeNull();
-    const res = await post({ sessionId: "sess-1", question: "What is the deductible?" });
+    const { session, capability } = seedSession();
+    const res = await post(session.sessionId, capability, { question: "What is the deductible?" });
     expect(res.status).toBe(200);
     expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
     expect(answerViaLlm).not.toHaveBeenCalled();
@@ -97,7 +116,8 @@ describe("POST /api/chat embedding degradation (todo 23)", () => {
 
   it("unset-env lexical response keeps the identical ChatResponse contract + refusal text", async () => {
     clearAllEngineEnv();
-    const res = await post({ sessionId: "sess-1", question: "What is the deductible?" });
+    const { session, capability } = seedSession();
+    const res = await post(session.sessionId, capability, { question: "What is the deductible?" });
     expect(res.status).toBe(200);
     const body = (await res.json()) as unknown;
     expect(() => validateChatResponse(body)).not.toThrow();
@@ -115,7 +135,8 @@ describe("POST /api/chat embedding degradation (todo 23)", () => {
     vi.mocked(answerViaLlm).mockRejectedValueOnce(
       new Error("LLM request failed with status 401"),
     );
-    const res = await post({ sessionId: "sess-1", question: "What is the deductible?" });
+    const { session, capability } = seedSession();
+    const res = await post(session.sessionId, capability, { question: "What is the deductible?" });
     expect(res.status).toBe(200);
     expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
     const body = (await res.json()) as unknown;
@@ -132,7 +153,8 @@ describe("POST /api/chat embedding degradation (todo 23)", () => {
     vi.mocked(answerViaLlm).mockRejectedValueOnce(
       new Error("LLM not configured (set LLM_BASE_URL and LLM_API_KEY)"),
     );
-    const res = await post({ sessionId: "sess-1", question: "q", engine: "llm" });
+    const { session, capability } = seedSession();
+    const res = await post(session.sessionId, capability, { question: "q", engine: "llm" });
     expect(res.status).toBe(200);
     expect(answerViaLlm).toHaveBeenCalledTimes(1);
     expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
