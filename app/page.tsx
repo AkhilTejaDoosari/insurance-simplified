@@ -11,6 +11,7 @@ import {
   describeExtractFailure,
   type ExtractFailure,
 } from "@/app/lib/extract-errors";
+import type { ContactHit } from "@/app/lib/extraction/contacts";
 import type { RegisteredComparisonTable as Table } from "@/app/lib/extraction/types";
 
 type Page = "welcome" | "upload" | "checklist" | "results";
@@ -19,6 +20,7 @@ export default function Home() {
   const [page, setPage] = useState<Page>("welcome");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [table, setTable] = useState<Table | null>(null);
+  const [contacts, setContacts] = useState<ContactHit[]>([]);
   const [extractError, setExtractError] = useState<ExtractFailure | null>(null);
   const [busy, setBusy] = useState(false);
   // A-008: intake context is shared so Guided Intake → Document Intake
@@ -47,6 +49,11 @@ export default function Home() {
       }
       setExtractError(null);
       setTable(data as Table);
+      setContacts(
+        Array.isArray((data as { contacts?: unknown }).contacts)
+          ? ((data as { contacts: ContactHit[] }).contacts ?? [])
+          : [],
+      );
       setPage("results");
     } catch {
       setExtractError(describeExtractFailure(null, true));
@@ -110,7 +117,11 @@ export default function Home() {
               sessionId={sessionId}
               userContext={sessionContext}
               onContextUpdate={setSessionContext}
-              onTableUpdate={setTable}
+              onTableUpdate={(next, nextContacts) => {
+                setTable(next);
+                if (nextContacts !== undefined) setContacts(nextContacts);
+              }}
+              contacts={contacts}
             />
             <aside className="results-workspace__chat" aria-label="Ask about your plans">
               <ChatPanel sessionId={sessionId} documents={table.documents} />

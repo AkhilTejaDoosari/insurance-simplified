@@ -366,6 +366,19 @@ It must not pretend to search, rank, or discover insurance plans in V1.
 
 ---
 
+## 4.17 Plan contact information is plan-scoped, document-evidenced
+
+Contact information (email, phone, website) belongs to a logical plan, which
+may be described by multiple documents.
+
+A displayed contact value is valid only when supporting evidence exists in an
+uploaded document, with the source document and page traceable exactly like
+any other citation.
+
+Contact information is never invented, searched, or looked up externally.
+
+---
+
 # 5. Minimal Lifecycle
 
 ## Comparison Session

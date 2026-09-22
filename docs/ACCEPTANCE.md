@@ -319,3 +319,63 @@ Plan Highlights
 **Given** the production Cloud Run revision  
 **When** the approved smoke flow runs using representative PDFs  
 **Then** upload → compare → tier/sections → chat → citation viewer → restart durability → isolation → delete all pass before V1 is frozen.
+
+---
+
+# 19. Verify & Contact
+
+### A-041 — Fifth section
+
+**Given** processing succeeds  
+**When** the Results Workspace loads  
+**Then** a fifth `Verify & Contact` section exists alongside the four comparison sections.
+
+### A-042 — CORE all-NOT-STATED remains visible
+
+**Given** every compared plan is silent on a CORE fact  
+**When** Essentials renders  
+**Then** the row remains visible showing `NOT STATED`.
+
+### A-043 — COMPARATIVE all-NOT-STATED row hidden
+
+**Given** every compared plan is `NOT STATED` for a COMPARATIVE fact  
+**When** the workspace renders  
+**Then** the entire row is hidden.
+
+### A-044 — COMPARATIVE row visible with evidence
+
+**Given** at least one compared plan has meaningful evidence for a COMPARATIVE fact  
+**When** the workspace renders  
+**Then** the row is visible with per-plan values.
+
+### A-045 — HIGHLIGHT unsupported rows hidden
+
+**Given** no plan supports a HIGHLIGHT candidate  
+**When** Plan Highlights renders  
+**Then** the unsupported rows are not rendered.
+
+### A-046 — Verify surfaces unresolved items
+
+**Given** CORE facts are `NOT STATED`, material results are `NEEDS VERIFICATION`, or true `CONFLICTED` results exist  
+**When** Verify & Contact renders  
+**Then** those items are surfaced as verify-before-enrolling actions.
+
+### A-047 — Contacts grouped by logical plan
+
+**Given** uploaded documents describing plans with stated contact methods  
+**When** Verify & Contact renders  
+**Then** email, phone, and website values are grouped by logical plan, not by document.
+
+### A-048 — Contacts only from uploaded evidence
+
+**Given** Verify & Contact renders  
+**Then** every contact value resolves to evidence in an uploaded document  
+**And** no postal address is shown  
+**And** no web search or external lookup is used.
+
+### A-049 — No invented contact data
+
+**Given** no contact method was found for a plan in the uploaded documents  
+**When** Verify & Contact renders that plan  
+**Then** it states that no contact information was found  
+**And** it does not invent or display contact data.

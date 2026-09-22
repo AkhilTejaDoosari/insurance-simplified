@@ -18,6 +18,7 @@ import {
 } from "@/app/lib/extraction/extract";
 import { validateTable } from "@/app/lib/extraction/types";
 import { isLlmConfigured } from "@/app/lib/llm/client";
+import { extractContacts } from "@/app/lib/extraction/contacts";
 import { requireSessionCapability } from "@/app/lib/session-auth";
 import { errorResponse, logFailure, newRequestId } from "@/app/lib/api-errors";
 
@@ -125,12 +126,23 @@ export async function POST(request: NextRequest) {
       }
     }
     const verified: ComparisonTable = { ...table, rows: verifiedRows };
-    registerEvidence(
-      session.sessionId,
-      verified.rows.flatMap((row) =>
-        row.values.flatMap((value) => value.evidence)
-      )
+    const contacts = extractContacts(
+      session.documents.map((d) => ({
+        documentId: d.documentId,
+        filename: d.filename,
+        pages: d.pages,
+      })),
     );
+    registerEvidence(session.sessionId, [
+      ...verified.rows.flatMap((row) =>
+        row.values.flatMap((value) => value.evidence)
+      ),
+      ...contacts.map((c) => ({
+        documentId: c.documentId,
+        page: c.page,
+        quote: c.quote,
+      })),
+    ]);
     return NextResponse.json({
       ...verified,
       rows: verified.rows.map((row) => ({
@@ -140,6 +152,7 @@ export async function POST(request: NextRequest) {
           evidence: value.evidence.map(withEvidenceId),
         })),
       })),
+      contacts,
     });
   } catch (err) {
     logFailure(requestId, "extract", err);

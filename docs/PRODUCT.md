@@ -117,7 +117,9 @@ The user receives:
 - explicit unknown, conflicting, or insufficient-evidence states;
 - grounded answers to free-form questions;
 - citations linked to the original document and page;
-- a "Verify Before Enrolling" view for unresolved or important items.
+- a "Verify Before Enrolling" view for unresolved or important items;
+- plan contact information (email, phone, website) taken only from the
+  uploaded documents, grouped by logical plan.
 
 ### For users without documents
 
@@ -184,6 +186,19 @@ The system must not silently choose whichever statement is easiest to present.
 
 A displayed citation must resolve to evidence actually present in the supplied
 document and must point the user back to the original source.
+
+### Plan Contacts
+
+Contact information shown for a plan (email, phone, website) must come only
+from the user's uploaded documents.
+
+The system must not invent contact details, search the web, or use external
+lookup.
+
+Postal address is out of scope.
+
+When no contact method was found in the uploaded documents, the product must
+say so honestly instead of showing an empty or invented value.
 
 ### Numeric and Rule-Based Decisions
 

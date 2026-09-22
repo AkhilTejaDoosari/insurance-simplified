@@ -322,7 +322,9 @@ The user should be able to:
 - see missing or uncertain information;
 - provide additional context when needed;
 - ask free-form questions;
-- verify important claims.
+- verify important claims;
+- surface unresolved items before enrolling;
+- find plan contact information taken from the uploaded documents.
 
 All of these happen inside one workspace.
 
@@ -637,6 +639,53 @@ The user must be able to verify important claims independently.
 
 ---
 
+# 15B. Verify & Contact
+
+Verify & Contact is the fifth Results Workspace section, alongside the four
+comparison sections.
+
+It has two responsibilities.
+
+## Verify before enrolling
+
+Surface actionable unresolved items:
+
+- CORE facts that are NOT STATED;
+- material NEEDS VERIFICATION results;
+- true CONFLICTED results (incompatible claims about the same fact within
+  the same relevant plan/source scope — normal differences between plans
+  are not conflicts).
+
+## Contact the plan
+
+For each logical plan, show document-derived contact methods:
+
+- email;
+- phone;
+- website.
+
+Contacts come only from the uploaded documents and are grouped by logical
+plan (a plan may be described by multiple documents).
+
+Do not show empty contact fields individually.
+
+If no contact method was found for a plan:
+
+```text
+No contact information found in the uploaded documents.
+```
+
+Do not show postal addresses.
+
+Do not use web search or external lookup.
+
+Do not invent contact information.
+
+Every displayed contact value must retain its source document and
+page/evidence reference.
+
+---
+
 # 16. Results Success Criteria
 
 The Results Workspace succeeds when the user can answer:
@@ -661,6 +710,8 @@ What is unusual about each plan?
 Where did this answer come from?
 
 What should I verify before making a decision?
+
+How do I contact each plan?
 ```
 
 The product does not need to declare one plan the winner.

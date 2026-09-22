@@ -18,6 +18,14 @@ import { documentTiers, cellValues } from "@/app/lib/extraction/tiers";
 import { getPlanDisplayName } from "@/app/lib/extraction/plan-names";
 import { documentUrl } from "@/app/lib/document-url";
 import VerdictBadge from "@/app/components/VerdictBadge";
+import VerifyContact from "@/app/components/VerifyContact";
+import type { ContactHit } from "@/app/lib/extraction/contacts";
+
+export const VERIFY_SECTION = {
+  title: "Verify & Contact",
+  description:
+    "Unresolved items to check before enrolling, and plan contact information from your documents.",
+};
 
 const LABELS = new Map(FACTS.map((f) => [f.name, f.label]));
 const labelFor = (factName: string): string =>
@@ -42,7 +50,7 @@ function MissingContextPrompt({
   factName: string;
   field: string;
   sessionId: string;
-  onApplied: (table: Table, field: string, value: string) => void;
+  onApplied: (table: Table, field: string, value: string, contacts?: ContactHit[]) => void;
 }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,7 +72,7 @@ function MissingContextPrompt({
       if (!res.ok) {
         throw new Error(data.error?.message ?? data.error ?? "Update failed");
       }
-      onApplied(data as Table, field, value.trim());
+      onApplied(data as Table & { contacts?: ContactHit[] }, field, value.trim(), (data as { contacts?: ContactHit[] }).contacts);
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Update failed");
@@ -226,13 +234,15 @@ export default function ComparisonTable({
   onContextUpdate,
   onTableUpdate,
   initialTierSelection,
+  contacts,
 }: {
   table: Table;
   sessionId: string;
   userContext?: Record<string, string>;
   onContextUpdate?: (next: Record<string, string>) => void;
-  onTableUpdate?: (next: Table) => void;
+  onTableUpdate?: (next: Table, contacts?: ContactHit[]) => void;
   initialTierSelection?: Record<string, string>;
+  contacts?: ContactHit[];
 }) {
   const groups = groupRows(table.rows);
   const [activeSection, setActiveSection] = useState(
@@ -243,11 +253,12 @@ export default function ComparisonTable({
   );
   const visibleSections =
     groups.some(({ section }) => section.title === OTHER.title)
-      ? [...SECTIONS, OTHER]
-      : SECTIONS;
+      ? [...SECTIONS, OTHER, VERIFY_SECTION]
+      : [...SECTIONS, VERIFY_SECTION];
   const activeGroup = groups.find(({ section }) => section.title === activeSection);
   const activeSectionDef =
     visibleSections.find((s) => s.title === activeSection) ?? SECTIONS[0];
+  const isVerify = activeSectionDef.title === VERIFY_SECTION.title;
   const activeRows = activeGroup?.rows ?? [];
   const isHighlights = activeSectionDef.title === "Plan Highlights";
   const tiersByDoc = useMemo(() => documentTiers(table), [table]);
@@ -334,7 +345,14 @@ export default function ComparisonTable({
         <p>{activeSectionDef.description}</p>
       </div>
 
-      {renderedRows.length === 0 ? (
+      {isVerify ? (
+        <VerifyContact
+          table={table}
+          sessionId={sessionId}
+          contacts={contacts ?? []}
+          planNames={planNames}
+        />
+      ) : renderedRows.length === 0 ? (
         <p className="comparison__empty" role="status">
           {isHighlights
             ? "Nothing unique to highlight in these documents — the comparison above covers what was stated."
@@ -439,8 +457,8 @@ export default function ComparisonTable({
                       factName={row.factName}
                       field={missingField}
                       sessionId={sessionId}
-                      onApplied={(next, field, val) => {
-                        onTableUpdate(next);
+                      onApplied={(next, field, val, nextContacts) => {
+                        onTableUpdate(next, nextContacts);
                         onContextUpdate?.({ ...(userContext ?? {}), [field]: val });
                       }}
                     />

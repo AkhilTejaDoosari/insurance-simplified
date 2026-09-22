@@ -87,7 +87,7 @@ Tier selection changes presentation scope, not source evidence.
 
 ---
 
-# D-007 — Four Comparison Sections
+# D-007 — Five Results Sections
 
 **Decision:**
 
@@ -96,9 +96,13 @@ Essentials
 Care & Coverage
 Rules & Restrictions
 Plan Highlights
+Verify & Contact
 ```
 
 Essentials is the default/highest-priority section.
+
+Verify & Contact surfaces unresolved items and plan contact information
+inside the workspace; it is not a separate page.
 
 **Revisit when:** user testing shows a different grouping measurably improves comprehension.
 
@@ -249,3 +253,32 @@ No AI coding tool may silently introduce a paid service.
 **Decision:** original-document page evidence and deterministic citation verification remain a protected product contract.
 
 **Revisit when:** a replacement preserves or improves verifiability and is explicitly approved.
+
+---
+
+# D-023 — Row Visibility Classes and Derived Verify & Contact
+
+**Decision:** comparison rows carry a visibility class:
+
+```text
+CORE: always visible; all-plans-silent renders NOT STATED
+COMPARATIVE: visible when at least one plan has evidence; hidden when all plans are NOT STATED
+HIGHLIGHT: visible only when supported; never renders NOT STATED
+```
+
+NOT STATED is never globally suppressed: CORE rows keep showing it.
+
+Verify & Contact is derived from existing session/plan/document/fact/evidence
+state. No new service, table, or persistence architecture is introduced for it.
+
+Plan contacts (email, phone, website only) come exclusively from uploaded
+documents, are grouped by logical plan rather than by document, and keep
+source document/page evidence. Nothing is invented, searched, or looked up
+externally.
+
+Conflict keeps its locked meaning: incompatible claims about the same fact
+within the same relevant plan/source scope. Normal cross-plan differences
+are not conflicts.
+
+**Revisit when:** visibility hiding is shown to conceal decision-relevant
+absences, or contact evidence cannot be represented in existing state.
