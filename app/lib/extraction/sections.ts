@@ -68,7 +68,22 @@ export const SECTIONS: Section[] = [
     title: "Plan Highlights",
     description:
       "What is unusual or unique about this plan that does not belong in the main comparison.",
-    factNames: [],
+    factNames: [
+      "emergency-evacuation",
+      "repatriation",
+      "political-evacuation",
+      "terrorism-coverage",
+      "emergency-reunion",
+      "bedside-visit",
+      "ad-and-d",
+      "incidental-trip",
+      "telehealth",
+      "physical-therapy",
+      "chiropractic",
+      "durable-medical-equipment",
+      "home-nursing",
+      "student-health-center",
+    ],
   },
 ];
 

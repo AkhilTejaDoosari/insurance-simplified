@@ -48,6 +48,21 @@ export const FACTS: FactDefinition[] = [
   { name: "age-limits", label: "Age limits", patterns: ["age \\d+|under \\d+|over \\d+"], contextField: "age" },
   { name: "referral-requirement", label: "Referrals", patterns: ["referral"] },
   { name: "coverage-dates", label: "Coverage dates / term", patterns: ["coverage (period|dates|term|begins|ends)|effective date"], contextField: "coverageDates" },
+  // Plan Highlights candidates — unusual/plan-specific benefits
+  { name: "emergency-evacuation", label: "Emergency medical evacuation", patterns: ["emergency (medical )?evacuation", "medevac"] },
+  { name: "repatriation", label: "Repatriation", patterns: ["repatriation", "return of (mortal )?remains"] },
+  { name: "political-evacuation", label: "Political evacuation", patterns: ["political evacuation", "security evacuation"] },
+  { name: "terrorism-coverage", label: "Terrorism coverage", patterns: ["terrorism", "act of terrorism"] },
+  { name: "emergency-reunion", label: "Emergency reunion", patterns: ["emergency reunion", "family reunion"] },
+  { name: "bedside-visit", label: "Bedside visit", patterns: ["bedside visit", "compassionate visit"] },
+  { name: "ad-and-d", label: "Accidental death & dismemberment", patterns: ["accidental death", "dismemberment", "AD&D", "AD and D"] },
+  { name: "incidental-trip", label: "Incidental trip", patterns: ["incidental trip", "side trip"] },
+  { name: "telehealth", label: "Telehealth", patterns: ["telehealth", "telemedicine", "virtual (care|visit)", "remote (care|visit)"] },
+  { name: "physical-therapy", label: "Physical therapy", patterns: ["physical therapy", "physiotherapy"] },
+  { name: "chiropractic", label: "Chiropractic", patterns: ["chiropractic", "chiropractor"] },
+  { name: "durable-medical-equipment", label: "Durable medical equipment", patterns: ["durable medical equipment", "DME"] },
+  { name: "home-nursing", label: "Home nursing", patterns: ["home nursing", "home health", "private duty nursing"] },
+  { name: "student-health-center", label: "Student Health Center", patterns: ["student health center", "university health center", "campus health center"] },
 ];
 
 /** Lines matching these read as vague/partial → NEEDS VERIFICATION. */
