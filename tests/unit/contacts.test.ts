@@ -120,3 +120,44 @@ describe("contactHref", () => {
     expect(contactHref("email", "not-an-email")).toBeNull();
   });
 });
+
+describe("phone false positives from real documents", () => {
+  const doc = (pages: string[]) => [{ documentId: "doc-1", filename: "a.pdf", pages }];
+
+  it("rejects a document/form ID tail (0426CM0050A1973230118)", () => {
+    const hits = extractContacts(
+      doc(["0426CM0050A1973230118 This invitation to inquire allows eligi"]),
+    );
+    expect(hits.filter((h) => h.kind === "phone")).toEqual([]);
+  });
+
+  it("rejects policy-number fragments (Policy number 47250153ION1109 ...)", () => {
+    const hits = extractContacts(
+      doc(["Policy number 47250153ION1109 47250153ION1110 Medical expense benefit"]),
+    );
+    expect(hits.filter((h) => h.kind === "phone")).toEqual([]);
+  });
+
+  it("keeps explicit dialing context with strict formatting", () => {
+    const hits = extractContacts(
+      doc(["Contact IMG at +1.317.655.4500 or precertification@imglobal.com."]),
+    );
+    expect(hits.filter((h) => h.kind === "phone").map((h) => h.value)).toEqual([
+      "+1.317.655.4500",
+    ]);
+  });
+
+  it("keeps strictly formatted numbers without explicit context", () => {
+    const hits = extractContacts(doc(["Aetna – (833) 577-2586 / www.aetna.com"]) );
+    expect(hits.filter((h) => h.kind === "phone").map((h) => h.value)).toEqual([
+      "(833) 577-2586",
+    ]);
+  });
+
+  it("keeps bare digits only with explicit dialing context", () => {
+    const withContext = extractContacts(doc(["Call 8005550100 for help."]));
+    expect(withContext.filter((h) => h.kind === "phone")).toHaveLength(1);
+    const withoutContext = extractContacts(doc(["Reference 8005550100 filed."]));
+    expect(withoutContext.filter((h) => h.kind === "phone")).toEqual([]);
+  });
+});

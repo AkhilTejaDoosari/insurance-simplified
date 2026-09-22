@@ -41,6 +41,26 @@ const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const PHONE_RE = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
 const WEBSITE_RE = /https?:\/\/[^\s),;"]+|www\.[^\s),;"]+/gi;
 
+/** Phone-adjacent ID language: policy/member/account identifiers, never dialable. */
+const PHONE_ID_WORDS = /\b(policy|member|account|cert(ificate)?|form|code|number|id)\b/i;
+/** Explicit dialing context: somebody is asked to call. */
+const PHONE_CONTEXT_WORDS =
+  /\b(phone|tel|call|contact|fax|support|claims|emergency|operator|administrator|service|help|assistance)\b|24\/7/i;
+const STRICT_PHONE_SHAPE = /^(?:\+?1[-.\s]?)?(\(\d{3}\)|\d{3})[-.\s]\d{3}[-.\s]\d{4}$/;
+
+/** A phone candidate is plausible only when it is not embedded in a longer
+ *  token, not labeled as an identifier, and either strictly formatted or
+ *  accompanied by explicit dialing context. */
+function isPlausiblePhone(line: string, match: string, at: number): boolean {
+  const before = line[at - 1] ?? " ";
+  const after = line[at + match.length] ?? " ";
+  if (/[A-Za-z0-9]/.test(before) || /[A-Za-z0-9]/.test(after)) return false;
+  const window = line.slice(Math.max(0, at - 40), at + match.length + 40);
+  if (PHONE_ID_WORDS.test(window)) return false;
+  if (STRICT_PHONE_SHAPE.test(match.trim())) return true;
+  return PHONE_CONTEXT_WORDS.test(window);
+}
+
 /** Purpose label from explicit source wording ("Emergency assistance: …"). */
 const PURPOSE_RE = /([A-Za-z][A-Za-z &'/-]{1,32}?)\s*:\s*$/;
 
@@ -80,9 +100,11 @@ export function extractContacts(documents: ContactSourceDocument[]): ContactHit[
           });
         }
         for (const m of text.matchAll(PHONE_RE)) {
+          const candidate = m[0].trim();
+          if (!isPlausiblePhone(text, m[0], m.index ?? 0)) continue;
           hits.push({
             kind: "phone",
-            value: m[0].trim(),
+            value: candidate,
             purpose: purposeBefore(text, m.index ?? 0),
             documentId: doc.documentId,
             filename: doc.filename,
