@@ -12,6 +12,7 @@ import {
   ELIGIBILITY_ROW_NAME,
   eligibilityMissingField,
 } from "@/app/lib/extraction/eligibility";
+import { VARIES_BY_AGE, NO_RATE_FOR_AGE_PREFIX } from "@/app/lib/extraction/premium";
 import { summarizeNetworkDisplay } from "@/app/lib/extraction/network-display";
 import { groupRows, OTHER, SECTIONS } from "@/app/lib/extraction/sections";
 import { documentTiers, cellValues } from "@/app/lib/extraction/tiers";
@@ -436,12 +437,20 @@ export default function ComparisonTable({
           <tbody>
             {renderedRows.map((row) => {
               const contextField = FACT_CONTEXT.get(row.factName);
+              const missingPremiumAge =
+                row.factName === "premium" &&
+                row.verdict === "NEEDS VERIFICATION" &&
+                row.values.length === 0 &&
+                row.rationale === VARIES_BY_AGE &&
+                !(userContext?.age ?? "").trim();
               const missingField =
                 row.factName === ELIGIBILITY_ROW_NAME
                   ? eligibilityMissingField(row, userContext ?? {})
-                  : contextField && !(userContext?.[contextField] ?? "").trim()
-                    ? contextField
-                    : null;
+                  : missingPremiumAge
+                    ? "age"
+                    : contextField && !(userContext?.[contextField] ?? "").trim()
+                      ? contextField
+                      : null;
               return (
               <tr key={row.factName}>
                 <th scope="row" className="table__fact">
@@ -449,7 +458,12 @@ export default function ComparisonTable({
                 </th>
                 <td>
                   <VerdictBadge verdict={row.verdict} factName={row.factName} />
-                  {row.verdict === "DOES NOT APPEAR TO FIT" && row.rationale ? (
+                  {row.rationale &&
+                  (row.verdict === "DOES NOT APPEAR TO FIT" ||
+                    (row.factName === "premium" &&
+                      row.verdict === "NEEDS VERIFICATION" &&
+                      (row.rationale === VARIES_BY_AGE ||
+                        row.rationale.startsWith(NO_RATE_FOR_AGE_PREFIX)))) ? (
                     <span className="table__rationale">{row.rationale}</span>
                   ) : null}
                   {missingField && onTableUpdate && (

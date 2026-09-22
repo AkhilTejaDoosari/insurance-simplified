@@ -12,6 +12,12 @@ export interface Qualifiers {
   /** Named plan tier/option when one document describes several (e.g. "Lite",
    *  "Platinum"). A document may then carry one value per tier in a row. */
   planTier?: string;
+  /** Inclusive premium age-band bounds from explicit source rate tables. */
+  ageMin?: number;
+  ageMax?: number;
+  /** Parsed premium amount and billing frequency from explicit source text. */
+  amount?: number;
+  frequency?: string;
 }
 
 export interface EvidenceCitation {

@@ -25,6 +25,7 @@ import { withEligibilityRow, contextFieldRulesOut } from "@/app/lib/extraction/e
 import { interpretCoinsuranceShare } from "@/app/lib/extraction/coinsurance";
 import { summarizeCareDisplay } from "@/app/lib/extraction/care-display";
 import { summarizeRulesDisplay } from "@/app/lib/extraction/rules-display";
+import { applyPremiumPersonalization } from "@/app/lib/extraction/premium";
 import { SECTIONS } from "@/app/lib/extraction/sections";
 
 const CARE_FACTS: ReadonlySet<string> = new Set(
@@ -202,16 +203,19 @@ export function extractFallback(
   });
 
   return withEligibilityRow(
-    {
-      schemaVersion: "v1",
-      factListVersion: FACT_LIST_VERSION,
-      documents: documents.map(({ documentId, filename, pageCount }) => ({
-        documentId,
-        filename,
-        pageCount,
-      })),
-      rows,
-    },
+    applyPremiumPersonalization(
+      {
+        schemaVersion: "v1",
+        factListVersion: FACT_LIST_VERSION,
+        documents: documents.map(({ documentId, filename, pageCount }) => ({
+          documentId,
+          filename,
+          pageCount,
+        })),
+        rows,
+      },
+      userContext,
+    ),
     userContext
   );
 }
@@ -228,6 +232,7 @@ const EXTRACTION_INSTRUCTIONS = [
   '[{"documentId":"doc-1","display":"$0 to $2,500","qualifiers":{"planTier":"Lite"},"evidence":[...]},{"documentId":"doc-1","display":"$0 to $2,500","qualifiers":{"planTier":"Plus"},"evidence":[...]},{"documentId":"doc-1","display":"$0 to $25,000","qualifiers":{"planTier":"Platinum"},"evidence":[...]}]',
   "Brochure comparison tables flatten to a header line naming the tiers (e.g. \"LITE PLUS PLATINUM\") followed by benefit lines listing one figure per tier in the SAME ORDER (e.g. \"Deductible $0 to $2,500 $0 to $2,500 $0 to $25,000\" = Lite $0 to $2,500, Plus $0 to $2,500, Platinum $0 to $25,000). Map figures to tiers by position and emit one value per tier; do not keep only the first figure.",
   "A figure that applies to every tier of a document gets one value with no planTier.",
+  "PREMIUM AGE BANDS: when ONE document prices the same tier differently by age (a rate table with age ranges), emit a SEPARATE premium value object per tier per age band. Each such value carries numeric qualifiers.ageMin and qualifiers.ageMax as INCLUSIVE bounds, qualifiers.amount as a bare number, qualifiers.frequency when stated (e.g. monthly), and qualifiers.planTier. A stated '< 65' is ageMax 64. A premium with no age variation gets one value with no ageMin/ageMax. Never choose which band applies to the user — the application decides from user context.",
   "Tiers within one document differing from each other is NOT a conflict; different plans, tiers, and scopes stating different values is normal comparison data.",
   "Every populated value needs >=1 evidence entry with 1-based page and the exact quote.",
   "Rows for facts in no document use NOT STATED with empty values.",
@@ -503,8 +508,11 @@ export async function extractViaLlm(
   );
   const raw = await completeJson([{ role: "user", content: prompt }]);
   return withEligibilityRow(
-    validateTable(
-      reconcileLlmTable(dropEvidenceLessValues(normalizeLlmTable(raw)), documents)
+    applyPremiumPersonalization(
+      validateTable(
+        reconcileLlmTable(dropEvidenceLessValues(normalizeLlmTable(raw)), documents)
+      ),
+      userContext,
     ),
     userContext
   );
