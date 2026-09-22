@@ -119,6 +119,33 @@ interface DocumentGroup {
   visible: (string | undefined)[];
 }
 
+/** True when a multi-tier document carries only tier-agnostic values for
+ *  the row, so it renders one cell spanning its tier columns. */
+function isSpannedGroup<R extends { qualifiers: { planTier?: string } }>(
+  group: DocumentGroup,
+  own: R[],
+): boolean {
+  return group.tiers.length > 1 && own.every((v) => !v.qualifiers.planTier?.trim());
+}
+
+/** A row is visible iff at least one currently rendered cell holds a value.
+ *  NOT STATED rows carry no values, so they filter out wherever visibility
+ *  applies; supported, excluded, verification, and conflicted rows stay. */
+function isRowVisible<R extends RegisteredTableRow>(
+  row: R,
+  docGroups: DocumentGroup[],
+): boolean {
+  return docGroups.some((group) => {
+    const own = cellValues(row.values, group.documentId);
+    if (group.tiers.length < 2 || isSpannedGroup(group, own)) {
+      return own.length > 0;
+    }
+    return group.visible.some(
+      (tier) => cellValues(row.values, group.documentId, tier).length > 0,
+    );
+  });
+}
+
 function TierCells({
   row,
   group,
@@ -175,9 +202,7 @@ function TierCells({
   );
 
   const own = cellValues(row.values, group.documentId);
-  // A multi-tier document with only tier-agnostic values (or none at all)
-  // shows one cell spanning its tier columns rather than repeating it.
-  if (group.tiers.length > 1 && own.every((v) => !v.qualifiers.planTier?.trim())) {
+  if (isSpannedGroup(group, own)) {
     return render(own, group.documentId, group.visible.length, true);
   }
   return (
@@ -200,12 +225,14 @@ export default function ComparisonTable({
   userContext,
   onContextUpdate,
   onTableUpdate,
+  initialTierSelection,
 }: {
   table: Table;
   sessionId: string;
   userContext?: Record<string, string>;
   onContextUpdate?: (next: Record<string, string>) => void;
   onTableUpdate?: (next: Table) => void;
+  initialTierSelection?: Record<string, string>;
 }) {
   const groups = groupRows(table.rows);
   const [activeSection, setActiveSection] = useState(
@@ -222,8 +249,9 @@ export default function ComparisonTable({
   const activeSectionDef =
     visibleSections.find((s) => s.title === activeSection) ?? SECTIONS[0];
   const activeRows = activeGroup?.rows ?? [];
+  const isHighlights = activeSectionDef.title === "Plan Highlights";
   const tiersByDoc = useMemo(() => documentTiers(table), [table]);
-  const [selection, setSelection] = useState<Record<string, string>>({});
+  const [selection, setSelection] = useState<Record<string, string>>(initialTierSelection ?? {});
   
   // Plan display names
   const planNames = useMemo(
@@ -249,6 +277,14 @@ export default function ComparisonTable({
   });
   const hasTierRow = docGroups.some((g) => g.tiers.length > 1);
   const valueColumns = docGroups.reduce((n, g) => n + g.visible.length, 0);
+  // Visibility classes (locked policy): Essentials rows always render.
+  // Comparative and highlight rows render only when at least one currently
+  // displayed cell holds a value — evaluated against the live tier scope,
+  // so hidden tiers never keep a row alive.
+  const isEssentials = activeSectionDef.title === SECTIONS[0].title;
+  const renderedRows = isEssentials
+    ? activeRows
+    : activeRows.filter((row) => isRowVisible(row, docGroups));
 
   // The tier sub-header sticks just below the document header, whose height
   // depends on wrapping filenames — measure it rather than guess.
@@ -298,10 +334,11 @@ export default function ComparisonTable({
         <p>{activeSectionDef.description}</p>
       </div>
 
-      {activeRows.length === 0 ? (
+      {renderedRows.length === 0 ? (
         <p className="comparison__empty" role="status">
-          Nothing unique to highlight in these documents — the comparison above
-          covers what was stated.
+          {isHighlights
+            ? "Nothing unique to highlight in these documents — the comparison above covers what was stated."
+            : `No stated ${activeSectionDef.title} facts in the current view.`}
         </p>
       ) : (
       <div className="comparison__table-wrap">
@@ -379,7 +416,7 @@ export default function ComparisonTable({
             )}
           </thead>
           <tbody>
-            {activeRows.map((row) => {
+            {renderedRows.map((row) => {
               const contextField = FACT_CONTEXT.get(row.factName);
               const missingField =
                 row.factName === ELIGIBILITY_ROW_NAME
