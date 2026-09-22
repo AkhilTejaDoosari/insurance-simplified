@@ -10,6 +10,7 @@ import { FACTS } from "@/app/lib/extraction/fact-list";
 import {
   ELIGIBILITY_ROW_LABEL,
   ELIGIBILITY_ROW_NAME,
+  contextFieldRulesOut,
   eligibilityMissingField,
 } from "@/app/lib/extraction/eligibility";
 import { VARIES_BY_AGE, NO_RATE_FOR_AGE_PREFIX } from "@/app/lib/extraction/premium";
@@ -160,53 +161,140 @@ function TierCells({
   group,
   sessionId,
   planNames,
+  userContext,
 }: {
   row: RegisteredTableRow;
   group: DocumentGroup;
   sessionId: string;
   planNames: Map<string, { name: string; source: "extracted" | "filename" }>;
+  userContext: Record<string, string>;
 }) {
   const label = labelFor(row.factName);
   const conciseNetwork = row.factName === "network";
   const cellText = (display: string): string =>
     conciseNetwork ? summarizeNetworkDisplay(display) : display;
+  /** Verdict state belongs to the plan value, never to the whole row. */
+  const cellState = (
+    values: RegisteredCellValue[],
+  ):
+    | { kind: "not-stated" }
+    | { kind: "plain" }
+    | { kind: "appears-eligible" }
+    | { kind: "needs-verification" }
+    | { kind: "does-not-fit"; rationale?: string }
+    | { kind: "conflicted" } => {
+    if (values.length === 0) return { kind: "not-stated" };
+    if (row.verdict === "NEEDS VERIFICATION") return { kind: "needs-verification" };
+    if (row.verdict === "CONFLICTED") {
+      const readings = new Set(
+        values.map((v) => v.display.trim().toLowerCase().replace(/\s+/g, " ")),
+      );
+      if (values.length > 1 && readings.size > 1) return { kind: "conflicted" };
+      return { kind: "plain" };
+    }
+    if (row.verdict === "DOES NOT APPEAR TO FIT") {
+      const field = /'([^']+)'/.exec(row.rationale ?? "")?.[1];
+      const ruledOut =
+        !field ||
+        values.every((v) =>
+          contextFieldRulesOut(
+            field,
+            userContext,
+            [v.display, ...v.evidence.map((e) => e.quote)].join("\n"),
+          ),
+        );
+      if (ruledOut) return { kind: "does-not-fit", rationale: row.rationale };
+      return row.factName === ELIGIBILITY_ROW_NAME
+        ? { kind: "appears-eligible" }
+        : { kind: "plain" };
+    }
+    return row.factName === ELIGIBILITY_ROW_NAME
+      ? { kind: "appears-eligible" }
+      : { kind: "plain" };
+  };
   const render = (values: RegisteredCellValue[], key: string, colSpan = 1, first = false) => (
     <td key={key} colSpan={colSpan} className={first ? "table__group-start" : undefined}>
-      {values.length > 0 ? (
-        values.map((v, i) => {
-          // Each value links to ITS OWN primary evidence (the first cited
-          // passage — deterministic); never the whole row's evidence. A
-          // value with no evidence renders as plain text: the contract
-          // forbids inventing a citation.
-          const primary = v.evidence[0];
-          if (!primary) {
-            return (
-              <span key={i} className="cell-value">
-                {cellText(v.display)}
-              </span>
-            );
-          }
-          const planInfo = planNames.get(v.documentId);
-          const displayName = planInfo?.name ?? v.documentId;
+      {(() => {
+        const state = cellState(values);
+        if (state.kind === "not-stated") {
           return (
-            <a
-              key={i}
-              className="cell-value"
-              href={documentUrl(sessionId, v.documentId, displayName, primary.page, primary.evidenceId)}
-              target="_blank"
-              rel="noopener"
-              title={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
-              aria-label={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
-            >
-              {cellText(v.display)}
-            </a>
+            <span className="table__empty" aria-label="Not stated">
+              Not stated
+            </span>
           );
-        })
-      ) : (
-        <span className="table__empty" aria-label="Not found">
-          —
-        </span>
-      )}
+        }
+        const valuesList =
+          values.length > 0 ? (
+            values.map((v, i) => {
+              // Each value links to ITS OWN primary evidence (the first cited
+              // passage — deterministic); never the whole row's evidence. A
+              // value with no evidence renders as plain text: the contract
+              // forbids inventing a citation.
+              const primary = v.evidence[0];
+              if (!primary) {
+                return (
+                  <span key={i} className="cell-value">
+                    {cellText(v.display)}
+                  </span>
+                );
+              }
+              const planInfo = planNames.get(v.documentId);
+              const displayName = planInfo?.name ?? v.documentId;
+              return (
+                <a
+                  key={i}
+                  className="cell-value"
+                  href={documentUrl(sessionId, v.documentId, displayName, primary.page, primary.evidenceId)}
+                  target="_blank"
+                  rel="noopener"
+                  title={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
+                  aria-label={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
+                >
+                  {cellText(v.display)}
+                </a>
+              );
+            })
+          ) : (
+            <span className="table__empty" aria-label="Not stated">
+              Not stated
+            </span>
+          );
+        switch (state.kind) {
+          case "plain":
+            return valuesList;
+          case "appears-eligible":
+            return (
+              <>
+                <span className="verdict verdict--ok">Appears eligible</span>
+                {valuesList}
+              </>
+            );
+          case "needs-verification":
+            return (
+              <>
+                <VerdictBadge verdict="NEEDS VERIFICATION" />
+                {valuesList}
+              </>
+            );
+          case "does-not-fit":
+            return (
+              <>
+                <VerdictBadge verdict="DOES NOT APPEAR TO FIT" />
+                {state.rationale ? (
+                  <span className="table__rationale">{state.rationale}</span>
+                ) : null}
+                {valuesList}
+              </>
+            );
+          case "conflicted":
+            return (
+              <>
+                <VerdictBadge verdict="CONFLICTED" />
+                {valuesList}
+              </>
+            );
+        }
+      })()}
     </td>
   );
 
@@ -364,7 +452,6 @@ export default function ComparisonTable({
         <table className="table" ref={tableEl} aria-label={activeSectionDef.title}>
           <colgroup>
             <col className="col-fact" />
-            <col className="col-verdict" />
             {docGroups.map((g) =>
               g.visible.map((tier) => <col key={`${g.documentId}:${tier ?? ""}`} />),
             )}
@@ -373,9 +460,6 @@ export default function ComparisonTable({
             <tr ref={firstHeaderRow}>
               <th scope="col" rowSpan={hasTierRow ? 2 : 1}>
                 What matters
-              </th>
-              <th scope="col" rowSpan={hasTierRow ? 2 : 1}>
-                Status
               </th>
               {docGroups.map((g) =>
                 g.tiers.length > 1 ? (
@@ -455,17 +539,6 @@ export default function ComparisonTable({
               <tr key={row.factName}>
                 <th scope="row" className="table__fact">
                   {labelFor(row.factName)}
-                </th>
-                <td>
-                  <VerdictBadge verdict={row.verdict} factName={row.factName} />
-                  {row.rationale &&
-                  (row.verdict === "DOES NOT APPEAR TO FIT" ||
-                    (row.factName === "premium" &&
-                      row.verdict === "NEEDS VERIFICATION" &&
-                      (row.rationale === VARIES_BY_AGE ||
-                        row.rationale.startsWith(NO_RATE_FOR_AGE_PREFIX)))) ? (
-                    <span className="table__rationale">{row.rationale}</span>
-                  ) : null}
                   {missingField && onTableUpdate && (
                     <MissingContextPrompt
                       factName={row.factName}
@@ -477,9 +550,9 @@ export default function ComparisonTable({
                       }}
                     />
                   )}
-                </td>
+                </th>
                 {docGroups.map((g) => (
-                  <TierCells key={g.documentId} row={row} group={g} sessionId={sessionId} planNames={planNames} />
+                  <TierCells key={g.documentId} row={row} group={g} sessionId={sessionId} planNames={planNames} userContext={userContext ?? {}} />
                 ))}
               </tr>
               );

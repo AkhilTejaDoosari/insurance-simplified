@@ -155,3 +155,54 @@ describe("row visibility classes", () => {
     expect(html(t)).toContain("Emergency room");
   });
 });
+
+describe("per-plan verdict states (no global Status column)", () => {
+  const docTable = (rows: RegisteredTableRow[], userContext?: Record<string, string>): string =>
+    renderToStaticMarkup(
+      createElement(ComparisonTable, {
+        table: table(rows),
+        sessionId: "sess-1",
+        ...(userContext ? { userContext, onTableUpdate: () => {} } : {}),
+      }),
+    );
+
+  it("renders no global Status column", () => {
+    const out = docTable([row("annual-deductible", "SUPPORTED", [val("doc-1", "$250", "Deductible $250.")])]);
+    expect(out).not.toContain(">Status<");
+    expect(out).not.toContain("col-verdict");
+  });
+
+  it("mixed eligibility shows per-plan states without contradiction", () => {
+    const out = docTable(
+      [
+        {
+          factName: "eligibility-for-you",
+          verdict: "DOES NOT APPEAR TO FIT",
+          rationale: "User context field 'visaOrStatus' rules this fact out.",
+          values: [
+            val("doc-1", "F-1 only", "F-1 visa holders only."),
+            val("doc-2", "Open enrollment", "Open enrollment, H-1B holders welcome."),
+          ],
+        } as RegisteredTableRow,
+      ],
+      { visaOrStatus: "H-1B" },
+    );
+    expect(out).toContain("DOES NOT APPEAR TO FIT");
+    expect(out).toContain("Appears eligible");
+  });
+
+  it("SUPPORTED rows render values with no badge", () => {
+    const out = docTable([
+      row("annual-deductible", "SUPPORTED", [val("doc-1", "$250", "Deductible $250.")]),
+    ]);
+    expect(out).toContain("$250");
+    expect(out).not.toContain("SUPPORTED");
+  });
+
+  it("empty cells render concise Not stated", () => {
+    const out = docTable([
+      row("annual-deductible", "SUPPORTED", [val("doc-1", "$250", "Deductible $250.")]),
+    ]);
+    expect(out).toContain("Not stated");
+  });
+});
