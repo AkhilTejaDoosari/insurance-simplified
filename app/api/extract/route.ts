@@ -19,7 +19,7 @@ import {
 import { validateTable } from "@/app/lib/extraction/types";
 import { isLlmConfigured } from "@/app/lib/llm/client";
 import { requireSessionCapability } from "@/app/lib/session-auth";
-import { errorResponse, newRequestId } from "@/app/lib/api-errors";
+import { errorResponse, logFailure, newRequestId } from "@/app/lib/api-errors";
 
 export async function POST(request: NextRequest) {
   const requestId = newRequestId();
@@ -142,16 +142,14 @@ export async function POST(request: NextRequest) {
       })),
     });
   } catch (err) {
+    logFailure(requestId, "extract", err);
     const message = err instanceof Error ? err.message : "Extraction failed";
     const status = message.startsWith("LLM") ? 503 : 500;
+    // Contract: fixed public message only — raw provider text stays server-side.
     return errorResponse(
       status === 503 ? "PROVIDER_UNAVAILABLE" : "EXTRACTION_FAILED",
       status,
-      {
-        requestId,
-        retryable: status === 503,
-        message,
-      }
+      { requestId, retryable: status === 503 }
     );
   }
 }

@@ -21,12 +21,18 @@ export default function UploadDropzone({
   onContextChange,
   externalBusy,
   externalBusyLabel,
+  extractError,
+  showRetry,
+  onRetry,
 }: {
   onUploaded: (result: UploadResult, context: Record<string, string>) => void;
   context?: Record<string, string>;
   onContextChange?: (next: Record<string, string>) => void;
   externalBusy?: boolean;
   externalBusyLabel?: string;
+  extractError?: string | null;
+  showRetry?: boolean;
+  onRetry?: () => void;
 }) {
   const [files, setFiles] = useState<File[]>([]);
   const [internalContext, setInternalContext] = useState<Record<string, string>>({
@@ -119,6 +125,18 @@ export default function UploadDropzone({
           </p>
         )}
       </div>
+      {extractError && !effectiveBusy && (
+        <div className="actions actions--retry">
+          <p role="alert" className="alert">
+            {extractError}
+          </p>
+          {showRetry && onRetry && (
+            <button type="button" className="btn" onClick={onRetry} disabled={effectiveBusy}>
+              Try again
+            </button>
+          )}
+        </div>
+      )}
     </section>
   );
 }

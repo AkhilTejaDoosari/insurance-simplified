@@ -88,14 +88,45 @@ export function summarizeRulesDisplay(factName: string, source: string): RulesRe
     if (/\bno\b[^.\\n]{0,20}age (limit|restriction)/i.test(line)) {
       return { display: "No age limit stated", certain: true };
     }
+    const normUnit = (u: string | undefined): string =>
+      !u ? "" : /^old$/i.test(u) ? "years" : u.toLowerCase();
+    const explicit =
+      /(\d+)\s*(days?|months?|years?|old)?\s*(?:to|through|-|–)\s*([<>]=?)?\s*(\d+)\s*(days?|months?|years?|old)/i.exec(line);
+    if (explicit) {
+      const comp = explicit[3] !== undefined && /[<>]/.test(explicit[3]) ? explicit[3] : undefined;
+      const leftNum = explicit[1];
+      const leftUnit = normUnit(explicit[2]);
+      const rightNum = explicit[4];
+      const rightUnit = normUnit(explicit[5]);
+      if (comp === undefined && !explicit[2] && (rightUnit === "years" || rightUnit === "") && /\bage\b|\bold\b/i.test(line)) {
+        return { display: `Age ${leftNum}–${rightNum}`, certain: true };
+      }
+      if (comp !== undefined || explicit[2]) {
+        const left = leftUnit ? `${leftNum} ${leftUnit}` : leftNum;
+        const right =
+          comp === "<"
+            ? `under ${rightNum} ${rightUnit}`.trim()
+            : comp === "<="
+              ? `${rightNum} ${rightUnit} or younger`.trim()
+              : `${rightNum} ${rightUnit}`.trim();
+        if (!comp) return { display: `${leftNum} ${leftUnit}–${rightNum} ${rightUnit}`, certain: true };
+        return { display: `${left} to ${right}`, certain: true };
+      }
+    }
     const range =
       /(\d+)\s*(days?|months?|years?)\s*(?:to|through|-|–)\s*(\d+)\s*(days?|months?|years?)/i.exec(line) ??
-      /(\d+)\s*(days?|months?|years?)\s*(?:old\s*)?(?:up to|and under|and not yet|to)\s*(\d+)\s*(days?|months?|years?)/i.exec(line);
+      /(\d+)\s*(days?|months?|years?)\s*(?:old\s*)?(?:up to|and under|and not yet|but not yet|to)\s*(\d+)\s*(days?|months?|years?)/i.exec(line);
     if (range) {
       return { display: `${range[1]} ${range[2]}–${range[3]} ${range[4]}`, certain: true };
     }
     const max = /maximum age\s*(\d+)|(?:up to|under)\s*age\s*(\d+)/i.exec(line);
     if (max) return { display: `Maximum age ${max[1] ?? max[2]}`, certain: true };
+    const bareAgeRange = /\bage\D{0,8}(\d+)\s*[–-]\s*(\d+)\b/i.exec(line);
+    if (bareAgeRange) return { display: `Age ${bareAgeRange[1]}–${bareAgeRange[2]}`, certain: true };
+    const symbolMax = /<=?\s*(\d+)\s*(years? old|years?|yrs?)\b/i.exec(line);
+    if (symbolMax) return { display: `Maximum age ${symbolMax[1]}`, certain: true };
+    const symbolMin = />=?\s*(\d+)\s*(years? old|years?|yrs?)\b/i.exec(line);
+    if (symbolMin) return { display: `Minimum age ${symbolMin[1]}`, certain: true };
     return { display: line, certain: false };
   }
 

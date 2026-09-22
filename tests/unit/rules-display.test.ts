@@ -81,6 +81,39 @@ describe("summarizeRulesDisplay", () => {
     });
   });
 
+  it("normalizes explicit mathematical age bounds instead of punting", () => {
+    expect(summarizeRulesDisplay("age-limits", "Eligibility: 31 days to < 65 years.")).toEqual({
+      display: "31 days to under 65 years",
+      certain: true,
+    });
+    expect(summarizeRulesDisplay("age-limits", "Covered through age <= 64 years.")).toEqual({
+      display: "Maximum age 64",
+      certain: true,
+    });
+    expect(summarizeRulesDisplay("age-limits", "Age 18–64 years.")).toEqual({
+      display: "Age 18–64",
+      certain: true,
+    });
+    expect(summarizeRulesDisplay("age-limits", "Insureds < 65 years of age.")).toEqual({
+      display: "Maximum age 65",
+      certain: true,
+    });
+  });
+
+  it("handles real brochure phrasing variants without punting", () => {
+    expect(
+      summarizeRulesDisplay("age-limits", "Be at least 31 days old but not yet 65 years old."),
+    ).toEqual({ display: "31 days–65 years", certain: true });
+  });
+
+  it("keeps genuinely ambiguous age wording uncertain and verbatim", () => {
+    const line = "Age limits apply as determined at enrollment.";
+    expect(summarizeRulesDisplay("age-limits", line)).toEqual({
+      display: line,
+      certain: false,
+    });
+  });
+
   it("pairs network scopes with their percentages", () => {
     expect(
       summarizeRulesDisplay("network-rules", "Coinsurance: 90% in-network, 80% out-of-network."),
@@ -137,5 +170,32 @@ describe("rules extraction", () => {
     const table = await extractViaLlm([doc(["12-month waiting period."])], {});
     const row = table.rows.find((r) => r.factName === "waiting-period")!;
     expect(row.values[0].display).toBe("12 months for pre-existing conditions");
+  });
+
+  it("LLM path normalizes the real brochure age quote", async () => {
+    mockedComplete.mockResolvedValue({
+      schemaVersion: "v1",
+      factListVersion: "v1",
+      documents: [{ documentId: "doc-1", filename: "a.pdf", pageCount: 1 }],
+      rows: [
+        {
+          factName: "age-limits",
+          verdict: "SUPPORTED",
+          values: [
+            {
+              documentId: "doc-1",
+              display: "31 days to < 65 years",
+              qualifiers: {},
+              evidence: [
+                { documentId: "doc-1", page: 9, quote: "Be at least 31 days old but not yet 65 years old." },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const table = await extractViaLlm([doc(["Be at least 31 days old but not yet 65 years old."])], {});
+    const row = table.rows.find((r) => r.factName === "age-limits")!;
+    expect(row.values[0].display).toBe("31 days–65 years");
   });
 });
