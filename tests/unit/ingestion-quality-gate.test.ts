@@ -98,7 +98,7 @@ describe("classifyExtractorError", () => {
   });
 
   it("maps size/page-limit rejections to implausible_volume", () => {
-    expect(classifyExtractorError(tagged("exceeds the 15 MB limit", "over-size-limit"))).toMatchObject(
+    expect(classifyExtractorError(tagged("exceeds the 20 MB limit", "over-size-limit"))).toMatchObject(
       { ok: false, reason: "implausible_volume" },
     );
     expect(classifyExtractorError(tagged("exceeds the 200-page limit", "over-page-limit"))).toMatchObject(

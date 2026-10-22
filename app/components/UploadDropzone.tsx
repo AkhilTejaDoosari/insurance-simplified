@@ -44,13 +44,13 @@ export default function UploadDropzone({
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const effectiveBusy = busy || externalBusy === true;
-  const busyLabel = busy ? "Reading your documents…" : (externalBusyLabel ?? "Building your comparison…");
+  const busyLabel = busy ? "Reading your documents…" : (externalBusyLabel ?? "Preparing your results…");
 
   async function submit() {
     if (submitting.current) return;
     setError(null);
-    if (files.length < 2 || files.length > 4) {
-      setError(`Upload 2–4 PDF documents (selected ${files.length}).`);
+    if (files.length < 1 || files.length > 4) {
+      setError(`Upload 1–4 PDF documents (selected ${files.length}).`);
       return;
     }
     submitting.current = true;
@@ -87,7 +87,7 @@ export default function UploadDropzone({
 
   return (
     <section className="card" aria-label="Upload insurance documents">
-      <h2>Upload 2–4 insurance PDFs</h2>
+      <h2>Upload 1–4 insurance PDFs</h2>
       <p className="text-muted">
         Plan summaries, benefit schedules or brochures. Nothing is stored after
         you close the page.
@@ -116,7 +116,7 @@ export default function UploadDropzone({
       )}
       <div className="actions actions--compare">
         <button className="btn" onClick={submit} disabled={effectiveBusy} aria-busy={effectiveBusy}>
-          {effectiveBusy ? "Processing…" : "Compare my plans"}
+          {effectiveBusy ? "Processing…" : files.length === 1 ? "Understand my document" : "Compare my plans"}
         </button>
         {effectiveBusy && (
           <p className="notice notice--inline" role="status">

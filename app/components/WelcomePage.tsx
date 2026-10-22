@@ -14,7 +14,7 @@ export default function WelcomePage({
       <header className="welcome__hero">
         <h1>Insurance Simplified</h1>
         <p className="welcome__tagline">
-          Compare plans side by side, with every claim traced to the page it came from.
+          Understand one insurance document or compare plans, with every claim traced to its source page.
         </p>
       </header>
 
@@ -41,7 +41,7 @@ export default function WelcomePage({
           <span className="welcome__choice-icon" aria-hidden="true">📄</span>
           <div className="welcome__choice-content">
             <h2>I have my documents</h2>
-            <p>Upload 2–4 insurance PDFs and compare them now</p>
+            <p>Upload 1–4 insurance PDFs to understand their terms or compare plans</p>
           </div>
         </button>
 

@@ -86,7 +86,7 @@ Insurance Simplified helps the user:
 
 ### I have my documents
 
-For a user who already has 2–4 insurance PDFs.
+For a user who already has 1–4 insurance PDFs.
 
 Leads to:
 
@@ -123,7 +123,7 @@ The user should not have to complete separate upload and profile pages.
 
 The user provides:
 
-- minimum 2 PDF documents;
+- minimum 1 PDF document;
 - maximum 4 PDF documents.
 
 Documents may represent different insurance products.
@@ -137,7 +137,9 @@ A document may also contain multiple tiers of the same product, such as:
 
 Tier discovery happens during processing.
 
-The user does not have to manually split a multi-tier source PDF.
+The user does not have to manually split a multi-tier source PDF. One PDF
+produces an evidence-cited understanding view, with tier comparison if present.
+Two to four PDFs produce an evidence-cited side-by-side comparison.
 
 ---
 
@@ -181,7 +183,7 @@ If a value cannot influence the V1 comparison, it should not be collected.
 
 Primary CTA:
 
-`Compare my plans`
+`Understand my document` for one PDF; `Compare my plans` for 2–4 PDFs.
 
 The action is available when the minimum required documents and core context are
 present.
@@ -332,7 +334,8 @@ All of these happen inside one workspace.
 
 # 8. Results Workspace Layout
 
-Conceptually:
+Conceptually (Phase P1 transitional section labels are shown here; Phase P2
+uses document-specific groups, and one PDF shows an understanding view):
 
 ```text
 ┌──────────────────────────────────────────────────────┬──────────────────┐
@@ -399,11 +402,22 @@ once.
 
 The comparison therefore groups information by decision importance and meaning.
 
-V1 uses four horizontally selectable sections.
+V1 uses document-specific, semantically organized groups instead of mandatory
+fixed sections. The grouping may be AI-assisted but only references validated
+structured facts and evidence. It ranks decision-relevant topics using the
+supplied user context, retains unique plan features, and never suppresses
+material missing information. Group labels are presentation metadata, not
+new coverage or eligibility claims.
 
 ---
 
-## 10.1 Essentials
+## 10.1 Historical examples (not required navigation labels)
+
+The following four headings describe useful subject matter, but are not
+mandatory UI sections or a required grouping schema. The organizing layer may
+use different headings based on the uploaded documents.
+
+### Essentials
 
 This is the default and highest-priority section.
 
@@ -425,7 +439,7 @@ Examples include:
 
 ---
 
-## 10.2 Care & Coverage
+### Care & Coverage
 
 This section answers:
 
@@ -449,7 +463,7 @@ Examples include:
 
 ---
 
-## 10.3 Rules & Restrictions
+### Rules & Restrictions
 
 This section answers:
 
@@ -470,7 +484,7 @@ Examples include:
 
 ---
 
-## 10.4 Plan Highlights
+### Plan Highlights
 
 This section answers:
 
@@ -488,8 +502,8 @@ Examples include:
 - lower-priority differences;
 - plan-specific advantages or restrictions.
 
-This section intentionally comes last because these items normally carry less
-decision weight than the Essentials.
+Unique features remain visible and retain their own plan/tier qualifications;
+their priority depends on the supplied documents and user context.
 
 ---
 
@@ -641,8 +655,8 @@ The user must be able to verify important claims independently.
 
 # 15B. Verify & Contact
 
-Verify & Contact is the fifth Results Workspace section, alongside the four
-comparison sections.
+Verify & Contact remains a Results Workspace capability alongside the
+document-specific groups; it is not a mandated fifth tab.
 
 It has two responsibilities.
 

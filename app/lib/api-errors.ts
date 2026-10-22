@@ -85,11 +85,19 @@ export const legacyToCanonical: Partial<Record<ApiErrorCode, ApiErrorCode>> = {
 export function errorResponse(
   code: ApiErrorCode,
   status: number,
-  opts: { retryable?: boolean; requestId?: string; message?: string } = {},
+  opts: {
+    retryable?: boolean;
+    requestId?: string;
+    message?: string;
+    extra?: Record<string, unknown>;
+  } = {},
 ): NextResponse {
   const requestId = opts.requestId ?? newRequestId();
   return NextResponse.json(
-    error(code, opts.message ?? PUBLIC_MESSAGES[code], opts.retryable ?? false, requestId),
+    {
+      ...error(code, opts.message ?? PUBLIC_MESSAGES[code], opts.retryable ?? false, requestId),
+      ...(opts.extra ?? {}),
+    },
     { status },
   );
 }

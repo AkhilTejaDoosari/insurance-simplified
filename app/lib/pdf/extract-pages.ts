@@ -4,7 +4,7 @@
 
 import { extractText, getDocumentProxy } from "unpdf";
 
-export const MAX_FILE_BYTES = 15 * 1024 * 1024;
+export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_PAGES = 200;
 
 export type RejectionReason =
@@ -33,7 +33,7 @@ export async function extractPages(
 ): Promise<ExtractedPdf> {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   if (bytes.length > MAX_FILE_BYTES) {
-    throw Object.assign(new Error(`${filename} exceeds the 15 MB limit`), {
+    throw Object.assign(new Error(`${filename} exceeds the 20 MB limit`), {
       reason: "over-size-limit" satisfies RejectionReason,
     });
   }

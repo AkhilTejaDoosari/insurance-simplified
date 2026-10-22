@@ -11,6 +11,15 @@ vi.mock("@/app/lib/extraction/extract", () => ({
   extractViaLlm: vi.fn(async () => ({ ...TABLE, factListVersion: "llm" })),
   extractFallback: vi.fn(() => ({ ...TABLE, factListVersion: "fallback" })),
 }));
+vi.mock("@/app/lib/llm/client", async () => {
+  const actual = await vi.importActual<typeof import("@/app/lib/llm/client")>("@/app/lib/llm/client");
+  return {
+    ...actual,
+    completeJson: vi.fn(async () => ({
+      groups: [{ title: "Cost choices", factNames: ["annual-deductible", "invented-benefit"] }],
+    })),
+  };
+});
 
 import { POST } from "@/app/api/extract/route";
 import { extractFallback, extractViaLlm } from "@/app/lib/extraction/extract";
@@ -74,5 +83,38 @@ describe("POST /api/extract engine selection", () => {
     delete process.env.LLM_API_KEY;
     const second = seedSession();
     expect((await (await post(second.session.sessionId, second.capability, { engine: "llm" })).json()).factListVersion).toBe("llm");
+  });
+
+  it("organizes only verified facts while preserving citations in the response", async () => {
+    process.env.LLM_BASE_URL = "https://llm.example";
+    process.env.LLM_API_KEY = "key";
+    const document = {
+      documentId: "doc-1",
+      filename: "plan.pdf",
+      pageCount: 1,
+      pages: ["Annual deductible $250."],
+    };
+    const { session, capability } = createSession([document], {});
+    created.push(session.sessionId);
+    vi.mocked(extractViaLlm).mockResolvedValueOnce({
+      schemaVersion: "v1",
+      factListVersion: "v1",
+      documents: [{ documentId: "doc-1", filename: "plan.pdf", pageCount: 1 }],
+      rows: [{
+        factName: "annual-deductible",
+        verdict: "SUPPORTED",
+        values: [{
+          documentId: "doc-1",
+          display: "$250",
+          qualifiers: {},
+          evidence: [{ documentId: "doc-1", page: 1, quote: "Annual deductible $250." }],
+        }],
+      }],
+    });
+    const response = await post(session.sessionId, capability);
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.presentationGroups).toEqual([{ title: "Cost choices", factNames: ["annual-deductible"] }]);
+    expect(body.rows[0].values[0].evidence[0].evidenceId).toMatch(/^ev-/);
   });
 });

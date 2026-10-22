@@ -136,6 +136,32 @@ Therefore:
 - never claim that RLS alone secures anonymous runtime sessions;
 - RLS tests remain valuable for future authenticated-user boundaries.
 
+### 6.1 Verified grants state (direct-SQL + PostgREST audit, 2026-10-22)
+
+Verified against the intended development database by direct SQL and PostgREST
+probes (capability proofs used zero-match operations; no data was mutated):
+
+- `documents`, `pages`, `chunks`, `sessions`, `comparison_results`: RLS
+  enabled, owner-scoped policies for `authenticated`; anon reads return empty
+  (default deny). Anon holds broad table privileges, but RLS defeats them for
+  row operations reachable through PostgREST.
+- `schema_migrations`: RLS **disabled**. Confirmed reachable by the anon role
+  through PostgREST: SELECT (200 with rows), UPDATE (200), DELETE (204 on a
+  zero-match probe — real deletes would execute). INSERT is privilege-granted
+  though not live-proven. Anonymous ability to tamper with the migration
+  ledger is therefore real.
+- Anon also holds `TRUNCATE, REFERENCES, TRIGGER` grants on all public
+  tables. PostgREST does not expose a TRUNCATE verb and REFERENCES/TRIGGER
+  are inert without direct SQL access, so these are not reachable through
+  supported access paths — the grant surface is still considered excessive.
+- `service_role` holds full privileges server-side only; the browser only
+  ever receives publishable/anon keys.
+- A smallest-safe remediation migration (0006: enable RLS on
+  `schema_migrations`, scope its grants to `service_role`, revoke
+  `TRUNCATE, REFERENCES, TRIGGER` from `anon`/`authenticated`) is drafted and
+  **pending separate human approval**; the dev/minimal state above is the
+  pre-remediation baseline.
+
 ---
 
 # 7. Private PDF Storage
@@ -381,6 +407,29 @@ Deletion failure remains visible and retryable.
 Do not claim complete deletion until required owned resources are removed according to the deletion contract.
 
 Backup-retention limitations of managed providers must be documented before claiming immediate physical erasure from provider backups.
+
+### 17.1 Verified retention behavior (V1, 2026-10-22)
+
+Verified implemented behavior for session-owned persisted state:
+
+- Sessions: keys (`0002_object_key`) plus `0004_sessions` (durable session
+  rows, 7-day lifetime), RLS owner-scoped; close deletes local temp state,
+  durable vectors, durable objects, the DB session row, and the persisted
+  comparison result — with fail-closed, retryable 503 semantics at each
+  durable step.
+- Comparison results (`0005_comparison_results`): stored server-side,
+  owner-scoped by RLS, keyed by session, never exposed to the browser;
+  30-day `expires_at`; results consumed by PDF export are loaded from this
+  store rather than recomputed from live session state.
+- Expiry removal is **opportunistic**: expired rows are physically deleted
+  during the next successful result save in any session. There is no
+  scheduled job in V1, so an expired row whose session is never touched
+  again can remain in the database past its 30-day window.
+- Legacy non-durable (local tmp fallback) sessions do not wipe the local
+  `*.result.json` file at close time; it remains on temporary local disk
+  until it expires from view and the directory is cleaned by the OS.
+- Supabase provider backups retain deleted rows for their own backup
+  windows; no claim of immediate physical erasure from backups is made.
 
 ---
 

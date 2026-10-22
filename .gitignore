@@ -1,6 +1,7 @@
 .claude/
 node_modules/
 .next/
+.next-e2e/
 out/
 dist/
 build/
@@ -18,3 +19,8 @@ next-env.d.ts
 llm-test-output*.json
 *.tsbuildinfo
 .playwright-mcp/
+
+# licensed source PDFs and working diagnostics (never committed)
+nonstandard/
+SBCs/
+.debug-journal.md

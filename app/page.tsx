@@ -89,7 +89,7 @@ export default function Home() {
             context={sharedContext}
             onContextChange={setSharedContext}
             externalBusy={busy}
-            externalBusyLabel="Building your comparison…"
+            externalBusyLabel="Preparing your results…"
             extractError={extractError?.message ?? null}
             showRetry={extractError?.retryable === true}
             onRetry={() => void retryExtract()}
@@ -123,9 +123,20 @@ export default function Home() {
               }}
               contacts={contacts}
             />
-            <aside className="results-workspace__chat" aria-label="Ask about your plans">
+            <aside className="results-workspace__chat" aria-label={table.documents.length === 1 ? "Ask about your document" : "Ask about your plans"}>
               <ChatPanel sessionId={sessionId} documents={table.documents} />
             </aside>
+          </div>
+          <div className="results-actions">
+            <button
+              className="btn"
+              onClick={() => {
+                window.location.href = `/api/export?sessionId=${sessionId}`;
+              }}
+              disabled={busy}
+            >
+              Download PDF
+            </button>
           </div>
           <p className="notice">
             This session is temporary. Closing this page deletes your documents.

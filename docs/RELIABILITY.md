@@ -273,7 +273,7 @@ p95 target < 15 s under healthy providers
 ### Compare processing
 
 ```text
-2–4 normal portfolio PDFs:
+1–4 normal portfolio PDFs:
 p95 target < 120 s
 ```
 

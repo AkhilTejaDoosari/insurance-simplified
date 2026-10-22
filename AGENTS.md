@@ -103,15 +103,16 @@ Preserve:
 ```text
 Welcome → Intake → Results Workspace
 
-2–4 user documents
+1–4 user documents: one PDF explains its terms and may compare tiers;
+2–4 PDFs compare plans and tiers
 
 no-document path = checklist/guidance, not plan discovery
 
-comparison sections:
-Essentials
-Care & Coverage
-Rules & Restrictions
-Plan Highlights
+document-specific, AI-organized groups over stable structured facts and evidence;
+no mandatory fixed comparison sections
+
+AI may discover and rank relevant factors, but cannot invent coverage,
+eligibility, qualifiers, or evidence
 
 plan != document
 plan may have multiple tiers
@@ -128,6 +129,10 @@ session scope before retrieval/model
 
 no automatic plan winner required
 ```
+
+The previous 2–4 minimum and mandatory four-section layout were superseded
+by the owner's approved V1 product revision. Phase P1 implements the one-PDF
+path; Phase P2 (dynamic grouping) requires separate phase approval.
 
 ---
 

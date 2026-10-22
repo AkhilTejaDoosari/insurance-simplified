@@ -281,3 +281,26 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON chunks TO authenticated;
 GRANT USAGE, SELECT ON SEQUENCE pages_id_seq TO authenticated;
 GRANT EXECUTE ON FUNCTION match_chunks(vector, integer, text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION fts_search_chunks(text, integer, text, text) TO authenticated;
+
+-- ------------------------------------------------- comparison_results (P2)
+-- Durable validated comparison result (additive; canonical form in
+-- db/migrations/0005_comparison_results.sql). Stores ONLY the validated
+-- payload + a document-version fingerprint; authorization stays on
+-- sessions.capability_hash. Server-only (no authenticated grants).
+CREATE TABLE IF NOT EXISTS comparison_results (
+  session_id           TEXT        PRIMARY KEY
+    REFERENCES sessions (id) ON DELETE CASCADE,
+  status               TEXT        NOT NULL DEFAULT 'READY'
+    CONSTRAINT comparison_results_status_check
+    CHECK (status IN ('READY', 'STALE')),
+  document_fingerprint TEXT        NOT NULL,
+  result_json          JSONB       NOT NULL,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at           TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS comparison_results_expires_at_idx
+  ON comparison_results (expires_at);
+
+ALTER TABLE comparison_results ENABLE ROW LEVEL SECURITY;

@@ -101,45 +101,220 @@ export function hasSameScopeContradiction(
   return false;
 }
 
-/** Find the first matching line per fact per document (line = sentence-ish unit). */
-function findMatches(
-  factPatterns: string[],
-  pages: string[]
-): { page: number; quote: string } | null {
-  const regexes = factPatterns.map((p) => new RegExp(p, "i"));
-  for (let i = 0; i < pages.length; i++) {
-    const lines = pages[i].split(/\n+/).map((l) => l.trim()).filter(Boolean);
-    for (const line of lines) {
-      if (regexes.some((re) => re.test(line))) {
-        return { page: i + 1, quote: line };
+interface TierHeader {
+  page: number;
+  lineIndex: number;
+  tiers: string[];
+  columnStarts: number[];
+}
+
+function detectTierHeaders(pageText: string, pageNum: number): TierHeader[] {
+  const lines = pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const headers: TierHeader[] = [];
+  const tierNamePattern = /\b(elite|select|budget|smart|lite|plus|platinum|gold|silver|bronze|basic|enhanced|premium|standard|choice|reliable|ultimate|supreme|premier)\b/gi;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const matches = [...line.matchAll(tierNamePattern)];
+    if (matches.length >= 2) {
+      const tiers = matches.map(m => m[0]).filter((t, idx, arr) => arr.indexOf(t) === idx);
+      if (tiers.length >= 2) {
+        const columnStarts = tiers.map(tier => line.toLowerCase().indexOf(tier.toLowerCase()));
+        headers.push({ page: pageNum, lineIndex: i, tiers, columnStarts });
       }
     }
   }
-  return null;
+  return headers;
+}
+
+function parseTieredLine(
+  line: string,
+  header: TierHeader
+): { tier: string; value: string }[] {
+  const results: { tier: string; value: string }[] = [];
+  const { tiers } = header;
+
+  const dollarPhrases = line.match(/\$[\d,]+(?:\s+(?:per\s+(?:visit|day|month|year)|per|visit|day|month|year))?/gi) ?? [];
+
+  if (dollarPhrases.length >= tiers.length) {
+    for (let i = 0; i < tiers.length; i++) {
+      results.push({ tier: tiers[i], value: dollarPhrases[i] });
+    }
+    return results;
+  }
+
+  const tokens = line.split(/\s+/).filter(Boolean);
+  if (tokens.length >= tiers.length) {
+    const valueTokens = tokens.slice(-tiers.length);
+    for (let i = 0; i < tiers.length; i++) {
+      const value = valueTokens[i];
+      if (value) {
+        results.push({ tier: tiers[i], value });
+      }
+    }
+  }
+  return results;
+}
+
+function findAllMatches(
+  factPatterns: string[],
+  pages: string[]
+): { page: number; quote: string; qualifiers: Record<string, string> }[] {
+  const regexes = factPatterns.map((p) => new RegExp(p, "i"));
+  const results: { page: number; quote: string; qualifiers: Record<string, string> }[] = [];
+
+  const tierHeadersByPage = new Map<number, TierHeader[]>();
+  for (let i = 0; i < pages.length; i++) {
+    tierHeadersByPage.set(i + 1, detectTierHeaders(pages[i], i + 1));
+  }
+
+  for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
+    const pageNum = pageIdx + 1;
+    const lines = pages[pageIdx].split(/\n+/).map((l) => l.trim()).filter(Boolean);
+    const headers = tierHeadersByPage.get(pageNum) ?? [];
+
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const line = lines[lineIdx];
+      if (regexes.some((re) => re.test(line))) {
+        const relevantHeader = headers.find(h => h.lineIndex < lineIdx && lineIdx - h.lineIndex <= 10);
+
+        if (relevantHeader) {
+          const hasValues = /\d/.test(line) || /\$/.test(line);
+
+          if (hasValues) {
+            const tierValues = parseTieredLine(line, relevantHeader);
+            for (const { tier, value } of tierValues) {
+              if (value) {
+                const qualifiers = extractQualifiers(value);
+                qualifiers.planTier = tier;
+                results.push({ page: pageNum, quote: value, qualifiers });
+              }
+            }
+          } else {
+            for (let lookahead = 1; lookahead <= 3; lookahead++) {
+              if (lineIdx + lookahead >= lines.length) break;
+              const nextLine = lines[lineIdx + lookahead];
+              if (/\d/.test(nextLine) || /\$/.test(nextLine)) {
+                const tierValues = parseTieredLine(nextLine, relevantHeader);
+                for (const { tier, value } of tierValues) {
+                  if (value) {
+                    const qualifiers = extractQualifiers(value);
+                    qualifiers.planTier = tier;
+                    results.push({ page: pageNum, quote: value, qualifiers });
+                  }
+                }
+                break;
+              }
+            }
+          }
+        } else {
+          const qualifiers = extractQualifiers(line);
+          results.push({ page: pageNum, quote: line, qualifiers });
+        }
+      }
+    }
+  }
+  return results;
+}
+
+/** Pre-compute tier headers for a document's pages. */
+export function computeTierHeaders(pages: string[]): Map<number, TierHeader[]> {
+  const tierHeadersByPage = new Map<number, TierHeader[]>();
+  for (let i = 0; i < pages.length; i++) {
+    tierHeadersByPage.set(i + 1, detectTierHeaders(pages[i], i + 1));
+  }
+  return tierHeadersByPage;
+}
+
+/** Find all matching lines per fact per document, using pre-computed tier headers. */
+export function findAllMatchesWithHeaders(
+  factPatterns: string[],
+  pages: string[],
+  tierHeadersByPage: Map<number, TierHeader[]>
+): { page: number; quote: string; display?: string; qualifiers: Record<string, string> }[] {
+  const regexes = factPatterns.map((p) => new RegExp(p, "i"));
+  const results: { page: number; quote: string; display?: string; qualifiers: Record<string, string> }[] = [];
+
+  for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
+    const pageNum = pageIdx + 1;
+    const lines = pages[pageIdx].split(/\n+/).map((l) => l.trim()).filter(Boolean);
+    const headers = tierHeadersByPage.get(pageNum) ?? [];
+
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const line = lines[lineIdx];
+      if (regexes.some((re) => re.test(line))) {
+        const relevantHeader = headers.find(h => h.lineIndex < lineIdx && lineIdx - h.lineIndex <= 10);
+
+        if (relevantHeader) {
+          const hasValues = /\d/.test(line) || /\$/.test(line);
+
+          if (hasValues) {
+            const tierValues = parseTieredLine(line, relevantHeader);
+            for (const { tier, value } of tierValues) {
+              if (value) {
+                const qualifiers = extractQualifiers(value);
+                qualifiers.planTier = tier;
+                results.push({ page: pageNum, quote: line, display: value, qualifiers });
+              }
+            }
+          } else {
+            for (let lookahead = 1; lookahead <= 3; lookahead++) {
+              if (lineIdx + lookahead >= lines.length) break;
+              const nextLine = lines[lineIdx + lookahead];
+              if (/\d/.test(nextLine) || /\$/.test(nextLine)) {
+                const tierValues = parseTieredLine(nextLine, relevantHeader);
+                for (const { tier, value } of tierValues) {
+                  if (value) {
+                    const qualifiers = extractQualifiers(value);
+                    qualifiers.planTier = tier;
+                    results.push({ page: pageNum, quote: nextLine, display: value, qualifiers });
+                  }
+                }
+                break;
+              }
+            }
+          }
+        } else {
+          const qualifiers = extractQualifiers(line);
+          results.push({ page: pageNum, quote: line, qualifiers });
+        }
+      }
+    }
+  }
+  return results;
 }
 
 export function extractFallback(
   documents: ExtractInputDocument[],
   userContext: Record<string, string>
 ): ComparisonTable {
+  // Pre-compute tier headers for all documents (once per document, not per fact)
+  const tierHeadersByDoc = new Map<string, Map<number, TierHeader[]>>();
+  for (const doc of documents) {
+    tierHeadersByDoc.set(doc.documentId, computeTierHeaders(doc.pages));
+  }
+
   const rows: TableRow[] = FACTS.map((fact) => {
     const values: CellValue[] = [];
     let ruledOutField: string | null = null;
     let allVague = true;
 
     for (const doc of documents) {
-      const match = findMatches(fact.patterns, doc.pages);
-      if (!match) continue;
-      const vague = isVague(match.quote);
-      if (!vague) allVague = false;
-      const ruledOut = contextFieldRulesOut(fact.contextField, userContext, match.quote);
-      if (ruledOut) ruledOutField = ruledOut;
-      values.push({
-        documentId: doc.documentId,
-        display: match.quote,
-        qualifiers: extractQualifiers(match.quote),
-        evidence: [{ documentId: doc.documentId, page: match.page, quote: match.quote }],
-      });
+      const matches = findAllMatchesWithHeaders(fact.patterns, doc.pages, tierHeadersByDoc.get(doc.documentId)!);
+      if (matches.length === 0) continue;
+
+      for (const match of matches) {
+        const vague = isVague(match.quote);
+        if (!vague) allVague = false;
+        const ruledOut = contextFieldRulesOut(fact.contextField, userContext, match.quote);
+        if (ruledOut) ruledOutField = ruledOut;
+        values.push({
+          documentId: doc.documentId,
+          display: match.display ?? match.quote,
+          qualifiers: match.qualifiers,
+          evidence: [{ documentId: doc.documentId, page: match.page, quote: match.quote }],
+        });
+      }
     }
 
     if (values.length === 0) {
@@ -228,9 +403,9 @@ const EXTRACTION_INSTRUCTIONS = [
   "Verdict is one of SUPPORTED, DOES NOT APPEAR TO FIT, NOT STATED, CONFLICTED, NEEDS VERIFICATION — never anything else.",
   "display MUST quote values with ALL qualifiers verbatim (network tier, period, age band, conditions) — never collapse them.",
   "Every value object MUST include a qualifiers object using any of these keys: networkTier, period, ageBand, conditions, planTier. When a value has no qualifiers to report, use an empty object {} — never null, and never omit the field.",
-  "PLAN TIERS: when ONE document describes several named plan tiers or options (e.g. Lite / Plus / Platinum, or Basic / Enhanced) with different figures for the same benefit, emit a SEPARATE value object per tier, each with qualifiers.planTier set to that tier's name exactly as the document names it and display holding only that tier's figure. NEVER write one display like \"$0 to $2,500 for Lite and Plus; $0 to $25,000 for Platinum\". Correct shape for that case:",
+  "PLAN TIERS: when ONE document describes several named plan tiers or options (e.g. Lite / Plus / Platinum, or Basic / Enhanced, or Elite / Select / Budget / Smart) with different figures for the same benefit, emit a SEPARATE value object per tier, each with qualifiers.planTier set to that tier's name exactly as the document names it and display holding only that tier's figure. NEVER write one display like \"$0 to $2,500 for Lite and Plus; $0 to $25,000 for Platinum\". Correct shape for that case:",
   '[{"documentId":"doc-1","display":"$0 to $2,500","qualifiers":{"planTier":"Lite"},"evidence":[...]},{"documentId":"doc-1","display":"$0 to $2,500","qualifiers":{"planTier":"Plus"},"evidence":[...]},{"documentId":"doc-1","display":"$0 to $25,000","qualifiers":{"planTier":"Platinum"},"evidence":[...]}]',
-  "Brochure comparison tables flatten to a header line naming the tiers (e.g. \"LITE PLUS PLATINUM\") followed by benefit lines listing one figure per tier in the SAME ORDER (e.g. \"Deductible $0 to $2,500 $0 to $2,500 $0 to $25,000\" = Lite $0 to $2,500, Plus $0 to $2,500, Platinum $0 to $25,000). Map figures to tiers by position and emit one value per tier; do not keep only the first figure.",
+  "TIER TABLE PARSING: Insurance brochures often contain comparison tables with a header row naming tiers (e.g. \"ELITE SELECT BUDGET SMART\" or \"BASIC CHOICE\") followed by rows where each benefit lists one figure per tier IN THE SAME ORDER. You MUST: (1) Identify the tier header row by finding a line that contains 2+ tier names (e.g. Elite, Select, Budget, Smart, Basic, Choice, Lite, Plus, Platinum, Gold, Silver, Bronze). (2) For each benefit row below that header, split the figures by position to map each figure to its tier. (3) Emit ONE value object PER TIER with qualifiers.planTier set to that tier's name. Example: if header is \"ELITE SELECT BUDGET SMART\" and a row reads \"Deductible $0 $0 $0 $0\", emit four values: Elite $0, Select $0, Budget $0, Smart $0, each with its planTier qualifier.",
   "A figure that applies to every tier of a document gets one value with no planTier.",
   "PREMIUM AGE BANDS: when ONE document prices the same tier differently by age (a rate table with age ranges), emit a SEPARATE premium value object per tier per age band. Each such value carries numeric qualifiers.ageMin and qualifiers.ageMax as INCLUSIVE bounds, qualifiers.amount as a bare number, qualifiers.frequency when stated (e.g. monthly), and qualifiers.planTier. A stated '< 65' is ageMax 64. A premium with no age variation gets one value with no ageMin/ageMax. Never choose which band applies to the user — the application decides from user context.",
   "Tiers within one document differing from each other is NOT a conflict; different plans, tiers, and scopes stating different values is normal comparison data.",

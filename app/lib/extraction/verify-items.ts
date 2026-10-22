@@ -23,16 +23,34 @@ export interface VerifyItem {
   factName: string;
   label: string;
   kind: VerifyItemKind;
-  /** Human-readable per-plan statement, e.g. "Not stated for Plan A". */
   text: string;
   documentId: string | null;
   planName: string | null;
   citation: VerifyCitation | null;
+  section: string;
+  priority: number;
 }
 
 const CORE_FACTS: ReadonlySet<string> = new Set(
   SECTIONS.find((s) => s.title === "Essentials")?.factNames ?? [],
 );
+
+const SECTION_PRIORITY: Record<string, number> = Object.fromEntries(
+  SECTIONS.map((s, i) => [s.title, i])
+);
+
+const KIND_PRIORITY: Record<VerifyItemKind, number> = {
+  "not-stated": 0,
+  "needs-verification": 1,
+  "conflicted": 2,
+};
+
+function factSection(factName: string): string {
+  for (const s of SECTIONS) {
+    if (s.factNames.includes(factName)) return s.title;
+  }
+  return "Other";
+}
 
 export function verifyLabelFor(factName: string): string {
   if (factName === ELIGIBILITY_ROW_NAME) return ELIGIBILITY_ROW_LABEL;
@@ -51,7 +69,6 @@ function firstCitation(
   };
 }
 
-/** Build verify items from the session table; planNameOf maps documents. */
 export function buildVerifyItems(
   rows: RegisteredTableRow[],
   documents: { documentId: string }[],
@@ -60,9 +77,9 @@ export function buildVerifyItems(
   const items: VerifyItem[] = [];
   const hidden = NON_DISPLAY_FEEDERS as readonly string[];
   for (const row of rows) {
-    // Evidence feeders never render as own rows; the composite speaks for them.
     if (hidden.includes(row.factName)) continue;
     const label = verifyLabelFor(row.factName);
+    const section = factSection(row.factName);
     const byDoc = new Map<string, RegisteredCellValue[]>();
     for (const v of row.values) {
       const list = byDoc.get(v.documentId) ?? [];
@@ -81,6 +98,8 @@ export function buildVerifyItems(
           documentId: d.documentId,
           planName: planNameOf(d.documentId),
           citation: null,
+          section,
+          priority: SECTION_PRIORITY[section] ?? 99,
         });
       }
       continue;
@@ -97,6 +116,8 @@ export function buildVerifyItems(
           documentId,
           planName: planNameOf(documentId),
           citation,
+          section,
+          priority: (SECTION_PRIORITY[section] ?? 99) * 10 + KIND_PRIORITY["needs-verification"],
         });
       }
       continue;
@@ -114,6 +135,8 @@ export function buildVerifyItems(
           documentId,
           planName: planNameOf(documentId),
           citation: firstCitation(values[0]),
+          section,
+          priority: (SECTION_PRIORITY[section] ?? 99) * 10 + KIND_PRIORITY["conflicted"],
         });
       }
       if (!covered) {
@@ -126,10 +149,44 @@ export function buildVerifyItems(
             documentId,
             planName: planNameOf(documentId),
             citation: firstCitation(values[0]),
+            section,
+            priority: (SECTION_PRIORITY[section] ?? 99) * 10 + KIND_PRIORITY["conflicted"],
           });
         }
       }
     }
   }
+  items.sort((a, b) => {
+    const planA = a.planName ?? "";
+    const planB = b.planName ?? "";
+    if (planA !== planB) return planA.localeCompare(planB);
+    return a.priority - b.priority;
+  });
   return items;
+}
+
+export interface VerifyGroup {
+  planName: string;
+  documentId: string;
+  items: VerifyItem[];
+}
+
+export function buildVerifyGroups(
+  rows: RegisteredTableRow[],
+  documents: { documentId: string }[],
+  planNameOf: (documentId: string) => string,
+): VerifyGroup[] {
+  const items = buildVerifyItems(rows, documents, planNameOf);
+  const byPlan = new Map<string, VerifyItem[]>();
+  for (const item of items) {
+    if (!item.planName) continue;
+    const list = byPlan.get(item.planName) ?? [];
+    list.push(item);
+    byPlan.set(item.planName, list);
+  }
+  return [...byPlan.entries()].map(([planName, items]) => ({
+    planName,
+    documentId: items[0]?.documentId ?? "",
+    items,
+  }));
 }

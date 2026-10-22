@@ -105,7 +105,7 @@ describe("row visibility classes", () => {
 
   it("F. all-14-NOT-STATED highlights render zero rows plus the empty state", () => {
     const out = html(table(HIGHLIGHTS.map((n) => row(n, "NOT STATED"))));
-    expect(out).toContain("Nothing unique to highlight in these documents");
+    expect(out).toContain("No stated facts in this group for the selected tiers.");
     expect(out).not.toContain("table__fact");
   });
 

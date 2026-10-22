@@ -14,8 +14,10 @@ test("upload → table → evidence → chat → export (quickstart Flows 1–3,
   // Flow 1: table with verdicts and full qualifiers.
   await expect(page.getByRole("rowheader", { name: "Annual deductible" })).toBeVisible();
   // Cross-plan differences are comparison data: differing values render as
-  // SUPPORTED, never CONFLICTED.
-  await expect(page.getByText("SUPPORTED").first()).toBeVisible();
+  // SUPPORTED (no badge shown), never CONFLICTED. Verify the supported value
+  // renders as an evidence link for each plan.
+  const deductibleRow = page.getByRole("row", { name: "Annual deductible" });
+  await expect(deductibleRow.getByRole("link", { name: /View source evidence for Annual deductible/ })).toHaveCount(2);
   await expect(page.getByText("NOT STATED").first()).toBeVisible();
   // Each value is a direct source link (one click → viewer). Labels name the
   // fact, file, and page; the LLM engine may split or combine the display
@@ -64,13 +66,16 @@ test("upload → table → evidence → chat → export (quickstart Flows 1–3,
   await page.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(page.getByText("no supporting evidence")).toBeVisible();
 
-  // Flow 6: export downloads valid JSON.
+  // Flow 6: export downloads a PDF built from the validated result.
   const download = await Promise.all([
     page.waitForEvent("download"),
-    page.getByText("Download export (JSON)").click(),
+    page.getByRole("button", { name: "Download PDF" }).click(),
   ]);
   const path = await download[0].path();
   expect(path).toBeTruthy();
+  const { readFileSync } = await import("node:fs");
+  const bytes = readFileSync(path!);
+  expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
 });
 
 test("no-documents checklist flow (quickstart Flow 5)", async ({ page }) => {
@@ -81,5 +86,31 @@ test("no-documents checklist flow (quickstart Flow 5)", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Documents to collect" })).toBeVisible();
   await expect(page.getByText(/age-based limits.*34/)).toBeVisible();
   await page.getByRole("button", { name: /I have my documents/ }).click();
-  await expect(page.getByText("Upload 2–4 insurance PDFs")).toBeVisible();
+  await expect(page.getByText("Upload 1–4 insurance PDFs")).toBeVisible();
+});
+
+test("one PDF explains evidenced terms in the results workspace", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "I have my documents" }).click();
+  await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
+  await page.getByRole("button", { name: "Understand my document" }).click();
+  await expect(page.getByRole("heading", { name: "Understand your document" })).toBeVisible();
+  const deductible = page.getByRole("row", { name: "Annual deductible" });
+  await expect(deductible.getByRole("link", { name: /View source evidence/ })).toBeVisible();
+  await expect(page.getByText("Not stated").first()).toBeVisible();
+});
+
+test("two-PDF comparison scrolls inside its table on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "I have my documents" }).click();
+  await page.setInputFiles('input[type="file"]', ["tests/fixtures/plan-a.pdf", "tests/fixtures/plan-b.pdf"]);
+  await page.getByRole("button", { name: "Compare my plans" }).click();
+  await expect(page.getByRole("heading", { name: "Your plans, side by side" })).toBeVisible();
+  const pageWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(pageWidth).toBeLessThanOrEqual(375);
+  const tableOverflow = await page.locator(".comparison__table-wrap").evaluate(
+    (element) => element.scrollWidth > element.clientWidth,
+  );
+  expect(tableOverflow).toBe(true);
 });

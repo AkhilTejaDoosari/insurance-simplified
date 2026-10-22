@@ -107,22 +107,23 @@ export function readDocumentFile(
 export function createSession(
   documents: SessionDocument[],
   userContext: Record<string, string> = {},
-  capability?: string
+  capability?: string,
+  sessionId?: string
 ): { session: Session; capability: string; capabilityHash: string } {
-  const sessionId = `sess-${Date.now().toString(36)}-${Math.random()
+  const sid = sessionId ?? `sess-${Date.now().toString(36)}-${Math.random()
     .toString(36)
     .slice(2, 8)}`;
   const cap = capability ?? generateCapability();
   const capabilityHash = hashCapability(cap);
   const session: Session = {
-    sessionId,
+    sessionId: sid,
     createdAt: new Date().toISOString(),
     documents,
     userContext,
     evidence: {},
     capabilityHash,
   };
-  writeFileSync(pathFor(sessionId), JSON.stringify(session));
+  writeFileSync(pathFor(sid), JSON.stringify(session));
   return { session, capability: cap, capabilityHash };
 }
 

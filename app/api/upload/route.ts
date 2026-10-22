@@ -32,8 +32,9 @@ import {
   SESSION_CAPABILITY_COOKIE,
 } from "@/app/lib/session-db";
 import { errorResponse, newRequestId } from "@/app/lib/api-errors";
+import { recordTiming, timeAsync, timeSync } from "@/app/lib/observability/timing";
 
-const MIN_FILES = 2;
+const MIN_FILES = 1;
 const MAX_FILES = 4;
 
 const CONTEXT_FIELDS = [
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
   if (files.length < MIN_FILES || files.length > MAX_FILES) {
     return errorResponse("VALIDATION_ERROR", 400, {
       requestId,
-      message: `Upload 2–4 PDF documents per comparison set (received ${files.length}).`,
+      message: `Upload 1–4 PDF documents (received ${files.length}).`,
     });
   }
 
@@ -72,7 +73,9 @@ export async function POST(request: NextRequest) {
   let capability: string;
   let durableSession = true;
   try {
-    const created = await createSessionDb({ context: userContext });
+    const created = await timeAsync("upload.createSessionDb", () =>
+      createSessionDb({ context: userContext })
+    );
     sessionId = created.sessionId;
     capability = created.capability;
   } catch (err) {
@@ -105,8 +108,11 @@ export async function POST(request: NextRequest) {
       try {
         state = transition(state, "PROCESSING");
         const buffer = await file.arrayBuffer();
-        const { pageCount, pages } = await extractPages(buffer, file.name);
-        const gate = checkExtraction(pages);
+        const { pageCount, pages } = await timeAsync("upload.extractPages", () =>
+          extractPages(buffer, file.name),
+          { pageCount: 0, filename: file.name }
+        );
+        const gate = timeSync("upload.checkExtraction", () => checkExtraction(pages));
         if (!gate.ok) {
           state = transition(state, "FAILED");
           failures.push({ filename: file.name, reason: userVisibleMessage(gate.reason) });
@@ -141,19 +147,24 @@ export async function POST(request: NextRequest) {
     } else {
       await deleteSession(sessionId);
     }
+    failures.sort((a, b) => a.filename.localeCompare(b.filename));
     return errorResponse("UNPROCESSABLE_DOCUMENTS", 422, {
       requestId,
       message: "One or more files could not be processed.",
+      extra: {
+        failures: failures.map(({ filename, reason }) => ({ filename, reason })),
+      },
     });
   }
 
   documents.sort((a, b) => a.documentId.localeCompare(b.documentId));
 
   // 3. Store raw bytes in tmpdir for legacy document route + viewer fallback
-  // In durable mode, create tmpdir session now. In fallback mode, update the existing empty session.
+  // In durable mode, create tmpdir session with the SAME capability AND sessionId as the DB session.
+  // In fallback mode, update the existing empty session.
   let session;
   if (durableSession) {
-    const created = createSession(documents, userContext);
+    const created = createSession(documents, userContext, capability, sessionId);
     session = created.session;
   } else {
     // Update the existing empty tmpdir session with extracted documents
@@ -168,7 +179,8 @@ export async function POST(request: NextRequest) {
   const store = getDefaultObjectStore();
   for (const [documentId, bytes] of rawFiles) {
     try {
-      const metadata = await putDocumentBytes(bytes, store);
+      const metadata = await timeAsync("upload.putDocumentBytes", () =>
+        putDocumentBytes(bytes, store));
       attachDocumentObjectMetadata(session.sessionId, documentId, metadata);
     } catch (err) {
       console.error("[UPLOAD] putDocumentBytes failed:", documentId, err);
@@ -184,14 +196,16 @@ export async function POST(request: NextRequest) {
     );
     if (isDurableConfigured()) {
       try {
-        const persisted = await persistSessionUpload(
-          sessionId,
-          documents.map((d) => ({
-            documentId: d.documentId,
-            filename: d.filename,
-            pages: d.pages,
-            bytes: rawFiles.get(d.documentId) ?? new Uint8Array(),
-          })),
+        const persisted = await timeAsync("upload.persistSessionUpload", () =>
+          persistSessionUpload(
+            sessionId,
+            documents.map((d) => ({
+              documentId: d.documentId,
+              filename: d.filename,
+              pages: d.pages,
+              bytes: rawFiles.get(d.documentId) ?? new Uint8Array(),
+            }))
+          )
         );
         for (const meta of persisted) {
           attachDocumentObjectMetadata(session.sessionId, meta.documentId, meta);
@@ -290,6 +304,18 @@ export async function DELETE(request: NextRequest) {
         requestId,
         retryable: true,
         message: "Durable session cleanup failed.",
+      });
+    }
+    try {
+      const { deleteComparisonResult } = await import(
+        "@/app/lib/comparison-result-db"
+      );
+      await deleteComparisonResult(sessionId);
+    } catch {
+      return errorResponse("INTERNAL_ERROR", 503, {
+        requestId,
+        retryable: true,
+        message: "Comparison result cleanup failed.",
       });
     }
   }

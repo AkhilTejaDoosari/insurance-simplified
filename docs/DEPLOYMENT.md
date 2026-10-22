@@ -269,12 +269,12 @@ Minimum smoke:
 ```text
 1. Welcome loads
 2. Create anonymous session
-3. Upload 2–4 PDFs through target upload path
+3. Upload 1–4 PDFs through target upload path; verify one-PDF explanation and 2–4-PDF comparison
 4. Core context accepted
 5. Compare reaches READY/PARTIAL honestly
 6. Results workspace loads from durable state
 7. Tier selection works
-8. Essentials / Care & Coverage / Rules & Restrictions / Plan Highlights work
+8. Phase P1 transitional sections work; after Phase P2, document-specific groups work
 9. Evidence-backed value opens correct source page
 10. Chat answers one known question with verified citation
 11. Chat refuses one unsupported question

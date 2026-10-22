@@ -34,9 +34,10 @@ psql "$SUPABASE_DB_URL" -f db/migrations/0001_init.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0002_object_key.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0003_rls.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0004_sessions.sql
+psql "$SUPABASE_DB_URL" -f db/migrations/0005_comparison_results.sql
 # 3. Verify:
 psql "$SUPABASE_DB_URL" -c "SELECT version FROM schema_migrations;"
-#    expect four rows: 0001_init, 0002_object_key, 0003_rls, 0004_sessions
+#    expect five rows: 0001_init, 0002_object_key, 0003_rls, 0004_sessions, 0005_comparison_results
 ```
 
 `db/schema.sql` is the canonical readable reference; `db/migrations/*.sql`
@@ -63,3 +64,6 @@ handles this automatically on next upsert).
   policies/grants (defense-in-depth; app seam scoping unchanged).
 - `migrations/0004_sessions.sql` — additive sessions table + RLS policies
   (request-scoped persistence; idempotent DDL).
+- `migrations/0005_comparison_results.sql` — additive comparison_results
+  table (validated result payload + document fingerprint; server-only, no
+  authenticated grants; `.down.sql` reverses it).

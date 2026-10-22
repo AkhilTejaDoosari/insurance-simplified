@@ -87,6 +87,24 @@ describe("errorResponse backward compatibility", () => {
     }
   });
 
+  it("includes safe extra fields such as per-file failures", async () => {
+    const res = errorResponse("UNPROCESSABLE_DOCUMENTS", 422, {
+      requestId: "test",
+      extra: {
+        failures: [{ filename: "gmi-brochure.pdf", reason: "This document is too large." }],
+      },
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as {
+      error: { code: string };
+      failures: { filename: string; reason: string }[];
+    };
+    expect(body.error.code).toBe("UNPROCESSABLE_DOCUMENTS");
+    expect(body.failures).toEqual([
+      { filename: "gmi-brochure.pdf", reason: "This document is too large." },
+    ]);
+  });
+
   it("new codes also work with errorResponse", async () => {
     const res = errorResponse("VALIDATION_ERROR", 400, { requestId: "test" });
     expect(res.status).toBe(400);

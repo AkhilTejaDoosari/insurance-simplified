@@ -131,7 +131,7 @@ Constraints:
 - every document belongs to exactly one session;
 - `object_key` is unique;
 - file metadata must describe the durable object actually stored;
-- normal comparison sessions contain 2–4 active documents;
+- normal document sessions contain 1–4 active documents;
 - duplicate detection may use `(session_id, sha256)`.
 
 ---
@@ -405,13 +405,39 @@ position
 
 Only `ANSWERED` turns may have material claim citations.
 
+### 4.13 `comparison_results`
+
+Validated result payload persistence (migration `0005_comparison_results`).
+
+One row per session once extraction validation has succeeded:
+
+```text
+session_id
+status
+document_fingerprint
+result_json
+created_at
+updated_at
+expires_at
+```
+
+- `status` is `READY` or `EXPIRED`.
+- `result_json` holds the exact validated result that the UI and PDF export
+  render; export loads this record rather than recomputing.
+- `document_fingerprint` guards stale reuse across different document sets.
+- `expires_at` is 30 days after creation; expired rows are treated as absent
+  and are physically removed opportunistically during the next successful
+  save in any session (no scheduled job in V1).
+- Server-only data: RLS owner-scoped, never sent to the browser, and deleted
+  on session close together with vectors, objects, and the session row.
+
 ---
 
 ## 5. Derived Data That Does Not Need Its Own Table
 
 Unless measured needs justify persistence, V1 may derive these from authoritative rows:
 
-- section grouping;
+- document-specific group labels and ordering (derived from validated facts);
 - active tier selection;
 - active comparison tab;
 - requirements checklist;

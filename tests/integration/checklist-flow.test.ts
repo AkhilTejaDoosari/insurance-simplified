@@ -15,4 +15,10 @@ describe("guided no-documents checklist flow (User Story 5)", () => {
     expect(text).toContain("visa");
     expect(text).not.toMatch(/we recommend|best plan|you should buy|rank/);
   });
+
+  it("invites users back with one document to understand it", () => {
+    const list = buildChecklist({});
+    expect(list.nextStep).toMatch(/one (PDF|document)/i);
+    expect(list.nextStep).toMatch(/understand/i);
+  });
 });

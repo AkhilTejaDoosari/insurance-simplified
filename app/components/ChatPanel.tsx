@@ -52,8 +52,8 @@ export default function ChatPanel({
   }
 
   return (
-    <aside className="panel" aria-label="Chat about your plans">
-      <h2>Ask about your plans</h2>
+    <aside className="panel" aria-label={documents.length === 1 ? "Chat about your document" : "Chat about your plans"}>
+      <h2>{documents.length === 1 ? "Ask about your document" : "Ask about your plans"}</h2>
       <p className="text-muted">
         Answers only come from your documents, with page references.
       </p>

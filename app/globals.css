@@ -448,6 +448,7 @@ select {
 .comparison {
   padding: 0;
   overflow: clip;
+  min-width: 0;
 }
 .comparison__intro {
   padding: 20px 24px 12px;
@@ -629,6 +630,12 @@ select {
 .cell-value + .cell-value {
   display: block;
   margin-top: 6px;
+}
+.cell-value__source {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 .cell-value:hover {
   text-decoration-color: var(--action);

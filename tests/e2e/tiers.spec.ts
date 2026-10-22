@@ -16,6 +16,10 @@ const TIERED_TABLE = {
     { documentId: "doc-1", filename: "plan-a.pdf", pageCount: 1 },
     { documentId: "doc-2", filename: "plan-b.pdf", pageCount: 1 },
   ],
+  presentationGroups: [
+    { title: "Deductible choices", factNames: ["annual-deductible"] },
+    { title: "Emergency care", factNames: ["emergency-care"] },
+  ],
   rows: [
     {
       factName: "annual-deductible",
@@ -75,12 +79,9 @@ test("multi-tier document gets one column per tier and a tier picker", async ({ 
   await expect(valueLink("$0 to $25,000")).toBeVisible();
   await expect(valueLink("$0 to $2,500")).toHaveCount(2);
 
-  // Section tabs intentionally hide non-active rows. Verify the tier-agnostic
-  // value in Care & Coverage, where emergency-care lives, then return to
-  // Essentials for the deductible/tier assertions below.
-  await page.getByRole("button", { name: "Care & Coverage", exact: true }).click();
+  await page.getByRole("button", { name: "Emergency care", exact: true }).click();
   await expect(table.getByRole("link").filter({ hasText: /evacuation/ })).toHaveCount(1);
-  await page.getByRole("button", { name: "Essentials", exact: true }).click();
+  await page.getByRole("button", { name: "Deductible choices", exact: true }).click();
 
   // Picking one tier collapses the group to a single column.
   const picker = page.getByLabel("Tier shown for B");

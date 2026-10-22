@@ -3,6 +3,7 @@
 // (constitution principle II — separate schemas per path).
 
 import { assertVerdict, type Verdict } from "@/app/lib/verdicts";
+import type { PresentationGroup } from "@/app/lib/extraction/presentation-groups";
 
 export interface Qualifiers {
   networkTier?: string;
@@ -70,6 +71,7 @@ export interface RegisteredTableRow extends Omit<TableRow, "values"> {
 
 export interface RegisteredComparisonTable extends Omit<ComparisonTable, "rows"> {
   rows: RegisteredTableRow[];
+  presentationGroups?: readonly PresentationGroup[];
 }
 
 function fail(msg: string): never {

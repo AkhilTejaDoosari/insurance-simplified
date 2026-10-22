@@ -41,6 +41,19 @@ const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const PHONE_RE = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
 const WEBSITE_RE = /https?:\/\/[^\s),;"]+|www\.[^\s),;"]+/gi;
 
+const FINANCIAL_RATING_DOMAINS = new Set([
+  "standardandpoors.com",
+  "spglobal.com",
+  "ambest.com",
+  "fitchratings.com",
+  "fitch.com",
+  "moodys.com",
+  "moody's.com",
+  "weissratings.com",
+  "demotech.com",
+  "kroll.com",
+]);
+
 /** Phone-adjacent ID language: policy/member/account identifiers, never dialable. */
 const PHONE_ID_WORDS = /\b(policy|member|account|cert(ificate)?|form|code|number|id)\b/i;
 /** Explicit dialing context: somebody is asked to call. */
@@ -115,6 +128,8 @@ export function extractContacts(documents: ContactSourceDocument[]): ContactHit[
         for (const m of text.matchAll(WEBSITE_RE)) {
           const value = cleanWebsite(m[0]);
           if (!value) continue;
+          const hostname = value.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0].toLowerCase();
+          if (FINANCIAL_RATING_DOMAINS.has(hostname)) continue;
           hits.push({
             kind: "website",
             value,

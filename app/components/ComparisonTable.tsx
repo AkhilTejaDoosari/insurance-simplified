@@ -15,7 +15,8 @@ import {
 } from "@/app/lib/extraction/eligibility";
 import { VARIES_BY_AGE, NO_RATE_FOR_AGE_PREFIX } from "@/app/lib/extraction/premium";
 import { summarizeNetworkDisplay } from "@/app/lib/extraction/network-display";
-import { groupRows, OTHER, SECTIONS } from "@/app/lib/extraction/sections";
+import { SECTIONS } from "@/app/lib/extraction/sections";
+import { organizeRows, sanitizeGroups } from "@/app/lib/extraction/presentation-groups";
 import { documentTiers, cellValues } from "@/app/lib/extraction/tiers";
 import { getPlanDisplayName } from "@/app/lib/extraction/plan-names";
 import { documentUrl } from "@/app/lib/document-url";
@@ -223,37 +224,64 @@ function TierCells({
             </span>
           );
         }
+        const primaryQuote = values[0]?.evidence[0]?.quote;
+        const showNumericSource = values.length > 1 &&
+          values.every((value) => /^\$[\d,]+/.test(value.display.trim()));
+        const sharedQuote = showNumericSource && primaryQuote &&
+          values.every((value) => value.evidence[0]?.quote === primaryQuote) &&
+          !values.some((value) => value.display.includes(primaryQuote))
+          ? primaryQuote
+          : null;
         const valuesList =
           values.length > 0 ? (
-            values.map((v, i) => {
-              // Each value links to ITS OWN primary evidence (the first cited
-              // passage — deterministic); never the whole row's evidence. A
-              // value with no evidence renders as plain text: the contract
-              // forbids inventing a citation.
-              const primary = v.evidence[0];
-              if (!primary) {
+            <>
+              {values.map((v, i) => {
+                // Each value links to ITS OWN primary evidence (the first cited
+                // passage — deterministic); never the whole row's evidence. A
+                // value with no evidence renders as plain text: the contract
+                // forbids inventing a citation.
+                const primary = v.evidence[0];
+                const networkScope = showNumericSource
+                  ? (["in-network", "out-of-network"] as const).find((scope) =>
+                      primary?.quote.toLowerCase().includes(`${v.display.trim().toLowerCase()} ${scope}`),
+                    )
+                  : undefined;
+                const displayText = `${cellText(v.display)}${networkScope ? ` ${networkScope}` : ""}`;
+                if (!primary) {
+                  return (
+                    <span key={i} className="cell-value">
+                      {displayText}
+                    </span>
+                  );
+                }
+                const planInfo = planNames.get(v.documentId);
+                const displayName = planInfo?.name ?? v.documentId;
                 return (
-                  <span key={i} className="cell-value">
-                    {cellText(v.display)}
-                  </span>
+                  <a
+                    key={i}
+                    className="cell-value"
+                    href={documentUrl(sessionId, v.documentId, displayName, primary.page, primary.evidenceId)}
+                    target="_blank"
+                    rel="noopener"
+                    title={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
+                    aria-label={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
+                  >
+                    {displayText}
+                  </a>
                 );
-              }
-              const planInfo = planNames.get(v.documentId);
-              const displayName = planInfo?.name ?? v.documentId;
-              return (
-                <a
-                  key={i}
-                  className="cell-value"
-                  href={documentUrl(sessionId, v.documentId, displayName, primary.page, primary.evidenceId)}
-                  target="_blank"
-                  rel="noopener"
-                  title={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
-                  aria-label={`View source evidence for ${label} — ${displayName}, page ${primary.page}`}
-                >
-                  {cellText(v.display)}
-                </a>
-              );
-            })
+              })}
+              {sharedQuote && (
+                <span className="cell-value__source">Source wording: {sharedQuote}</span>
+              )}
+              {!sharedQuote && showNumericSource && values.map((value, index) => {
+                const quote = value.evidence[0]?.quote;
+                return quote && !value.display.includes(quote) ? (
+                  <span className="cell-value__source" key={`${value.documentId}:${index}`}>
+                    {value.display} — source wording: {quote}
+                  </span>
+                ) : null;
+              })}
+            </>
           ) : (
             <span className="table__empty" aria-label="Not stated">
               Not stated
@@ -333,23 +361,19 @@ export default function ComparisonTable({
   initialTierSelection?: Record<string, string>;
   contacts?: ContactHit[];
 }) {
-  const groups = groupRows(table.rows);
+  const groups = organizeRows(table.rows, sanitizeGroups(
+    table.presentationGroups ? { groups: table.presentationGroups } : null,
+    table.rows,
+  ));
   const [activeSection, setActiveSection] = useState(
-    () =>
-      (groups.some(({ section }) => section.title === SECTIONS[0].title)
-        ? SECTIONS[0].title
-        : groups[0]?.section.title) ?? SECTIONS[0].title,
+    () => groups[0]?.section.title ?? VERIFY_SECTION.title,
   );
-  const visibleSections =
-    groups.some(({ section }) => section.title === OTHER.title)
-      ? [...SECTIONS, OTHER, VERIFY_SECTION]
-      : [...SECTIONS, VERIFY_SECTION];
-  const activeGroup = groups.find(({ section }) => section.title === activeSection);
+  const visibleSections = [...groups.map(({ section }) => section), VERIFY_SECTION];
+  const activeGroup = groups.find(({ section }) => section.title === activeSection) ?? groups[0];
   const activeSectionDef =
-    visibleSections.find((s) => s.title === activeSection) ?? SECTIONS[0];
-  const isVerify = activeSectionDef.title === VERIFY_SECTION.title;
+    visibleSections.find((s) => s.title === activeSection) ?? activeGroup?.section ?? VERIFY_SECTION;
+  const isVerify = activeSection === VERIFY_SECTION.title;
   const activeRows = activeGroup?.rows ?? [];
-  const isHighlights = activeSectionDef.title === "Plan Highlights";
   const tiersByDoc = useMemo(() => documentTiers(table), [table]);
   const [selection, setSelection] = useState<Record<string, string>>(initialTierSelection ?? {});
   
@@ -381,10 +405,9 @@ export default function ComparisonTable({
   // Comparative and highlight rows render only when at least one currently
   // displayed cell holds a value — evaluated against the live tier scope,
   // so hidden tiers never keep a row alive.
-  const isEssentials = activeSectionDef.title === SECTIONS[0].title;
-  const renderedRows = isEssentials
-    ? activeRows
-    : activeRows.filter((row) => isRowVisible(row, docGroups));
+  const coreFacts = SECTIONS[0].factNames;
+  const renderedRows = activeRows.filter((row) =>
+    coreFacts.includes(row.factName) || isRowVisible(row, docGroups));
 
   // The tier sub-header sticks just below the document header, whose height
   // depends on wrapping filenames — measure it rather than guess.
@@ -405,11 +428,13 @@ export default function ComparisonTable({
     <section
       className="card comparison"
       style={{ "--value-columns": valueColumns } as React.CSSProperties}
-      aria-label="Plan comparison"
+      aria-label={table.documents.length === 1 ? "Document understanding" : "Plan comparison"}
     >
       <div className="comparison__intro">
-        <h2>Your plans, side by side</h2>
-        <p>Open any value to see the exact source page it came from.</p>
+        <h2>{table.documents.length === 1 ? "Understand your document" : "Your plans, side by side"}</h2>
+        <p>{table.documents.length === 1
+          ? "Review the stated benefits, costs, eligibility, restrictions and missing details. Select a tier when available; open any value to check its source page."
+          : "Open any value to see the exact source page it came from."}</p>
       </div>
 
       <div className="comparison__tabs" role="group" aria-label="Comparison sections">
@@ -443,9 +468,7 @@ export default function ComparisonTable({
         />
       ) : renderedRows.length === 0 ? (
         <p className="comparison__empty" role="status">
-          {isHighlights
-            ? "Nothing unique to highlight in these documents — the comparison above covers what was stated."
-            : `No stated ${activeSectionDef.title} facts in the current view.`}
+          No stated facts in this group for the selected tiers.
         </p>
       ) : (
       <div className="comparison__table-wrap">

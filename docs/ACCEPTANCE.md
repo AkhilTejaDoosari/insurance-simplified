@@ -40,7 +40,7 @@ A feature is complete when its observable behavior satisfies the relevant Given/
 
 ### A-004 — Document count
 
-**Given** fewer than 2 or more than 4 PDFs  
+**Given** no PDFs or more than 4 PDFs
 **When** the user tries to compare  
 **Then** comparison does not start and the count problem is clearly shown.
 
@@ -101,6 +101,22 @@ A feature is complete when its observable behavior satisfies the relevant Given/
 
 # 6. Results Workspace
 
+### A-012A — One-document understanding
+
+**Given** one usable PDF
+**When** processing succeeds
+**Then** the workspace explains important evidenced benefits, costs,
+eligibility, exclusions, limitations, and material unknowns
+**And** tier-specific facts stay on the correct tier
+**And** supporting citations open the original PDF.
+
+### A-012B — Multiple-document comparison
+
+**Given** 2–4 usable PDFs
+**When** processing succeeds
+**Then** comparable facts are shown side by side across discovered plans and
+tiers without assuming one PDF equals one plan.
+
 ### A-012 — One core workspace
 
 **Given** processing succeeds  
@@ -108,6 +124,9 @@ A feature is complete when its observable behavior satisfies the relevant Given/
 **Then** comparison, tier selection, section navigation, chat, and evidence access exist within the Results Workspace.
 
 ### A-013 — Exact section names
+
+**Status: superseded by A-013A for Phase P2. During Phase P1 these existing
+sections may remain as transitional navigation.**
 
 **Then** the comparison provides:
 
@@ -120,14 +139,26 @@ Plan Highlights
 
 ### A-014 — Essentials first
 
+**Status: superseded by A-013A for Phase P2; transitional Phase P1 behavior may
+retain Essentials as the default.**
+
 **Given** the Results Workspace first opens  
 **Then** `Essentials` is the default comparison section.
+
+### A-013A — Document-specific organization (Phase P2)
+
+**Given** validated comparison facts from the user's documents
+**When** the workspace renders
+**Then** related facts are grouped semantically and prioritized by importance
+and supplied context, with unique features retained
+**And** every supported value keeps its qualifiers and verified evidence
+**And** absent evidence never becomes a noncoverage or ineligibility claim.
 
 ### A-015 — Premium/price
 
 **Given** a source document states a premium/price in supported scope  
 **When** comparison facts are extracted  
-**Then** the value can appear in `Essentials` with evidence.
+**Then** the value can appear in the relevant group with evidence.
 
 ---
 
@@ -328,7 +359,8 @@ Plan Highlights
 
 **Given** processing succeeds  
 **When** the Results Workspace loads  
-**Then** a fifth `Verify & Contact` section exists alongside the four comparison sections.
+**Then** Verify & Contact is accessible in the Results Workspace; Phase P2 need
+not render it as a fixed fifth tab.
 
 ### A-042 — CORE all-NOT-STATED remains visible
 
@@ -379,3 +411,36 @@ Plan Highlights
 **When** Verify & Contact renders that plan  
 **Then** it states that no contact information was found  
 **And** it does not invent or display contact data.
+
+---
+
+## Final V1 verification run — 2026-10-22 (feat/rag-core)
+
+Executed pre-commit gate record. Skipped checks are reported as SKIPPED and
+never counted as passing.
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Unit/contract/integration | `npm test` | 564 passed, 6 skipped (2 files skipped: require live credentials / real PDF fixtures) |
+| Typecheck | `npx tsc --noEmit` | pass (exit 0) |
+| Production build | `npm run build` | pass (compiled successfully) |
+| Playwright E2E | `npm run test:e2e` | 5/5 passed |
+| Live chat acceptance | `npx tsx scripts/acceptance-chat-live.ts` | 27/27 PASS (live LLM, no fallback; deductibles four tiers with page 3 citation; F-1/OPT non-guarantee with 2 citations; cross-document $0 vs $0–$5,000 swing citing pages 3,2; premium question refused without invented number) |
+| Real PDF export acceptance | `npx tsx scripts/acceptance-pdf-export.ts` | 21/21 PASS (both carriers named, F-1 context, no session-id/capability leakage) |
+| Whitespace hygiene | `git diff --check` | pass |
+
+Security verification (documented in docs/SECURITY.md §6.1/§17.1):
+- `/api/export` rejects missing/wrong/cross-session/expired capabilities
+  (tests/unit/export-auth.test.ts, 5/5).
+- Database grants/RLS verified by direct SQL + PostgREST probes;
+  `schema_migrations` anon read/update/delete capability confirmed and
+  remediation migration **0006 drafted but NOT applied** — pending separate
+  human approval.
+- Durable session close removes session vectors, objects, DB row, and
+  comparison result with fail-closed retryable errors.
+
+Known accepted limitations: no scheduled physical-expiry sweep (opportunistic
+on save); legacy local-fallback result files are not wiped at close;
+anonymous-migration-ledger hardening pending approval. V1 functional
+acceptance is recorded; no production-readiness claim is made from these
+development-environment checks alone.

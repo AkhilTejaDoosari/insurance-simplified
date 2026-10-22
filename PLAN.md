@@ -12,6 +12,36 @@ This is the master implementation plan.
 
 The architecture is already decided.
 
+## Owner-approved V1 product revision (supersedes historical count/section text below)
+
+Two product changes are approved without changing the component topology:
+
+1. Accept 1–4 PDFs. One PDF produces an evidence-cited insurance understanding
+   experience (and compares its tiers where present); 2–4 PDFs compare plans
+   and tiers side by side.
+2. Organize validated structured facts into AI-assisted document-specific
+   semantic groups rather than mandatory fixed UI sections. Preserve unique
+   features, qualifiers, explicit uncertainty, and original-page evidence.
+
+Execute this revision in two approval-separated phases:
+
+- **Phase P1 — 1–4 PDFs and single-document understanding:** after updating
+  contracts, audit current upload, extraction, normalization, comparison,
+  chat and UI; reuse existing authorization, storage, fact/evidence pipeline,
+  tier selector and workspace. Add one-/multi-PDF and multi-tier regression
+  tests. Verify with real insurance PDFs, focused/full unit tests, TypeScript,
+  production build and Playwright where runnable. Stop for approval.
+- **Phase P2 — dynamic organization:** only after P1 approval, assess whether
+  existing validated facts can support derived AI-assisted grouping without a
+  major redesign; present trade-offs before implementation if they cannot.
+  Retain citation verification, plan/tier qualifications, and no migration or
+  new provider without separate approval.
+
+Historical phases below describe previous execution scope; wherever they say
+2–4 documents or mandate Essentials / Care & Coverage / Rules & Restrictions /
+Plan Highlights, the revised P1/P2 contracts above govern. Do not advance from
+P1 to P2 automatically.
+
 OpenCode's job is:
 
 ```text

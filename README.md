@@ -1,6 +1,6 @@
 # Insurance Simplified
 
-Compare 2–4 insurance PDFs side by side with page-level evidence. Every
+Understand one insurance PDF or compare 2–4 side by side with page-level evidence. Every
 comparison row carries one of five states — SUPPORTED, DOES NOT APPEAR TO
 FIT, NOT STATED, CONFLICTED, NEEDS VERIFICATION — never a bare yes/no.
 A chatbot side panel answers questions with citations or explicitly refuses

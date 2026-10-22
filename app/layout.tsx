@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Insurance Simplified",
-  description: "Compare insurance documents side by side, with evidence.",
+  description: "Understand insurance documents or compare plans with source evidence.",
 };
 
 export default function RootLayout({
@@ -26,7 +26,7 @@ export default function RootLayout({
           <div className="site-header__inner">
             <h1>Insurance Simplified</h1>
             <p className="site-header__tagline">
-              Compare plans side by side, with every claim traced to the page it came from.
+              Understand one document or compare plans, with every claim traced to its source page.
             </p>
           </div>
         </header>

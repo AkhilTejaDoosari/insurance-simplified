@@ -159,7 +159,7 @@ Request:
 Server validates:
 
 - authorized session;
-- 2–4 document product boundary when finalizing comparison;
+- 1–4 document product boundary (one document for understanding, 2–4 for comparison);
 - file count;
 - allowed MIME/type intent;
 - size limit;
@@ -210,7 +210,7 @@ POST /api/sessions/:sessionId/compare
 Preconditions:
 
 - authorized session;
-- 2–4 usable registered documents;
+- 1–4 usable registered documents;
 - required core context present.
 
 Behavior:
@@ -248,6 +248,12 @@ Response includes:
 - verdicts;
 - evidence references;
 - missing context requirements.
+
+One-document results explain evidenced costs, benefits, eligibility rules,
+exclusions, limitations, and material unknowns; multiple-tier results may
+compare tiers internally. For 2–4 documents, the result compares validated
+facts across plans and tiers. In Phase P2, derived group labels/order may be
+document-specific; fact/evidence identity and authorization do not change.
 
 The response must not include evidence belonging to another session.
 
@@ -414,7 +420,7 @@ Do not expose credentials, hostnames, model tokens, or raw provider errors.
 V1 session data is deliberately small:
 
 ```text
-2–4 documents
+1–4 documents
 small plan/tier sets
 one comparison workspace
 ```

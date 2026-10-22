@@ -29,6 +29,7 @@ import { isLlmConfigured } from "@/app/lib/llm/client";
 import { buildTraceEvent, emitTrace } from "@/app/lib/observability/trace";
 import { errorResponse, logFailure, newRequestId } from "@/app/lib/api-errors";
 import { requireSessionCapability } from "@/app/lib/session-auth";
+import { recordTiming, timeAsync, timeSync } from "@/app/lib/observability/timing";
 
 export async function POST(request: NextRequest) {
   const requestId = newRequestId();
@@ -55,6 +56,8 @@ export async function POST(request: NextRequest) {
   const useLlm =
     body.engine === "llm" || (body.engine !== "fallback" && isLlmConfigured());
   const startedAt = Date.now();
+  const sessionId = body.sessionId!; // validated above
+  const question = body.question!; // validated above
 
   // Sanitized trace helper: metadata only (ids/pages/counts/latencies).
   // Never includes user text, prompts, document text, or keys.
@@ -70,7 +73,7 @@ export async function POST(request: NextRequest) {
     try {
       emitTrace(
         buildTraceEvent({
-          scopeId: body.sessionId as string,
+          scopeId: sessionId,
           strategy: useLlm ? "llm" : "semantic",
           candidateCount: init.candidateCount,
           topK: init.topK.map((c, i) => ({ ...c, rank: i + 1 })),
@@ -92,9 +95,11 @@ export async function POST(request: NextRequest) {
     let response;
     if (useLlm) {
       try {
-        response = await answerViaLlm(session.documents, body.question, {
-          sessionId: body.sessionId,
-        });
+        response = await timeAsync("chat.answerViaLlm", () =>
+          answerViaLlm(session.documents, question, {
+            sessionId,
+          })
+        );
       } catch (err) {
         // Contract: degraded successes above stay 200; only a total failure lands
         // here. Raw error text is logged server-side only — the client gets the
@@ -103,14 +108,18 @@ export async function POST(request: NextRequest) {
         console.warn(
           `[chat] llm engine failed; degrading to semantic: ${err instanceof Error ? err.message : "unknown"}`
         );
-        response = await answerQuestionSemantic(session.documents, body.question, {
-          sessionId: body.sessionId,
-        });
+        response = await timeAsync("chat.answerQuestionSemantic", () =>
+          answerQuestionSemantic(session.documents, question, {
+            sessionId,
+          })
+        );
       }
     } else {
-      response = await answerQuestionSemantic(session.documents, body.question, {
-        sessionId: body.sessionId,
-      });
+      response = await timeAsync("chat.answerQuestionSemantic", () =>
+        answerQuestionSemantic(session.documents, question, {
+          sessionId,
+        })
+      );
     }
     const validated = validateChatResponse(response);
     if (validated.kind === "answer") {
@@ -128,8 +137,13 @@ export async function POST(request: NextRequest) {
       const canonical = [];
       let allVerified = true;
       for (const citation of validated.citations) {
-        const verified = verifyEvidenceCitation(session.documents, citation);
+        const verified = timeSync("chat.verifyEvidenceCitation", () =>
+          verifyEvidenceCitation(session.documents, citation)
+        );
         if (!verified.ok) {
+          console.warn(
+            `[chat-refusal] stage=verifyEvidenceCitation page=${citation.page} citationCount=${validated.citations.length}`
+          );
           allVerified = false;
           break;
         }
@@ -172,7 +186,7 @@ export async function POST(request: NextRequest) {
     try {
       emitTrace(
         buildTraceEvent({
-          scopeId: typeof body?.sessionId === "string" ? body.sessionId : "unknown",
+          scopeId: sessionId ?? "unknown",
           strategy: useLlm ? "llm" : "semantic",
           candidateCount: 0,
           topK: [],

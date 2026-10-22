@@ -89,6 +89,8 @@ Tier selection changes presentation scope, not source evidence.
 
 # D-007 — Five Results Sections
 
+**Status: superseded by D-024 for V1 grouping; retained as decision history.**
+
 **Decision:**
 
 ```text
@@ -282,3 +284,72 @@ are not conflicts.
 
 **Revisit when:** visibility hiding is shown to conceal decision-relevant
 absences, or contact evidence cannot be represented in existing state.
+
+---
+
+# D-024 — One-to-Four Documents and Evidence-Grounded Organization
+
+**Decision:** An owner-approved V1 product revision supersedes the old
+2–4-document minimum and D-007's mandatory fixed sections. One PDF gets a
+document-specific insurance explanation, including internal tier comparison
+when relevant; 2–4 PDFs get a side-by-side comparison. AI may organize and
+rank validated facts into document-specific groups, retain unique features,
+and use supplied context to prioritize, but cannot create facts, evidence,
+eligibility outcomes, or coverage from missing information. Verify & Contact
+remains available as a capability; it need not be a fixed tab.
+
+**Rollout:** Phase P1 implements 1–4 PDFs and one-PDF understanding. Phase P2
+implements dynamic organization only after separate human approval. During
+Phase P1, existing fixed sections may remain as a transitional UI.
+
+**Revisit when:** real-PDF or user-testing evidence shows group organization
+conceals decision-relevant facts or breaks tier/evidence integrity.
+
+# D-025 — Server-side comparison result persistence (0005)
+
+**Decision:** Validated comparison results are persisted server-side in a
+`comparison_results` table (migration 0005) keyed by session with a 30-day
+`expires_at`, consumed by PDF export by loading the stored record (never
+recomputed), and deleted on session close alongside vectors, objects, and the
+session row. The browser never receives result rows.
+
+**Rejection considered:** recomputing results at export time or keeping them
+only in temp memory — rejected because export must reproduce exactly the
+validated evidence that was shown to the user.
+
+**Limitations accepted:** physical expiry deletion is opportunistic (runs on
+the next save in any session; no scheduler in V1); legacy local-fallback
+result files are not wiped at close time. Supabase backup windows mean
+deletion is not immediate physical erasure.
+
+**Revisit when:** a scheduler/queue is approved, or results become
+user-owned (longer lifetime, authenticated identity).
+
+# D-026 — Verified schema_migrations exposure; 0006 remediation pending approval
+
+**Decision:** A direct-SQL + PostgREST audit (2026-10-22) of the development
+database confirmed `schema_migrations` has RLS disabled and is readable,
+updatable, and deletable by the anon role through PostgREST (verified with
+zero-match capability probes; INSERT is privilege-granted though not
+live-proven). `TRUNCATE/REFERENCES/TRIGGER` grants to `anon`/`authenticated`
+exist on all public tables but are not reachable via PostgREST verbs; the
+data plane (`documents/pages/chunks/sessions/comparison_results`) stays
+RLS-protected for those roles (anon reads verified empty).
+
+Smallest-safe remediation migration 0006 is DRAFTED and NOT APPLIED:
+
+```sql
+ALTER TABLE schema_migrations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY schema_migrations_select_service ON schema_migrations
+  FOR SELECT TO service_role USING (true);
+REVOKE TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public
+  FROM anon, authenticated;
+```
+
+Rollback (`0006_down`): disable RLS on `schema_migrations`, drop the
+service-SELECT policy, re-grant the three privileges. Impact: direct
+psql/postgres-role migration execution is unaffected (owner bypasses RLS);
+tmpdir/session runtime queries do not touch `schema_migrations`.
+
+**Status:** BLOCKED — awaiting separate human approval before applying to
+any environment. Not part of the final V1 commit.

@@ -21,6 +21,12 @@ import { isLlmConfigured } from "@/app/lib/llm/client";
 import { extractContacts } from "@/app/lib/extraction/contacts";
 import { requireSessionCapability } from "@/app/lib/session-auth";
 import { errorResponse, logFailure, newRequestId } from "@/app/lib/api-errors";
+import { recordTiming, timeAsync, timeSync } from "@/app/lib/observability/timing";
+import { proposeGroups, sanitizeGroups } from "@/app/lib/extraction/presentation-groups";
+import {
+  documentFingerprint,
+  saveComparisonResult,
+} from "@/app/lib/comparison-result-db";
 
 export async function POST(request: NextRequest) {
   const requestId = newRequestId();
@@ -77,8 +83,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const raw = useLlm
-      ? await extractViaLlm(session.documents, session.userContext)
-      : extractFallback(session.documents, session.userContext);
+      ? await timeAsync("extract.extractViaLlm", () =>
+          extractViaLlm(session.documents, session.userContext)
+        )
+      : timeSync("extract.extractFallback", () =>
+          extractFallback(session.documents, session.userContext)
+        );
     const table = validateTable(raw);
     // Server/session boundary: verify every cited passage against the
     // session documents and canonicalize to verbatim source spans.
@@ -90,16 +100,20 @@ export async function POST(request: NextRequest) {
       const values = [];
       const groundingRationales: string[] = [];
       for (const value of row.values) {
-        const evidence = [];
+        const evidence: { documentId: string; page: number; quote: string }[] = [];
         for (const entry of value.evidence) {
-          const verified = verifyEvidenceCitation(session.documents, entry);
+          const verified = timeSync("extract.verifyEvidenceCitation", () =>
+            verifyEvidenceCitation(session.documents, entry)
+          );
           if (verified.ok) evidence.push({ ...entry, quote: verified.quote });
         }
         if (evidence.length === 0) continue;
-        const grounding = checkDisplayGrounding(
-          value.display,
-          row.factName,
-          evidence.map((e) => e.quote)
+        const grounding = timeSync("extract.checkDisplayGrounding", () =>
+          checkDisplayGrounding(
+            value.display,
+            row.factName,
+            evidence.map((e) => e.quote)
+          )
         );
         if (!grounding.supported && grounding.rationale) {
           groundingRationales.push(grounding.rationale);
@@ -126,12 +140,14 @@ export async function POST(request: NextRequest) {
       }
     }
     const verified: ComparisonTable = { ...table, rows: verifiedRows };
-    const contacts = extractContacts(
-      session.documents.map((d) => ({
-        documentId: d.documentId,
-        filename: d.filename,
-        pages: d.pages,
-      })),
+    const contacts = timeSync("extract.extractContacts", () =>
+      extractContacts(
+        session.documents.map((d) => ({
+          documentId: d.documentId,
+          filename: d.filename,
+          pages: d.pages,
+        }))
+      )
     );
     registerEvidence(session.sessionId, [
       ...verified.rows.flatMap((row) =>
@@ -143,8 +159,40 @@ export async function POST(request: NextRequest) {
         quote: c.quote,
       })),
     ]);
+    let presentationGroups = sanitizeGroups(null, verified.rows);
+    if (useLlm) {
+      try {
+        presentationGroups = await proposeGroups({
+          rows: verified.rows,
+          filenames: session.documents.map((document) => document.filename),
+          userContext: session.userContext,
+        });
+      } catch {
+        presentationGroups = sanitizeGroups(null, verified.rows);
+      }
+    }
+    try {
+      await timeAsync("extract.saveComparisonResult", () =>
+        saveComparisonResult({
+          sessionId: session.sessionId,
+          documentFingerprint: documentFingerprint(session.documents),
+          payload: {
+            schemaVersion: verified.schemaVersion,
+            factListVersion: verified.factListVersion,
+            documents: verified.documents,
+            rows: verified.rows,
+            presentationGroups,
+            contacts,
+            userContext: session.userContext,
+          },
+        })
+      );
+    } catch (err) {
+      logFailure(requestId, "extract.persist", err);
+    }
     return NextResponse.json({
       ...verified,
+      presentationGroups,
       rows: verified.rows.map((row) => ({
         ...row,
         values: row.values.map((value) => ({

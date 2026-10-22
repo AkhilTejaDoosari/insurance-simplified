@@ -46,7 +46,7 @@ export const REFUSAL_TEXT =
   "The uploaded documents contain no supporting evidence for this question.";
 
 const STOPWORDS = new Set(
-  "a,an,the,of,in,on,for,to,is,are,was,were,be,been,do,does,did,what,which,who,how,much,many,my,our,your,this,that,these,those,and,or,with,by,at,from,as,it,its,plan,coverage,cover,covered".split(",")
+  "a,an,the,of,in,on,for,to,is,are,was,were,be,been,do,does,did,what,which,who,how,much,many,my,our,your,this,that,these,those,and,or,with,by,at,from,as,it,its,plan,coverage,cover,covered,four,between,compare".split(",")
 );
 
 function tokens(text: string): Set<string> {
@@ -56,6 +56,7 @@ function tokens(text: string): Set<string> {
       .replace(/[^a-z0-9\s]/g, " ")
       .split(/\s+/)
       .filter((w) => w.length > 2 && !STOPWORDS.has(w))
+      .map((w) => w.endsWith("s") && w.length > 4 ? w.slice(0, -1) : w)
   );
 }
 
@@ -66,7 +67,11 @@ export interface RetrievedPassage {
   score: number;
 }
 
-/** Keyword-overlap retrieval over document lines. Zero overlap → no evidence. */
+/** Keyword-overlap retrieval over document lines. Zero overlap → no evidence.
+ *  Matched lines expand to a ±3-line window so adjacent context (table
+ *  headers, tier rows) travels with the hit; a document named by the
+ *  question keeps one identity passage containing its name. Windows are
+ *  contiguous in the source page, so quotes stay verbatim substrings. */
 export function retrieve(
   documents: RagDocument[],
   question: string,
@@ -74,20 +79,73 @@ export function retrieve(
 ): RetrievedPassage[] {
   const q = tokens(question);
   if (q.size === 0) return [];
-  const scored: RetrievedPassage[] = [];
-  for (const doc of documents) {
+  const namedTerms = documents.map((doc) => ({
+    doc,
+    terms: new Set([
+      ...tokens(doc.filename),
+      ...tokens(doc.filename.replace(/([a-z])([A-Z])/g, "$1 $2")),
+    ]),
+  }));
+  const namedDocuments = namedTerms
+    .filter(({ terms }) => [...terms].some((word) => word !== "pdf" && q.has(word)))
+    .map(({ doc }) => doc);
+  const searchDocuments = namedDocuments.length === 1 ? namedDocuments : documents;
+  const documentNames = new Set(namedTerms.flatMap(({ terms }) => [...terms]));
+  const topical = new Set([...q].filter((word) => !documentNames.has(word)));
+  const queryTerms = topical.size > 0 ? topical : q;
+  const candidates: { documentId: string; page: number; quote: string; terms: Set<string> }[] = [];
+  const pageLines = new Map<string, Map<number, string[]>>();
+  const frequency = new Map<string, number>();
+  for (const doc of searchDocuments) {
     doc.pages.forEach((pageText, i) => {
-      for (const line of pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean)) {
+      const lines = pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+      if (!pageLines.has(doc.documentId)) pageLines.set(doc.documentId, new Map());
+      pageLines.get(doc.documentId)!.set(i + 1, lines);
+      for (const line of lines) {
         const lt = tokens(line);
-        let overlap = 0;
-        for (const w of q) if (lt.has(w)) overlap++;
-        if (overlap > 0) {
-          scored.push({ documentId: doc.documentId, page: i + 1, quote: line, score: overlap });
-        }
+        candidates.push({ documentId: doc.documentId, page: i + 1, quote: line, terms: lt });
+        for (const word of queryTerms) if (lt.has(word)) frequency.set(word, (frequency.get(word) ?? 0) + 1);
       }
     });
   }
-  return scored.sort((a, b) => b.score - a.score).slice(0, maxPassages);
+  const scored: RetrievedPassage[] = candidates.flatMap(({ documentId, page, quote, terms }) => {
+    let score = 0;
+    for (const word of queryTerms) if (terms.has(word)) score += 1 / (frequency.get(word) ?? 1);
+    return score > 0 ? [{ documentId, page, quote, score }] : [];
+  });
+  const top = scored.sort((a, b) => b.score - a.score).slice(0, maxPassages);
+  const WINDOW = 3;
+  const result = top.map((p) => {
+    const lines = pageLines.get(p.documentId)?.get(p.page) ?? [];
+    const idx = lines.indexOf(p.quote);
+    if (idx < 0) return p;
+    const start = Math.max(0, idx - WINDOW);
+    const end = Math.min(lines.length, idx + WINDOW + 1);
+    const quote = lines.slice(start, end).join("\n");
+    return quote.length > p.quote.length ? { ...p, quote } : p;
+  });
+  // Identity guarantee: a document named by the question contributes one
+  // passage containing its name so answers can name the plan they compare.
+  // Supplements real retrieval only (scored.length > 0); it never rescues an
+  // empty result, so zero-overlap questions still refuse.
+  if (scored.length > 0) {
+    for (const { doc, terms } of namedTerms) {
+      const nameWords = [...terms].filter((w) => w !== "pdf");
+      if (!nameWords.some((w) => q.has(w))) continue;
+      let best: { page: number; line: string; count: number } | null = null;
+      for (const [page, lines] of pageLines.get(doc.documentId) ?? []) {
+        for (const line of lines) {
+          const lt = tokens(line);
+          const count = nameWords.filter((w) => lt.has(w)).length;
+          if (count > 0 && (!best || count > best.count)) best = { page, line, count };
+        }
+      }
+      if (best && !result.some((p) => p.documentId === doc.documentId && p.quote.includes(best!.line))) {
+        result.push({ documentId: doc.documentId, page: best.page, quote: best.line, score: 0 });
+      }
+    }
+  }
+  return result;
 }
 
 /** Convert line-overlap RetrievedPassage to RankedPassage for fusion. */
@@ -115,9 +173,13 @@ async function retrieveSemantic(
   if (!isEmbeddingConfigured()) return [];
   if (sessionId !== undefined) {
     try {
-      const persistent = await retrievePersistentSemantic(question, sessionId, 10);
+      const persistent = await retrievePersistentSemantic(question, sessionId, 16);
       if (persistent !== null) return persistent;
-    } catch {
+    } catch (e) {
+      if (process.env.NODE_ENV !== "test") {
+        const cls = e instanceof Error ? e.constructor.name : typeof e;
+        console.warn(`[chat-retrieval] persistent-error class=${cls}`);
+      }
       // Persistent error -> existing in-memory leg below, then lexical.
     }
   }
@@ -140,7 +202,7 @@ async function retrieveSemantic(
     });
   }
   const qVecs = await embedTexts([question]);
-  const results = index.search(qVecs[0], 10);
+  const results = index.search(qVecs[0], 16);
   return results;
 }
 
@@ -269,10 +331,27 @@ const CHAT_INSTRUCTIONS = [
   "Use ONLY the DOCUMENT blocks below. Every substantive claim MUST be backed by a cited passage.",
   'If nothing is relevant, return ONLY {"cantAnswer": true} with no other text.',
   "Otherwise return ONLY a JSON object: {\"answerText\": string, \"citations\": [{documentId, page, quote}]}.",
+  "ANSWER FORMATTING (required for verification):",
+  "- Each sentence of answerText MUST be composed ONLY of words that appear in the passages you cite for it. Copy the source wording near-verbatim; do not paraphrase or add connective words that are not in the source.",
+  "- Do not add meta commentary (e.g. \"According to the documents\", \"Based on the provided passages\").",
+  "- Each quote MUST be copied exactly (character-for-character) from a DOCUMENT block, including whitespace and line breaks as they appear. Preserve every punctuation mark exactly as written (commas, colons, semicolons, periods, dollar signs and digit groupings); when joining wrapped lines into one line, keep each comma and colon that was before the line break — never drop or add punctuation.",
+  "- Each DOCUMENT block has a name attribute (the uploaded filename). When the question names or compares plans or insurers, answerText MUST include a short label line for each plan discussed: write name wording from a cited passage (or the filename words separated by spaces) alone on its own line as a 2-3 word label, before any sentence about that plan's values; never combine a plan name with values in one sentence unless every word of that sentence appears in a single cited passage.",
+  "- Set cantAnswer ONLY when no DOCUMENT block contains any information relevant to the question. If any relevant passage exists, answer from it.",
 ].join("\n");
 
-/** Max characters for retrieved context in LLM prompt (budget enforcement). */
-export const MAX_CONTEXT_CHARS = 12000;
+/** Max characters for retrieved context in LLM prompt (budget enforcement).
+ *  Sized for retrieval topK=16 x 512-token semantic chunks of realistic dense
+ *  insurance text (~2400-2600 chars each, ~5 chars/token observed in real
+ *  SBCs), plus ~2k of prompt instructions. Budget, topK and
+ *  CHUNK_TARGET_TOKENS are coupled — see the guard test in
+ *  tests/unit/retrieval-prompt.test.ts; changing one requires re-checking the
+ *  others. Pathological ~4100-char chunks at topK=16 (~66k) exceed this
+ *  budget and would drop the whole lowest-ranked document block — that risk
+ *  is accepted for V1 (raised topK fixed missing rank-12 deductible-range
+ *  evidence); chunk-granular truncation is the future fix if it ever fires.
+ *  Under-budgeting still drops a whole document block (missing plan tiers) or
+ *  cuts a page tail (missing eligibility evidence). */
+export const MAX_CONTEXT_CHARS = 48000;
 
 /** Build LLM prompt from top-K retrieved chunks with budget enforcement.
  *  Truncates lowest-rank chunks first while keeping page tags intact. */
@@ -292,7 +371,7 @@ export function buildRetrievalPrompt(
   }
 
   // Build per-document context with page tags
-  const docBlocks: Array<{ documentId: string; pages: string[] }> = [];
+  const docBlocks: Array<{ documentId: string; filename: string; pages: string[] }> = [];
   let totalChars = 0;
 
   for (const { documentId, filename, passages: docPassages } of byDoc.values()) {
@@ -306,27 +385,25 @@ export function buildRetrievalPrompt(
       .sort(([a], [b]) => a - b)
       .map(([, text]) => text);
     const body = pages.join("\n\n");
-    const block = `<<<DOCUMENT id="${documentId}" >>>\n${body}\n>>>`;
+    const block = `<<<DOCUMENT id="${documentId}" name="${filename}" >>>\n${body}\n>>>`;
     if (totalChars + block.length > MAX_CONTEXT_CHARS && docBlocks.length > 0) {
       break; // budget exceeded, stop adding documents (lowest rank first)
     }
     totalChars += block.length;
-    docBlocks.push({ documentId, pages });
+    docBlocks.push({ documentId, filename, pages });
   }
 
   // If even the first document exceeds budget, truncate its content
   if (docBlocks.length === 1 && totalChars > MAX_CONTEXT_CHARS) {
     const first = docBlocks[0];
     const pages = first.pages.map((p) => p.substring(0, Math.max(1, MAX_CONTEXT_CHARS / first.pages.length)));
-    docBlocks[0] = { documentId: first.documentId, pages };
+    docBlocks[0] = { documentId: first.documentId, filename: first.filename, pages };
   }
 
   const blocks = docBlocks
-    .map(({ documentId, pages }) => {
-      const body = pages
-        .map((text, i) => `[Page ${i + 1}]\n${text}`)
-        .join("\n\n");
-      return `<<<DOCUMENT id="${documentId}" >>>\n${body}\n>>>`;
+    .map(({ documentId, filename, pages }) => {
+      const body = pages.join("\n\n");
+      return `<<<DOCUMENT id="${documentId}" name="${filename}" >>>\n${body}\n>>>`;
     })
     .join("\n\n");
 
@@ -361,29 +438,45 @@ export async function answerViaLlm(
   // unavailable/error/empty-config/empty/not-useful (below-floor similarity
   // with zero lexical overlap). Final empty -> refusal WITHOUT LLM call.
   let passages: RankedPassage[];
+  let leg = "lexical";
+  let legReason = "";
   if (!isEmbeddingConfigured()) {
     const lexical = retrieve(documents, question, 10).map(toRankedPassage);
     if (lexical.length === 0) {
+      console.warn(`[chat-refusal] stage=retrieval-empty reason=no-embeddings`);
       return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
     }
+    legReason = "no-embeddings";
     passages = lexical;
   } else {
     try {
       const semantic = await retrieveSemantic(documents, question, opts.sessionId);
       if (semantic.length > 0 && isSemanticUseful(documents, question, semantic)) {
+        leg = "semantic";
         passages = semantic;
       } else {
         const lexical = retrieve(documents, question, 10).map(toRankedPassage);
         if (lexical.length === 0) {
+          console.warn(`[chat-refusal] stage=retrieval-empty reason=semantic-not-useful+lexical-empty`);
           return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
         }
+        legReason = "semantic-not-useful";
         passages = lexical;
       }
-    } catch {
+    } catch (e) {
+      if (process.env.NODE_ENV !== "test") {
+        const cls = e instanceof Error ? e.constructor.name : typeof e;
+        const cause = e instanceof Error && e.cause ? (e.cause as { code?: unknown }) : undefined;
+        const rawCode = cause?.code ?? (e as { code?: unknown }).code;
+        const code = typeof rawCode === "string" ? ` code=${rawCode}` : "";
+        console.warn(`[chat-retrieval] semantic-error class=${cls}${code}`);
+      }
       const lexical = retrieve(documents, question, 10).map(toRankedPassage);
       if (lexical.length === 0) {
+        console.warn(`[chat-refusal] stage=retrieval-empty reason=semantic-error+lexical-empty`);
         return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
       }
+      legReason = "semantic-error";
       passages = lexical;
     }
   }
@@ -393,11 +486,31 @@ export async function answerViaLlm(
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
   }
 
+  if (process.env.NODE_ENV !== "test") {
+    const pages = [...new Set(passages.map((p) => p.page))].sort((a, b) => a - b);
+    const hay = passages.map((p) => p.quote.toLowerCase()).join("\n");
+    const probe = [
+      "elite",
+      "select",
+      "budget",
+      "smart",
+      "worldtrips",
+      "seven corners",
+      "deductible",
+      "5,000",
+      "opt",
+    ];
+    const present = probe.filter((t) => hay.includes(t));
+    console.warn(
+      `[chat-retrieval] leg=${leg}${legReason ? ` reason=${legReason}` : ""} passages=${passages.length} pages=${pages.join(",")} present=${present.join("|") || "none"}`
+    );
+  }
   // Build prompt from top-K retrieved chunks with budget enforcement
   const prompt = buildRetrievalPrompt(documents, passages, question);
   const raw = (await completeJson([{ role: "user", content: prompt }])) as Record<string, unknown>;
 
   if (raw.cantAnswer === true) {
+    console.warn(`[chat-refusal] stage=llm-cantAnswer`);
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
   }
 
@@ -422,6 +535,10 @@ export async function answerViaLlm(
   );
 
   if (!verification.ok) {
+    const failedCitation = /p(\d+)/.exec(verification.rationale ?? "");
+    console.warn(
+      `[chat-refusal] stage=verifyAnswerClaims category=${verification.rationale?.split(":")[0] ?? "unknown"} failedPage=${failedCitation?.[1] ?? "n/a"} citationCount=${answerResponse.citations.length}`
+    );
     // ANY failure -> fixed refusal. NO repair.
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
   }
@@ -450,14 +567,27 @@ export function validateChatResponse(payload: unknown): ChatResponse {
   }
   if (r.kind === "answer") {
     if (typeof r.answerText !== "string" || !r.answerText.trim()) {
-      throw new Error("Invalid chat response: answerText required");
+      throw new Error(`Invalid chat response: answerText required type=${typeof r.answerText}`);
     }
     if (!Array.isArray(r.citations) || r.citations.length === 0) {
       throw new Error("Invalid chat response: answers require >=1 citation (FR-012)");
     }
     for (const c of r.citations as Record<string, unknown>[]) {
-      if (typeof c.documentId !== "string" || typeof c.page !== "number" || c.page < 1 || typeof c.quote !== "string" || !c.quote.trim()) {
-        throw new Error("Invalid chat response: malformed citation");
+      if (typeof c !== "object" || c === null) {
+        throw new Error(`Invalid chat response: malformed citation entry type=${typeof c}`);
+      }
+      if (typeof c.documentId !== "string") {
+        throw new Error(`Invalid chat response: malformed citation field=documentId type=${typeof c.documentId}`);
+      }
+      // Coerce LLM numeric-string pages ("3") to integers; non-numeric strings still fail below.
+      if (typeof c.page === "string" && /^\d+$/.test(c.page.trim())) {
+        c.page = Number(c.page.trim());
+      }
+      if (typeof c.page !== "number" || c.page < 1) {
+        throw new Error(`Invalid chat response: malformed citation field=page type=${typeof c.page}`);
+      }
+      if (typeof c.quote !== "string" || !c.quote.trim()) {
+        throw new Error(`Invalid chat response: malformed citation field=quote type=${typeof c.quote}`);
       }
     }
     if (r.grounding !== undefined && r.grounding !== "explicit" && r.grounding !== "related" && r.grounding !== "needs-external") {

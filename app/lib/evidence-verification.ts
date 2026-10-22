@@ -324,16 +324,35 @@ export function verifyAnswerClaims(
   suppliedChunks: Array<{ documentId: string; page: number; quote: string }>,
   sessionDocuments: Array<{ documentId: string; pages: string[] }>
 ): VerifyClaimsResult {
-  // (b) Every emitted citation must occur in the SUPPLIED chunk context
+  // (b) Every emitted citation must occur in the SUPPLIED chunk context.
+  // Normalized containment within the SAME document + page: the LLM may
+  // reflow whitespace/line breaks from the prompt, so raw substring
+  // inclusion rejects valid quotes. Wrong page or other document still fails.
   for (const citation of citations) {
+    const normQuote = normalizeForClaim(citation.quote);
     const inSupplied = suppliedChunks.some(
       (c) =>
         c.documentId === citation.documentId &&
         c.page === citation.page &&
-        c.quote.includes(citation.quote)
+        normalizeForClaim(c.quote).includes(normQuote)
     );
     if (!inSupplied) {
-      return { ok: false, rationale: `Citation not in supplied context: ${citation.documentId} p${citation.page}` };
+      // Boolean-only diagnostics (no chunk text): where DID the quote appear?
+      const suppliedDoc = suppliedChunks.some(
+        (c) => c.documentId === citation.documentId && normalizeForClaim(c.quote).includes(normQuote)
+      );
+      const sourceDoc = (() => {
+        const doc = sessionDocuments.find((d) => d.documentId === citation.documentId);
+        if (!doc || !Number.isInteger(citation.page) || citation.page < 1 || citation.page > doc.pages.length) {
+          return false;
+        }
+        const pageText = doc.pages[citation.page - 1];
+        return typeof pageText === "string" && normalizeForClaim(pageText).includes(normQuote);
+      })();
+      return {
+        ok: false,
+        rationale: `Citation not in supplied context: ${citation.documentId} p${citation.page} suppliedDoc=${suppliedDoc} sourceDoc=${sourceDoc}`,
+      };
     }
   }
 
