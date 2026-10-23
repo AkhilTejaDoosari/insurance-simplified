@@ -4,8 +4,15 @@ import { completeJson } from "@/app/lib/llm/client";
 const ok = { choices: [{ message: { content: '{"answer":1}' } }] };
 const response = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers });
+const answer = {
+  answerText: "Covered.",
+  citations: [{ documentId: "doc-1", page: 1, quote: "Covered." }],
+};
+const completion = (payload: unknown) =>
+  response(200, { choices: [{ message: { content: JSON.stringify(payload) } }] });
+const envelope = (content: unknown) => ({ name: "answer", type: "json_object", content });
 
-describe("LLM client retries", () => {
+describe("LLM client responses and retries", () => {
   const env = { ...process.env };
   let fetchMock: ReturnType<typeof vi.fn>;
   beforeEach(() => {
@@ -37,5 +44,37 @@ describe("LLM client retries", () => {
     fetchMock.mockResolvedValue(response(401, { error: "bad key" }));
     await expect(completeJson([{ role: "user", content: "hi" }], "m", { baseDelayMs: 1 })).rejects.toThrow(/401/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves a standard JSON answer", async () => {
+    fetchMock.mockResolvedValue(completion(answer));
+    await expect(completeJson([{ role: "user", content: "hi" }], "m")).resolves.toEqual(answer);
+  });
+
+  it("preserves a standard refusal", async () => {
+    fetchMock.mockResolvedValue(completion({ cantAnswer: true }));
+    await expect(completeJson([{ role: "user", content: "hi" }], "m")).resolves.toEqual({ cantAnswer: true });
+  });
+
+  it("unwraps the exact provider answer envelope once", async () => {
+    fetchMock.mockResolvedValue(completion(envelope(JSON.stringify(answer))));
+    await expect(completeJson([{ role: "user", content: "hi" }], "m")).resolves.toEqual(answer);
+  });
+
+  it.each([
+    ["an unsupported name", { ...envelope(JSON.stringify(answer)), name: "other" }],
+    ["an unsupported type", { ...envelope(JSON.stringify(answer)), type: "text" }],
+    ["an extra field", { ...envelope(JSON.stringify(answer)), extra: true }],
+    ["missing content", { name: "answer", type: "json_object" }],
+    ["non-string content", envelope(answer)],
+    ["invalid inner JSON", envelope('{"answerText":')],
+    ["missing inner citations", envelope('{"answerText":"Covered."}')],
+    ["an empty inner citation list", envelope(JSON.stringify({ ...answer, citations: [] }))],
+    ["a malformed inner citation", envelope(JSON.stringify({ ...answer, citations: [{}] }))],
+    ["ambiguous inner fields", envelope(JSON.stringify({ ...answer, kind: "refusal" }))],
+    ["an excessively nested envelope", envelope(JSON.stringify(envelope(JSON.stringify(answer))))],
+  ])("rejects %s rather than passing an unsupported envelope through", async (_, payload) => {
+    fetchMock.mockResolvedValue(completion(payload));
+    await expect(completeJson([{ role: "user", content: "hi" }], "m")).rejects.toThrow();
   });
 });

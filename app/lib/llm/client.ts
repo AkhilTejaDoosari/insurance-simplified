@@ -59,5 +59,39 @@ export async function completeJson(
   };
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error("LLM returned no content");
-  return JSON.parse(content) as unknown;
+  const parsed: unknown = JSON.parse(content);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return parsed;
+
+  const envelopeFields = ["name", "type", "content"].filter((field) => field in parsed).length;
+  if (envelopeFields < 2) return parsed;
+  if (
+    Object.keys(parsed).length !== 3 ||
+    !("name" in parsed) || !("type" in parsed) || !("content" in parsed) ||
+    parsed.name !== "answer" ||
+    parsed.type !== "json_object" ||
+    typeof parsed.content !== "string"
+  ) {
+    throw new Error("Unsupported LLM response envelope");
+  }
+
+  const inner: unknown = JSON.parse(parsed.content);
+  if (
+    typeof inner !== "object" || inner === null || Array.isArray(inner) ||
+    Object.keys(inner).length !== 2 ||
+    !("answerText" in inner) || !("citations" in inner) ||
+    typeof inner.answerText !== "string" || !inner.answerText.trim() ||
+    !Array.isArray(inner.citations) || inner.citations.length === 0 ||
+    !inner.citations.every((citation: unknown) =>
+      typeof citation === "object" && citation !== null && !Array.isArray(citation) &&
+      "documentId" in citation && typeof citation.documentId === "string" &&
+      "page" in citation && (
+        typeof citation.page === "number" && citation.page >= 1 ||
+        typeof citation.page === "string" && /^\d+$/.test(citation.page.trim()) && Number(citation.page) >= 1
+      ) &&
+      "quote" in citation && typeof citation.quote === "string" && !!citation.quote.trim()
+    )
+  ) {
+    throw new Error("Invalid LLM response envelope content");
+  }
+  return inner;
 }
