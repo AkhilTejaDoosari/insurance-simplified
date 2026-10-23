@@ -35,9 +35,10 @@ psql "$SUPABASE_DB_URL" -f db/migrations/0002_object_key.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0003_rls.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0004_sessions.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0005_comparison_results.sql
+psql -v ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f db/migrations/0006_schema_migrations_lock.sql
 # 3. Verify:
 psql "$SUPABASE_DB_URL" -c "SELECT version FROM schema_migrations;"
-#    expect five rows: 0001_init, 0002_object_key, 0003_rls, 0004_sessions, 0005_comparison_results
+#    expect six rows: 0001_init, 0002_object_key, 0003_rls, 0004_sessions, 0005_comparison_results, 0006_schema_migrations_lock
 ```
 
 `db/schema.sql` is the canonical readable reference; `db/migrations/*.sql`
@@ -67,3 +68,7 @@ handles this automatically on next upsert).
 - `migrations/0005_comparison_results.sql` — additive comparison_results
   table (validated result payload + document fingerprint; server-only, no
   authenticated grants; `.down.sql` reverses it).
+- `migrations/0006_schema_migrations_lock.sql` — hardens `schema_migrations`:
+  RLS enabled with a service-role-only SELECT policy, and
+  `TRUNCATE/REFERENCES/TRIGGER` revoked from `anon`/`authenticated` on all
+  public tables (`.down.sql` reverses it; drops the recorded ledger row).

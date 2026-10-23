@@ -325,7 +325,7 @@ deletion is not immediate physical erasure.
 **Revisit when:** a scheduler/queue is approved, or results become
 user-owned (longer lifetime, authenticated identity).
 
-# D-026 — Verified schema_migrations exposure; 0006 remediation pending approval
+# D-026 — Verified schema_migrations exposure; 0006 remediation applied (dev DB)
 
 **Decision:** A direct-SQL + PostgREST audit (2026-10-22) of the development
 database confirmed `schema_migrations` has RLS disabled and is readable,
@@ -336,7 +336,8 @@ exist on all public tables but are not reachable via PostgREST verbs; the
 data plane (`documents/pages/chunks/sessions/comparison_results`) stays
 RLS-protected for those roles (anon reads verified empty).
 
-Smallest-safe remediation migration 0006 is DRAFTED and NOT APPLIED:
+Smallest-safe remediation migration 0006 was applied to the development
+database (2026-10-23, UTC) and verified in place:
 
 ```sql
 ALTER TABLE schema_migrations ENABLE ROW LEVEL SECURITY;
@@ -346,10 +347,16 @@ REVOKE TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public
   FROM anon, authenticated;
 ```
 
-Rollback (`0006_down`): disable RLS on `schema_migrations`, drop the
-service-SELECT policy, re-grant the three privileges. Impact: direct
-psql/postgres-role migration execution is unaffected (owner bypasses RLS);
-tmpdir/session runtime queries do not touch `schema_migrations`.
+Rollback (`0006_schema_migrations_lock.down.sql`): disable RLS on
+`schema_migrations`, drop the service-SELECT policy, re-grant the three
+privileges. Impact: direct psql/postgres-role migration execution is
+unaffected (owner bypasses RLS); tmpdir/session runtime queries do not touch
+`schema_migrations`.
 
-**Status:** BLOCKED — awaiting separate human approval before applying to
-any environment. Not part of the final V1 commit.
+**Status:** APPLIED to the development database (2026-10-23, UTC) under the
+owner's follow-on approval and verified there: RLS enforced, service-role-only
+SELECT policy, anon/authenticated row writes proven inert (RLS deny +
+privilege denial), revoked `TRUNCATE/REFERENCES/TRIGGER`, ledger intact
+(0001–0006). Not part of the V1 commit — the two 0006 files ship as their own
+dedicated local security-migration commit. No production rollout has been
+decided or performed.

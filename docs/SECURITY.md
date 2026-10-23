@@ -156,11 +156,15 @@ probes (capability proofs used zero-match operations; no data was mutated):
   supported access paths — the grant surface is still considered excessive.
 - `service_role` holds full privileges server-side only; the browser only
   ever receives publishable/anon keys.
-- A smallest-safe remediation migration (0006: enable RLS on
-  `schema_migrations`, scope its grants to `service_role`, revoke
-  `TRUNCATE, REFERENCES, TRIGGER` from `anon`/`authenticated`) is drafted and
-  **pending separate human approval**; the dev/minimal state above is the
-  pre-remediation baseline.
+- **Post-remediation state (2026-10-23, UTC):** migration
+  `0006_schema_migrations_lock.sql` applied to the development database and
+  verified: RLS enabled on `schema_migrations` (service-role-only SELECT
+  policy — owner/`postgres` ledger reads above still work), `TRUNCATE,
+  REFERENCES, TRIGGER` revoked from `anon`/`authenticated` on all public
+  tables, anon/authenticated row writes to `schema_migrations` proven inert
+  (RLS deny + privilege denial), and anon PostgREST reads of the ledger now
+  return `[]`. The audit findings above describe the pre-remediation baseline
+  they were originally verified against.
 
 ---
 
