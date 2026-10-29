@@ -7,6 +7,8 @@ A chatbot side panel answers questions with citations or explicitly refuses
 when no evidence exists. Sessions use server-local temporary storage and are
 deleted on close; saving means downloading an export file.
 
+> **Note:** The retrieval-augmented generation (RAG) implementation - page-preserving chunking, pgvector semantic retrieval, citation verification, and retrieval evaluation - currently lives on the [`feat/rag-core`](https://github.com/AkhilTejaDoosari/insurance-simplified/tree/feat/rag-core) branch and has not yet been merged into `main`. Browse that branch to review the RAG code behind the features described below.
+
 Governance: [.specify/memory/constitution.md](.specify/memory/constitution.md).
 Design docs: [specs/001-insurance-plan-comparison/](specs/001-insurance-plan-comparison/).
 
@@ -32,7 +34,7 @@ retrieval. To use an OpenAI-compatible LLM instead (separate extraction and
 chat paths are preserved either way):
 
 ```sh
-LLM_BASE_URL=https://… LLM_API_KEY=… LLM_MODEL=… npm run dev
+LLM_BASE_URL=https://… LLM_API_KEY=<redacted>
 ```
 
 `/api/extract` and `/api/chat` then use the LLM automatically (send
