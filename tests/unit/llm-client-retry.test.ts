@@ -10,6 +10,8 @@ const answer = {
 };
 const completion = (payload: unknown) =>
   response(200, { choices: [{ message: { content: JSON.stringify(payload) } }] });
+const contentCompletion = (content: string, finish_reason = "stop") =>
+  response(200, { choices: [{ message: { content }, finish_reason }] });
 const envelope = (content: unknown) => ({ name: "answer", type: "json_object", content });
 
 describe("LLM client responses and retries", () => {
@@ -32,6 +34,20 @@ describe("LLM client responses and retries", () => {
       .mockResolvedValueOnce(response(200, ok));
     await expect(completeJson([{ role: "user", content: "hi" }], "m", { baseDelayMs: 1 })).resolves.toEqual({ answer: 1 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("max_tokens");
+  });
+
+  it("allows a diagnostic to stop after one retryable failure", async () => {
+    fetchMock.mockResolvedValue(response(503, { error: "down" }));
+    await expect(completeJson([{ role: "user", content: "hi" }], "m", { maxAttempts: 1 }))
+      .rejects.toThrow(/503/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends a diagnostic output-token limit as max_tokens", async () => {
+    fetchMock.mockResolvedValue(completion(answer));
+    await completeJson([{ role: "user", content: "hi" }], "m", { maxTokens: 1234 });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ max_tokens: 1234 });
   });
 
   it("retries transient 5xx but gives up after the retry budget", async () => {
@@ -49,6 +65,31 @@ describe("LLM client responses and retries", () => {
   it("preserves a standard JSON answer", async () => {
     fetchMock.mockResolvedValue(completion(answer));
     await expect(completeJson([{ role: "user", content: "hi" }], "m")).resolves.toEqual(answer);
+  });
+
+  it("accepts one complete Markdown-fenced JSON object", async () => {
+    fetchMock.mockResolvedValue(contentCompletion(`\n\`\`\`json\n${JSON.stringify(answer)}\n\`\`\`\n`));
+    await expect(completeJson([{ role: "user", content: "hi" }], "m")).resolves.toEqual(answer);
+  });
+
+  it.each([
+    ["surrounding commentary", `Here is the result:\n\`\`\`json\n${JSON.stringify(answer)}\n\`\`\``],
+    ["a second fenced payload", `\`\`\`json\n${JSON.stringify(answer)}\n\`\`\`\n\`\`\`json\n{}\n\`\`\``],
+    ["a truncated fenced object", `\`\`\`json\n{"answerText":"Covered."\n\`\`\``],
+    ["a non-JSON fence", `\`\`\`text\n${JSON.stringify(answer)}\n\`\`\``],
+  ])("rejects fenced response with %s", async (_, content) => {
+    fetchMock.mockResolvedValue(contentCompletion(content));
+    await expect(completeJson([{ role: "user", content: "hi" }], "m")).rejects.toThrow();
+  });
+
+  it("reports provider-declared length termination as incomplete generation", async () => {
+    fetchMock.mockResolvedValue(contentCompletion('{"answerText":"Covered."', "length"));
+    await expect(completeJson([{ role: "user", content: "hi" }], "m")).rejects.toThrow(/incomplete generation/i);
+  });
+
+  it("classifies malformed JSON with a normal stop reason as malformed rather than truncated", async () => {
+    fetchMock.mockResolvedValue(contentCompletion('{"answerText":', "stop"));
+    await expect(completeJson([{ role: "user", content: "hi" }], "m")).rejects.toThrow(/malformed JSON/i);
   });
 
   it("preserves a standard refusal", async () => {

@@ -121,7 +121,7 @@ Comparison Session
     │
     ├── User Context
     │
-    ├── 1–4 Insurance Documents
+    ├── 1–5 Insurance Documents
     │       │
     │       ├── Pages
     │       └── Plans
@@ -381,7 +381,7 @@ Contact information is never invented, searched, or looked up externally.
 
 ## 4.18 Organization is derived, not insurance truth
 
-One PDF can be understood on its own or compared across its tiers. For 2–4
+One PDF can be understood on its own or compared across its tiers. For 2–5
 PDFs, comparable facts can be grouped across plans and tiers. AI-generated
 group labels and ordering refer only to stable, validated fact/evidence IDs.
 Unique supported features and missing/uncertain facts remain visible where

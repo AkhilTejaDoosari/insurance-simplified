@@ -34,7 +34,7 @@ for my situation and what documents I need to obtain before I can compare plans.
 
 The user opens Insurance Simplified when they:
 
-- have one insurance PDF they need to understand, or two to four PDFs they
+- have one insurance PDF they need to understand, or two to five PDFs they
   need to compare; OR
 - need insurance coverage but do not yet know what information or documents they
   should collect before evaluating plans.
@@ -47,7 +47,7 @@ The user opens Insurance Simplified when they:
 
 User provides:
 
-- 1–4 insurance PDFs
+- 1–5 insurance PDFs
 - relevant personal context needed for eligibility or comparison, such as:
   - age
   - country / residency
@@ -60,7 +60,7 @@ The product then helps the user:
 
 Understand → Compare when applicable → Check fit / eligibility → Ask questions
 → Verify evidence. One PDF receives a document-specific explanation and may
-compare tiers within that PDF; two to four PDFs receive a side-by-side comparison.
+compare tiers within that PDF; two to five PDFs receive a side-by-side comparison.
 
 ### Path B — I do not have plan documents yet
 
@@ -83,7 +83,7 @@ insurance plans in V1.
 
 ### Required for Path A
 
-- 1–4 PDF plan documents
+- 1–5 PDF plan documents
 - minimum personal context required for the requested comparison
 
 ### Required for Path B
@@ -115,7 +115,7 @@ The user receives:
 - understandable plan summaries;
 - a document-specific explanation for one PDF, with internal tier comparison
   where supported by evidence;
-- a compact side-by-side comparison of high-impact differences for 2–4 PDFs;
+- a compact side-by-side comparison of high-impact differences for 2–5 PDFs;
 - dynamically organized, document-specific groups of relevant facts;
 - eligibility / fit indicators supported by available evidence;
 - explicit unknown, conflicting, or insufficient-evidence states;
@@ -288,7 +288,7 @@ Preserving source provenance is more important than producing an answer.
 
 ### Small comparison set
 
-V1 accepts 1–4 user-provided documents at a time. A single document may
+V1 accepts 1–5 user-provided documents at a time. A single document may
 describe multiple plans or tiers; document identity is never assumed to be
 plan identity.
 

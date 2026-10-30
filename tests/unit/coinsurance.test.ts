@@ -114,6 +114,40 @@ describe("coinsurance extraction", () => {
     expect(row.values[0].display).not.toContain("You pay 100%");
   });
 
+  it("fallback leaves an unlabeled percentage triplet unresolved", () => {
+    const table = extractFallback(
+      [
+        {
+          documentId: "doc-1",
+          filename: "a.pdf",
+          pageCount: 1,
+          pages: ["You pay 100% / 90% / 100%."],
+        },
+      ],
+      {},
+    );
+    const row = table.rows.find((r) => r.factName === "coinsurance")!;
+    expect(row.verdict).toBe("NEEDS VERIFICATION");
+    expect(row.values[0].evidence[0].quote).toBe("You pay 100% / 90% / 100%.");
+  });
+
+  it("fallback keeps a network-labelled percentage pair supported", () => {
+    const table = extractFallback(
+      [
+        {
+          documentId: "doc-1",
+          filename: "a.pdf",
+          pageCount: 1,
+          pages: ["Coinsurance: you pay 10% for in-network and 20% for out-of-network care."],
+        },
+      ],
+      {},
+    );
+    const row = table.rows.find((r) => r.factName === "coinsurance")!;
+    expect(row.verdict).toBe("SUPPORTED");
+    expect(row.values[0].qualifiers.networkTier).toMatch(/in-network/i);
+  });
+
   it("LLM path rewrites displays through the same interpreter", async () => {
     mockedComplete.mockResolvedValue(
       payload([coinRow("90%", "Plan pays 90%, member pays 10% coinsurance.")]),

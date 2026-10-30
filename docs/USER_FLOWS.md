@@ -86,7 +86,7 @@ Insurance Simplified helps the user:
 
 ### I have my documents
 
-For a user who already has 1–4 insurance PDFs.
+For a user who already has 1–5 insurance PDFs.
 
 Leads to:
 
@@ -124,7 +124,7 @@ The user should not have to complete separate upload and profile pages.
 The user provides:
 
 - minimum 1 PDF document;
-- maximum 4 PDF documents.
+- maximum 5 PDF documents.
 
 Documents may represent different insurance products.
 
@@ -139,7 +139,7 @@ Tier discovery happens during processing.
 
 The user does not have to manually split a multi-tier source PDF. One PDF
 produces an evidence-cited understanding view, with tier comparison if present.
-Two to four PDFs produce an evidence-cited side-by-side comparison.
+Two to five PDFs produce an evidence-cited side-by-side comparison.
 
 ---
 
@@ -183,7 +183,7 @@ If a value cannot influence the V1 comparison, it should not be collected.
 
 Primary CTA:
 
-`Understand my document` for one PDF; `Compare my plans` for 2–4 PDFs.
+`Understand my document` for one PDF; `Compare my plans` for 2–5 PDFs.
 
 The action is available when the minimum required documents and core context are
 present.

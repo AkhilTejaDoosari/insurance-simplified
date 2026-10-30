@@ -4,65 +4,59 @@ import {
   ELIGIBILITY_ROW_NAME,
   NON_DISPLAY_FEEDERS,
 } from "@/app/lib/extraction/eligibility";
-import { groupRows, SECTIONS } from "@/app/lib/extraction/sections";
+import { groupRows, SECTIONS, sectionForFactName } from "@/app/lib/extraction/sections";
 import type { TableRow } from "@/app/lib/extraction/types";
 
 const row = (factName: string): TableRow => ({ factName, verdict: "NOT STATED", values: [] });
 
+const EXPECTED_SECTIONS = [
+  "My Fit",
+  "My Costs",
+  "Coverage",
+  "Limits & Risks",
+  "Evidence & Actions",
+];
+
 describe("comparison table sections", () => {
-  it("uses the four approved V1 section names with Essentials first", () => {
-    expect(SECTIONS.map((s) => s.title)).toEqual([
-      "Essentials",
-      "Care & Coverage",
-      "Rules & Restrictions",
-      "Plan Highlights",
-    ]);
+  it("uses the five approved V1.1 section names in order", () => {
+    expect(SECTIONS.map((s) => s.title)).toEqual(EXPECTED_SECTIONS);
   });
 
-  it("renders Essentials in the locked 8-row order", () => {
-    expect(SECTIONS[0].factNames).toEqual([
-      ELIGIBILITY_ROW_NAME,
-      "annual-deductible",
-      "out-of-pocket-maximum",
-      "network",
-      "coinsurance",
-      "policy-limit",
-      "premium",
-      "pre-existing-conditions",
-    ]);
+  it("maps the personalized eligibility composite to My Fit", () => {
+    const fitFacts = new Set(SECTIONS[0].factNames);
+    expect(fitFacts.has(ELIGIBILITY_ROW_NAME)).toBe(true);
   });
 
-  it("renders Care & Coverage in the locked 14-row parent order", () => {
-    expect(SECTIONS[1].factNames).toEqual([
-      "primary-care-visit",
-      "specialist-visit",
-      "urgent-care",
-      "emergency-care",
-      "hospitalization",
-      "surgery",
-      "prescriptions",
-      "mental-health",
-      "maternity-coverage",
-      "preventive-care",
-      "lab-and-imaging",
-      "ambulance",
-      "dental-coverage",
-      "vision-coverage",
-    ]);
+  it("maps monetary cost and high-impact condition facts to My Costs", () => {
+    const costFacts = new Set(SECTIONS[1].factNames);
+    expect(costFacts.has("annual-deductible")).toBe(true);
+    expect(costFacts.has("out-of-pocket-maximum")).toBe(true);
+    expect(costFacts.has("premium")).toBe(true);
+    expect(costFacts.has("coinsurance")).toBe(true);
+    expect(costFacts.has("network")).toBe(true);
+    expect(costFacts.has("policy-limit")).toBe(true);
+    expect(costFacts.has("pre-existing-conditions")).toBe(true);
   });
 
-  it("renders Rules & Restrictions in the locked 9-row order", () => {
-    expect(SECTIONS[2].factNames).toEqual([
-      "network-rules",
-      "preauthorization",
-      "referral-requirement",
-      "material-exclusions",
-      "waiting-period",
-      "geographic-restrictions",
-      "international-coverage",
-      "coverage-duration",
-      "age-limits",
-    ]);
+  it("maps service and benefit facts to Coverage", () => {
+    const coverageFacts = new Set(SECTIONS[2].factNames);
+    expect(coverageFacts.has("hospitalization")).toBe(true);
+    expect(coverageFacts.has("emergency-care")).toBe(true);
+    expect(coverageFacts.has("dental-coverage")).toBe(true);
+    expect(coverageFacts.has("emergency-evacuation")).toBe(true);
+  });
+
+  it("maps exclusions, limits, waiting, geography and authorization facts to Limits & Risks", () => {
+    const riskFacts = new Set(SECTIONS[3].factNames);
+    expect(riskFacts.has("material-exclusions")).toBe(true);
+    expect(riskFacts.has("waiting-period")).toBe(true);
+    expect(riskFacts.has("preauthorization")).toBe(true);
+    expect(riskFacts.has("geographic-restrictions")).toBe(true);
+    expect(riskFacts.has("age-limits")).toBe(true);
+  });
+
+  it("keeps Evidence & Actions as the destination for unclassified facts", () => {
+    expect(SECTIONS[4].title).toBe("Evidence & Actions");
   });
 
   it("gives every display fact exactly one canonical section with no duplicates", () => {
@@ -88,27 +82,28 @@ describe("comparison table sections", () => {
     expect(new Set(seen).size).toBe(seen.length);
   });
 
-  it("keeps Plan Highlights for genuinely unique facts only", () => {
-    const highlights = SECTIONS.find((s) => s.title === "Plan Highlights")!;
-    const others = new Set(
-      SECTIONS.filter((s) => s.title !== "Plan Highlights").flatMap((s) => s.factNames),
-    );
-    for (const n of highlights.factNames) {
-      expect(others.has(n)).toBe(false);
-    }
-  });
-
   it("orders rows by section then by the section's own order", () => {
     const rows = [row("annual-deductible"), row(ELIGIBILITY_ROW_NAME), row("emergency-care")];
     const groups = groupRows(rows);
-    expect(groups.map((g) => g.section.title)).toEqual(["Essentials", "Care & Coverage"]);
-    expect(groups[0].rows.map((r) => r.factName)).toEqual([ELIGIBILITY_ROW_NAME, "annual-deductible"]);
-    expect(groups[1].rows.map((r) => r.factName)).toEqual(["emergency-care"]);
+    expect(groups.map((g) => g.section.title)).toEqual(["My Fit", "My Costs", "Coverage"]);
+    expect(groups[0].rows.map((r) => r.factName)).toEqual([ELIGIBILITY_ROW_NAME]);
+    expect(groups[1].rows.map((r) => r.factName)).toEqual(["annual-deductible"]);
+    expect(groups[2].rows.map((r) => r.factName)).toEqual(["emergency-care"]);
   });
 
-  it("omits empty sections and keeps unknown facts in a trailing 'Other' group", () => {
+  it("places unknown facts in Evidence & Actions rather than discarding them", () => {
     const groups = groupRows([row("future-fact"), row("network")]);
-    expect(groups.map((g) => g.section.title)).toEqual(["Essentials", "Other"]);
-    expect(groups[1].rows[0].factName).toBe("future-fact");
+    expect(groups.map((g) => g.section.title)).toContain("Evidence & Actions");
+    const actionGroup = groups.find((g) => g.section.title === "Evidence & Actions");
+    expect(actionGroup?.rows[0].factName).toBe("future-fact");
+  });
+
+  it("exposes a section lookup for every assigned fact", () => {
+    expect(sectionForFactName(ELIGIBILITY_ROW_NAME)).toBe("My Fit");
+    expect(sectionForFactName("annual-deductible")).toBe("My Costs");
+    expect(sectionForFactName("hospitalization")).toBe("Coverage");
+    expect(sectionForFactName("material-exclusions")).toBe("Limits & Risks");
+    expect(sectionForFactName("referral-requirement")).toBe("Limits & Risks");
+    expect(sectionForFactName("unknown-fact")).toBe("Evidence & Actions");
   });
 });

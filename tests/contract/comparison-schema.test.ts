@@ -16,6 +16,75 @@ function base() {
 }
 
 describe("comparison-schema v1 contract", () => {
+  const proof = (documentId: string, name: string) => ({ documentId, page: 1, quote: `Policy name: ${name}` });
+
+  it("accepts the exact value identity, verdict, evidence, and plan sources shape", () => {
+    const table = {
+      ...base(),
+      plans: [{ planId: "alpha", name: "Alpha", sources: [proof("doc-1", "Alpha")] }],
+      rows: [{
+        factName: "emergency-copay",
+        verdict: "SUPPORTED",
+        values: [{
+          documentId: "doc-1",
+          display: "$100 copay, Self Only enrollment",
+          qualifiers: { conditions: "Self Only enrollment" },
+          evidence: [{ documentId: "doc-1", page: 1, quote: "Emergency copay $100 for Self Only enrollment." }],
+        }],
+      }],
+    };
+    expect(validateTable(table).plans?.[0].sources[0]).toEqual(proof("doc-1", "Alpha"));
+    expect(validateTable(table).rows[0].values[0].documentId).toBe("doc-1");
+  });
+
+  it("rejects outputs missing required verdict, value identity, or plan sources", () => {
+    const value = {
+      documentId: "doc-1", display: "$5", qualifiers: {},
+      evidence: [{ documentId: "doc-1", page: 1, quote: "Copay $5." }],
+    };
+    expect(() => validateTable({
+      ...base(), rows: [{ factName: "copay", values: [value] }],
+    })).toThrow(/verdict/i);
+    const missingValueId = { ...value } as Record<string, unknown>;
+    delete missingValueId.documentId;
+    expect(() => validateTable({
+      ...base(), rows: [{ factName: "copay", verdict: "SUPPORTED", values: [missingValueId] }],
+    })).toThrow(/unknown document/i);
+    expect(() => validateTable({
+      ...base(), plans: [{ planId: "alpha", name: "Alpha", evidence: [proof("doc-1", "Alpha")] }],
+    })).toThrow(/sources/i);
+  });
+
+  it("accepts two independently evidenced plans in one PDF and one plan evidenced by two PDFs", () => {
+    const twoPlans = { ...base(), plans: [
+      { planId: "plan-a", name: "Alpha", sources: [proof("doc-1", "Alpha")] },
+      { planId: "plan-b", name: "Beta", sources: [proof("doc-1", "Beta")] },
+    ] };
+    expect(validateTable(twoPlans).plans).toHaveLength(2);
+    const sharedProof = (documentId: string) => ({ documentId, page: 1, quote: "Policy name: Alpha; Policy ID: ABC-123; Issuer: Acme" });
+    const onePlan = { ...base(), plans: [{ planId: "shared", name: "Alpha", policyIdentifier: "ABC-123", issuer: "Acme", sources: [sharedProof("doc-1"), sharedProof("doc-2")] }] };
+    expect(validateTable(onePlan).plans?.[0].sources).toHaveLength(2);
+  });
+
+  it("leaves a legacy v1 result without plan identity unresolved", () => {
+    expect(validateTable(base()).plans).toBeUndefined();
+  });
+
+  it("rejects unsupported, duplicate or cross-document plan attribution", () => {
+    const plan = { planId: "shared", name: "Alpha", sources: [proof("doc-1", "Alpha")] };
+    expect(() => validateTable({ ...base(), plans: [{ ...plan, sources: [] }] })).toThrow(/sources/);
+    expect(() => validateTable({ ...base(), plans: [plan, plan] })).toThrow(/duplicate/);
+    expect(() => validateTable({ ...base(), plans: [{ ...plan, sources: [proof("doc-3", "Alpha")] }] })).toThrow(/unknown document/);
+    expect(() => validateTable({ ...base(), plans: [{ ...plan, sources: [proof("doc-1", "Different")] }] })).toThrow(/name/);
+    expect(() => validateTable({ ...base(), plans: [plan], rows: [{ factName: "x", verdict: "SUPPORTED", values: [{ documentId: "doc-2", planId: "shared", display: "$5", qualifiers: {}, evidence: [proof("doc-2", "Alpha")] }] }] })).toThrow(/plan source/);
+    expect(() => validateTable({ ...base(), plans: [{ ...plan, sources: [proof("doc-1", "Alpha"), proof("doc-2", "Alpha")] }] })).toThrow(/policy identifier/);
+    expect(() => validateTable({ ...base(), plans: [plan], rows: [{ factName: "premium", verdict: "SUPPORTED", values: [{ documentId: "doc-1", planId: "shared", display: "$5", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 2, quote: "Beta premium is $5" }] }] }] })).toThrow(/plan relationship/);
+    for (const quote of ["Alpha does not offer the $5 premium", "Alpha and Beta premium: $5", "Alpha premium compared to others is $5"]) {
+      expect(() => validateTable({ ...base(), plans: [plan], rows: [{ factName: "premium", verdict: "SUPPORTED", values: [{ documentId: "doc-1", planId: "shared", display: "$5", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 1, quote }] }] }] })).toThrow(/plan relationship/);
+    }
+    expect(validateTable({ ...base(), plans: [plan], rows: [{ factName: "premium", verdict: "SUPPORTED", values: [{ documentId: "doc-1", planId: "shared", display: "$5", qualifiers: {}, evidence: [{ documentId: "doc-1", page: 1, quote: "Plan name: Alpha; premium: $5" }] }] }] }).rows[0].values[0].planId).toBe("shared");
+    expect(() => validateTable({ ...base(), plans: [{ ...plan, policyIdentifier: "ABC-123", sources: [{ documentId: "doc-1", page: 1, quote: "Policy name: Alpha; Policy ID: ABC-123" }, { documentId: "doc-2", page: 1, quote: "Policy name: Alpha; Policy ID: ABC-123" }] }] })).toThrow(/issuer/);
+  });
   it("accepts SUPPORTED, CONFLICTED, and NOT STATED rows", () => {
     const table = {
       ...base(),
@@ -28,7 +97,7 @@ describe("comparison-schema v1 contract", () => {
               documentId: "doc-1",
               display: "$250 in-network / $500 out-of-network",
               qualifiers: { networkTier: "in-network / out-of-network" },
-              evidence: [{ documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network." }],
+               evidence: [{ documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network / $500 out-of-network." }],
             },
           ],
         },

@@ -13,7 +13,7 @@ const mockedComplete = vi.mocked(completeJson);
 const doc = (pages: string[]) => ({
   documentId: "doc-1",
   filename: "a.pdf",
-  pageCount: 1,
+  pageCount: pages.length,
   pages,
 });
 

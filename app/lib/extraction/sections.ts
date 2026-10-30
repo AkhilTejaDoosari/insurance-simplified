@@ -1,5 +1,6 @@
 // Presentation grouping for the comparison table. Sections slice the fact
-// rows into four stacked groups; the plan columns are identical in each.
+// rows into at most five stable top-level navigation containers;
+// document-specific AI-discovered groups are nested subgroups within them.
 // Fact names must match app/lib/extraction/fact-list.ts (tested).
 
 import type { TableRow } from "@/app/lib/extraction/types";
@@ -12,25 +13,40 @@ export interface Section {
   factNames: string[];
 }
 
+export type SectionTitle =
+  | "My Fit"
+  | "My Costs"
+  | "Coverage"
+  | "Limits & Risks"
+  | "Evidence & Actions";
+
 export const SECTIONS: Section[] = [
   {
-    title: "Essentials",
+    title: "My Fit",
     description:
-      "The costs and conditions that decide whether a plan works for you at all.",
+      "Can this coverage apply to you? Eligibility, age, residency, location, visa/status, dates and personal conflicts.",
     factNames: [
       ELIGIBILITY_ROW_NAME,
+    ],
+  },
+  {
+    title: "My Costs",
+    description:
+      "What you might pay: premium, deductible, copay, coinsurance, out-of-pocket maximum, policy limit and conditional costs.",
+    factNames: [
       "annual-deductible",
       "out-of-pocket-maximum",
-      "network",
-      "coinsurance",
-      "policy-limit",
       "premium",
+      "coinsurance",
+      "network",
+      "policy-limit",
       "pre-existing-conditions",
     ],
   },
   {
-    title: "Care & Coverage",
-    description: "What each plan pays for when you actually need care.",
+    title: "Coverage",
+    description:
+      "What services are included: hospitalization, emergency care, dental, treatment and specialized benefits.",
     factNames: [
       "primary-care-visit",
       "specialist-visit",
@@ -46,29 +62,6 @@ export const SECTIONS: Section[] = [
       "ambulance",
       "dental-coverage",
       "vision-coverage",
-    ],
-  },
-  {
-    title: "Rules & Restrictions",
-    description:
-      "What conditions could prevent you from using the coverage the way you expect.",
-    factNames: [
-      "network-rules",
-      "preauthorization",
-      "referral-requirement",
-      "material-exclusions",
-      "waiting-period",
-      "geographic-restrictions",
-      "international-coverage",
-      "coverage-duration",
-      "age-limits",
-    ],
-  },
-  {
-    title: "Plan Highlights",
-    description:
-      "What is unusual or unique about this plan that does not belong in the main comparison.",
-    factNames: [
       "emergency-evacuation",
       "repatriation",
       "political-evacuation",
@@ -85,13 +78,40 @@ export const SECTIONS: Section[] = [
       "student-health-center",
     ],
   },
+  {
+    title: "Limits & Risks",
+    description:
+      "What could restrict coverage: exclusions, waiting periods, policy limits, sublimits and geographical restrictions.",
+    factNames: [
+      "network-rules",
+      "preauthorization",
+      "referral-requirement",
+      "material-exclusions",
+      "waiting-period",
+      "coverage-duration",
+      "age-limits",
+      "geographic-restrictions",
+      "international-coverage",
+    ],
+  },
+  {
+    title: "Evidence & Actions",
+    description:
+      "What is confirmed and what you must verify: sources, contradictions, unknowns, contacts and insurer questions.",
+    factNames: [],
+  },
 ];
 
-export const OTHER: Section = {
-  title: "Other",
-  description: "Facts not covered by the groups above.",
-  factNames: [],
-};
+const SECTION_BY_FACT = new Map<string, string>();
+for (const section of SECTIONS) {
+  for (const name of section.factNames) {
+    SECTION_BY_FACT.set(name, section.title);
+  }
+}
+
+export function sectionForFactName(factName: string): string {
+  return SECTION_BY_FACT.get(factName) ?? "Evidence & Actions";
+}
 
 export interface SectionGroup<R extends TableRow = TableRow> {
   section: Section;
@@ -101,7 +121,8 @@ export interface SectionGroup<R extends TableRow = TableRow> {
 /** Split rows into sections in display order; empty sections are dropped.
  *  Generic over the row type so enriched (registered) tables keep their
  *  evidence IDs. Each fact has exactly one canonical section. Eligibility
- *  evidence feeders never render as own rows; only the composite does. */
+ *  evidence feeders never render as own rows; only the composite does.
+ *  Unknown facts are placed in Evidence & Actions, never discarded. */
 export function groupRows<R extends TableRow>(rows: R[]): SectionGroup<R>[] {
   const byName = new Map(rows.map((r) => [r.factName, r]));
   for (const feeder of NON_DISPLAY_FEEDERS) byName.delete(feeder);
@@ -115,6 +136,9 @@ export function groupRows<R extends TableRow>(rows: R[]): SectionGroup<R>[] {
     });
     if (matched.length > 0) groups.push({ section, rows: matched });
   }
-  if (byName.size > 0) groups.push({ section: OTHER, rows: [...byName.values()] });
+  if (byName.size > 0) {
+    const actionSection = SECTIONS.find((s) => s.title === "Evidence & Actions")!;
+    groups.push({ section: actionSection, rows: [...byName.values()] });
+  }
   return groups;
 }

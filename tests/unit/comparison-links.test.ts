@@ -7,7 +7,6 @@ import { describe, expect, it } from "vitest";
 
 import ComparisonTable from "@/app/components/ComparisonTable";
 import { documentUrl } from "@/app/lib/document-url";
-import { getPlanDisplayName } from "@/app/lib/extraction/plan-names";
 import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import type { RegisteredCellValue, RegisteredComparisonTable as Table } from "@/app/lib/extraction/types";
 
@@ -69,8 +68,10 @@ function html(): string {
   return renderToStaticMarkup(createElement(ComparisonTable, { table: TABLE, sessionId: "sess-1" }));
 }
 
-const planA = getPlanDisplayName({ filename: "plan-a.pdf" }).name;
-const brochure = getPlanDisplayName({ filename: "brochure.pdf" }).name;
+// Citation links carry the document's own filename, not a plan title —
+// filenames stay document/evidence metadata (plan-names.ts).
+const planA = "plan-a.pdf";
+const brochure = "brochure.pdf";
 
 function hrefAttr(url: string): string {
   return `href="${url.replace(/&/g, "&amp;")}"`;

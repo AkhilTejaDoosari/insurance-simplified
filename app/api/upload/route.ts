@@ -1,5 +1,5 @@
 // PDF intake + validation (FR-001, FR-018, FR-019).
-// Accepts 2–4 English PDFs per set; rejects anything else per-file with a
+// Accepts 1–5 English PDFs per set; rejects anything else per-file with a
 // stated reason. Creates a durable session in the database with a high-entropy
 // capability cookie (see app/lib/session-db.ts, app/lib/session-auth.ts).
 
@@ -35,7 +35,7 @@ import { errorResponse, newRequestId } from "@/app/lib/api-errors";
 import { recordTiming, timeAsync, timeSync } from "@/app/lib/observability/timing";
 
 const MIN_FILES = 1;
-const MAX_FILES = 4;
+const MAX_FILES = 5;
 
 const CONTEXT_FIELDS = [
   "age",
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
   if (files.length < MIN_FILES || files.length > MAX_FILES) {
     return errorResponse("VALIDATION_ERROR", 400, {
       requestId,
-      message: `Upload 1–4 PDF documents (received ${files.length}).`,
+      message: `Upload 1–5 PDF documents (received ${files.length}).`,
     });
   }
 
@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
   for (const [documentId, bytes] of rawFiles) {
     try {
       const metadata = await timeAsync("upload.putDocumentBytes", () =>
-        putDocumentBytes(bytes, store));
+        putDocumentBytes(bytes, session.sessionId, documentId, store));
       attachDocumentObjectMetadata(session.sessionId, documentId, metadata);
     } catch (err) {
       console.error("[UPLOAD] putDocumentBytes failed:", documentId, err);

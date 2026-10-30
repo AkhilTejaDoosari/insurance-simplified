@@ -269,7 +269,7 @@ Minimum smoke:
 ```text
 1. Welcome loads
 2. Create anonymous session
-3. Upload 1–4 PDFs through target upload path; verify one-PDF explanation and 2–4-PDF comparison
+3. Upload 1–5 PDFs through target upload path; verify one-PDF explanation and 2–5-PDF comparison
 4. Core context accepted
 5. Compare reaches READY/PARTIAL honestly
 6. Results workspace loads from durable state

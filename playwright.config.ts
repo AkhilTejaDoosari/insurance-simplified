@@ -6,6 +6,10 @@ const E2E_BASE_URL = `http://127.0.0.1:${E2E_PORT}`;
 export default defineConfig({
   testDir: "tests/e2e",
   fullyParallel: true,
+  // The suite shares one Next.js dev server and process-local test sessions.
+  // A bounded two-worker pool keeps PDF.js rendering and session-scoped uploads
+  // parallel without starving unrelated assertions on lower-resource hosts.
+  workers: 2,
   reporter: "list",
   use: {
     baseURL: E2E_BASE_URL,

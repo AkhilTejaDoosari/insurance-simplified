@@ -32,7 +32,7 @@ export interface VerifyItem {
 }
 
 const CORE_FACTS: ReadonlySet<string> = new Set(
-  SECTIONS.find((s) => s.title === "Essentials")?.factNames ?? [],
+  SECTIONS.find((s) => s.title === "My Costs")?.factNames ?? [],
 );
 
 const SECTION_PRIORITY: Record<string, number> = Object.fromEntries(
@@ -49,7 +49,7 @@ function factSection(factName: string): string {
   for (const s of SECTIONS) {
     if (s.factNames.includes(factName)) return s.title;
   }
-  return "Other";
+  return "Evidence & Actions";
 }
 
 export function verifyLabelFor(factName: string): string {

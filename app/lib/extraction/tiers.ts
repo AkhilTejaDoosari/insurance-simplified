@@ -24,9 +24,13 @@ export function documentTiers(table: ComparisonTable): Map<string, string[]> {
 /** A document's values for one cell. With a tier, values tagged for that tier
  *  plus untagged values (which apply to the whole document). Generic over
  *  the value type so enriched (registered) tables keep their evidence IDs. */
-export function cellValues<T extends CellValue>(values: T[], documentId: string, tier?: string): T[] {
+export function cellValues<T extends CellValue>(values: T[], documentId: string, tier?: string, planId?: string): T[] {
   return values.filter((v) => {
     if (v.documentId !== documentId) return false;
+    // A document may describe several plans. Only values with an attested
+    // relationship to this plan may enter its selected view; unscoped values
+    // remain available at document scope, not silently shared with all plans.
+    if (planId && v.planId !== planId) return false;
     if (!tier) return true;
     const own = v.qualifiers.planTier?.trim();
     return !own || key(own) === key(tier);

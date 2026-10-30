@@ -36,6 +36,8 @@ export default function PdfEvidenceViewer({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [rects, setRects] = useState<{ x: number; y: number; width: number; height: number }[]>([]);
+  const evidenceState =
+    status.kind === "ready" ? status.match : status.kind;
 
   useEffect(() => {
     let cancelled = false;
@@ -153,7 +155,12 @@ export default function PdfEvidenceViewer({
 
   if (status.kind === "failed") {
     return (
-      <div className="stack">
+      <div
+        className="stack"
+        data-testid="pdf-evidence-viewer"
+        data-evidence-state={evidenceState}
+        aria-busy={false}
+      >
         <p className="text-muted" role="note">
           {status.reason === "password"
             ? "This document requires a password, so the cited page cannot be rendered here."
@@ -170,7 +177,12 @@ export default function PdfEvidenceViewer({
   }
 
   return (
-    <div className="stack">
+    <div
+      className="stack"
+      data-testid="pdf-evidence-viewer"
+      data-evidence-state={evidenceState}
+      aria-busy={status.kind === "loading"}
+    >
       <div ref={containerRef} style={{ position: "relative", width: "100%" }}>
         <canvas ref={canvasRef} aria-label={`Source page ${page}`} />
         {rects.map((r, i) => (

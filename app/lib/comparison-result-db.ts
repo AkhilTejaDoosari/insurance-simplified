@@ -21,6 +21,12 @@ import {
   type SessionDbConfig,
 } from "@/app/lib/session-db";
 import type { SessionDocument } from "@/app/lib/session";
+import type {
+  ComparisonTable,
+  ProvenPlan,
+  RegisteredComparisonTable,
+} from "@/app/lib/extraction/types";
+import { withEvidenceId } from "@/app/lib/evidence-ids";
 
 export const COMPARISON_RESULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -31,10 +37,15 @@ export interface PersistedComparisonResultPayload {
   schemaVersion: string;
   factListVersion: string;
   documents: { documentId: string; filename: string; pageCount: number }[];
+  plans?: ProvenPlan[];
   rows: unknown[];
   presentationGroups?: unknown[];
   contacts?: unknown[];
   userContext: Record<string, string>;
+  /** Opaque validated-result fingerprint handed back to the client; chat and
+   *  export validate the client's selection against it (M5 tasks 17/19).
+   *  Additive field on the existing JSON payload — no schema migration. */
+  resultFingerprint?: string;
 }
 
 export interface ComparisonResultRecord {
@@ -84,6 +95,30 @@ export function documentFingerprint(
         createHash("sha256").update(d.pages.join("\u0000"), "utf8").digest("hex"),
     }));
   return createHash("sha256").update(JSON.stringify(canonical), "utf8").digest("hex");
+}
+
+/** Shared reader of the persisted payload as the validated comparison table
+ *  (M5: chat scope validation and the export snapshot must consume the SAME
+ *  stored result — no competing reconstruction of validated facts). */
+export function comparisonTableFromPayload(
+  record: ComparisonResultRecord,
+): RegisteredComparisonTable {
+  const payload = record.payload;
+  return {
+    schemaVersion: payload.schemaVersion as "v1",
+    factListVersion: payload.factListVersion,
+    documents: payload.documents,
+    ...(payload.resultFingerprint ? { resultFingerprint: payload.resultFingerprint } : {}),
+    ...(payload.plans ? { plans: payload.plans } : {}),
+    presentationGroups: (payload.presentationGroups ?? []) as RegisteredComparisonTable["presentationGroups"],
+    rows: (payload.rows as ComparisonTable["rows"]).map((row) => ({
+      ...row,
+      values: row.values.map((value) => ({
+        ...value,
+        evidence: value.evidence.map((e) => withEvidenceId(e)),
+      })),
+    })),
+  };
 }
 
 function resolveConfig(): SessionDbConfig | null {

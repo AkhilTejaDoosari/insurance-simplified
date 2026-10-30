@@ -69,6 +69,7 @@ vi.mock("@/app/lib/rag/persist-session", () => ({
 }));
 
 import { POST } from "@/app/api/upload/route";
+import { createSessionDb } from "@/app/lib/session-db";
 import {
   deleteSession,
   getSession,
@@ -131,17 +132,19 @@ describe("POST /api/upload durable path — temporary session capability", () =>
     expect(body.documents).toEqual([{ documentId: "doc-1", filename: "plan-0.pdf", pageCount: 1 }]);
   });
 
-  it("accepts four documents at the upper count boundary", async () => {
-    const res = await POST(uploadRequest(4));
+  it("accepts five documents at the upper count boundary", async () => {
+    const res = await POST(uploadRequest(5));
     expect(res.status).toBe(201);
     const body = (await res.json()) as { documents: { documentId: string }[] };
-    expect(body.documents).toHaveLength(4);
+    expect(body.documents).toHaveLength(5);
   });
 
-  it("rejects zero and five documents before creating a session", async () => {
-    for (const count of [0, 5]) {
+  it("rejects zero and six documents before creating a session", async () => {
+    vi.mocked(createSessionDb).mockClear();
+    for (const count of [0, 6]) {
       const res = await POST(uploadRequest(count));
       expect(res.status).toBe(400);
     }
+    expect(createSessionDb).not.toHaveBeenCalled();
   });
 });

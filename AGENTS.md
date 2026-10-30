@@ -103,8 +103,8 @@ Preserve:
 ```text
 Welcome → Intake → Results Workspace
 
-1–4 user documents: one PDF explains its terms and may compare tiers;
-2–4 PDFs compare plans and tiers
+1–5 user documents: one PDF explains its terms and may compare tiers;
+2–5 PDFs compare plans and tiers
 
 no-document path = checklist/guidance, not plan discovery
 
@@ -131,8 +131,9 @@ no automatic plan winner required
 ```
 
 The previous 2–4 minimum and mandatory four-section layout were superseded
-by the owner's approved V1 product revision. Phase P1 implements the one-PDF
-path; Phase P2 (dynamic grouping) requires separate phase approval.
+by the owner's approved V1 product revision. The owner has since approved a
+maximum of five PDFs per session. Phase P1 implements the one-PDF path; Phase
+P2 (dynamic grouping) requires separate phase approval.
 
 ---
 

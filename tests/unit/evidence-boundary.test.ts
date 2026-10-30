@@ -50,7 +50,7 @@ function value(documentId: string, display: string, withEvidence: boolean) {
 describe("extractViaLlm evidence boundary (principle IV)", () => {
   beforeEach(() => vi.resetAllMocks());
 
-  it("drops the evidence-less value and validates the row on the surviving value", async () => {
+  it("quarantines an evidence-less candidate without claiming absence", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockedComplete.mockResolvedValue(
       payload([
@@ -66,10 +66,9 @@ describe("extractViaLlm evidence boundary (principle IV)", () => {
     const row = table.rows.find((r) => r.factName === "emergency-copay");
     expect(row?.values).toHaveLength(1);
     expect(row?.values[0].documentId).toBe("doc-1");
-    // One value left → the model's CONFLICTED no longer holds either.
-    expect(row?.verdict).toBe("SUPPORTED");
-    expect(warn.mock.calls[0][0]).toContain("emergency-copay");
-    expect(warn.mock.calls[0][0]).toContain("doc-2");
+    expect(row?.verdict).toBe("NEEDS VERIFICATION");
+    expect(row?.rationale).toContain("MISSING_VALUE_EVIDENCE");
+    expect(warn.mock.calls[0][0]).toContain("MISSING_VALUE_EVIDENCE");
     warn.mockRestore();
   });
 
@@ -80,7 +79,7 @@ describe("extractViaLlm evidence boundary (principle IV)", () => {
     await expect(extractViaLlm(DOCS, {})).rejects.toThrow();
   });
 
-  it("flips a row with no surviving values to NOT STATED instead of failing", async () => {
+  it("keeps a row with only rejected values unresolved rather than NOT STATED", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockedComplete.mockResolvedValue(
       payload([
@@ -94,12 +93,13 @@ describe("extractViaLlm evidence boundary (principle IV)", () => {
 
     const table = await extractViaLlm(DOCS, {});
     const row = table.rows.find((r) => r.factName === "out-of-pocket-maximum");
-    expect(row?.verdict).toBe("NOT STATED");
+    expect(row?.verdict).toBe("NEEDS VERIFICATION");
+    expect(row?.rationale).toContain("MISSING_VALUE_EVIDENCE");
     expect(row?.values).toEqual([]);
     warn.mockRestore();
   });
 
-  it("drops a value whose citation points at a different document, keeping the row", async () => {
+  it("quarantines a value whose citation points at a different document", async () => {
     const misCited = {
       ...value("doc-2", "$250", true),
       evidence: [{ documentId: "doc-1", page: 1, quote: "Emergency copay $100." }],
@@ -115,12 +115,11 @@ describe("extractViaLlm evidence boundary (principle IV)", () => {
     );
     const table = await extractViaLlm(DOCS, {});
     expect(table.rows[0].values.map((v) => v.documentId)).toEqual(["doc-1"]);
-    // One surviving value from one document is comparison data, not a
-    // same-document/same-scope contradiction.
-    expect(table.rows[0].verdict).toBe("SUPPORTED");
+    expect(table.rows[0].verdict).toBe("NEEDS VERIFICATION");
+    expect(table.rows[0].rationale).toContain("VALUE_DOCUMENT_ID_MISMATCH");
   });
 
-  it("keeps only the matching citations when a value mixes documents", async () => {
+  it("rejects the whole candidate when its citations mix document identities", async () => {
     const mixed = {
       ...value("doc-2", "$250", true),
       evidence: [
@@ -132,8 +131,8 @@ describe("extractViaLlm evidence boundary (principle IV)", () => {
       payload([{ factName: "emergency-copay", verdict: "SUPPORTED", values: [mixed] }]),
     );
     const table = await extractViaLlm(DOCS, {});
-    expect(table.rows[0].values[0].evidence).toEqual([
-      { documentId: "doc-2", page: 1, quote: "Emergency copay $250." },
-    ]);
+    expect(table.rows[0].values).toEqual([]);
+    expect(table.rows[0].verdict).toBe("NEEDS VERIFICATION");
+    expect(table.rows[0].rationale).toContain("VALUE_DOCUMENT_ID_MISMATCH");
   });
 });

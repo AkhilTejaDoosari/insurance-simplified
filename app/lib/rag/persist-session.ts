@@ -52,7 +52,10 @@ export function isDurableConfigured(): boolean {
   return isPostgresConfigured() && isSupabaseStorageConfigured();
 }
 
-export function durableDocumentId(sessionId: string, documentId: string): string {
+export function durableDocumentId(
+  sessionId: string,
+  documentId: string,
+): string {
   const scope = requireScopeId(sessionId, "durableDocumentId");
   if (!/^[A-Za-z0-9][A-Za-z0-9-_]{0,127}$/.test(documentId)) {
     throw new PersistenceError("ids", "invalid documentId", documentId);
@@ -62,7 +65,9 @@ export function durableDocumentId(sessionId: string, documentId: string): string
 
 export function shortDocumentId(sessionId: string, durableId: string): string {
   const prefix = `${requireScopeId(sessionId, "shortDocumentId")}--`;
-  return durableId.startsWith(prefix) ? durableId.slice(prefix.length) : durableId;
+  return durableId.startsWith(prefix)
+    ? durableId.slice(prefix.length)
+    : durableId;
 }
 
 function restHeaders(serviceKey: string): Record<string, string> {
@@ -75,21 +80,37 @@ function restHeaders(serviceKey: string): Record<string, string> {
 
 async function restPostgrest(path: string, init: RequestInit): Promise<void> {
   const config = resolvePostgresConfig();
-  if (!config) throw new PersistenceError("config", "Supabase persistence is not configured");
+  if (!config)
+    throw new PersistenceError(
+      "config",
+      "Supabase persistence is not configured",
+    );
   const res = await fetch(`${config.url}${path}`, {
     ...init,
-    headers: { ...restHeaders(config.serviceKey), ...((init.headers ?? {}) as Record<string, string>) },
+    headers: {
+      ...restHeaders(config.serviceKey),
+      ...((init.headers ?? {}) as Record<string, string>),
+    },
   });
   if (!res.ok) {
-    throw new PersistenceError("postgrest", `${init.method ?? "GET"} ${path} failed with status ${res.status}`);
+    throw new PersistenceError(
+      "postgrest",
+      `${init.method ?? "GET"} ${path} failed with status ${res.status}`,
+    );
   }
 }
 
-async function rollbackDocument(durableId: string, objectKey: string | null): Promise<void> {
+async function rollbackDocument(
+  durableId: string,
+  objectKey: string | null,
+): Promise<void> {
   try {
-    await restPostgrest(`/rest/v1/documents?id=eq.${encodeURIComponent(durableId)}`, {
-      method: "DELETE",
-    });
+    await restPostgrest(
+      `/rest/v1/documents?id=eq.${encodeURIComponent(durableId)}`,
+      {
+        method: "DELETE",
+      },
+    );
   } catch {
     // Rollback is best-effort; the original error below is what matters.
   }
@@ -108,7 +129,10 @@ export async function persistSessionUpload(
 ): Promise<PersistedDocumentMeta[]> {
   const scope = requireScopeId(sessionId, "persistSessionUpload");
   if (!isDurableConfigured()) {
-    throw new PersistenceError("config", "durable persistence is not configured");
+    throw new PersistenceError(
+      "config",
+      "durable persistence is not configured",
+    );
   }
   const embedConfigured = isEmbeddingConfigured();
   const out: PersistedDocumentMeta[] = [];
@@ -116,7 +140,7 @@ export async function persistSessionUpload(
     const durableId = durableDocumentId(scope, doc.documentId);
     let objectKey: string | null = null;
     try {
-      const stored = await putDocumentBytes(doc.bytes, getDefaultObjectStore());
+      const stored = await putDocumentBytes(doc.bytes, scope, doc.documentId, getDefaultObjectStore());
       objectKey = stored.objectKey;
       await restPostgrest("/rest/v1/documents", {
         method: "POST",
@@ -172,7 +196,11 @@ export async function persistSessionUpload(
           })),
         ),
       });
-      out.push({ documentId: doc.documentId, sha256: stored.sha256, objectKey: stored.objectKey });
+      out.push({
+        documentId: doc.documentId,
+        sha256: stored.sha256,
+        objectKey: stored.objectKey,
+      });
     } catch (err) {
       await rollbackDocument(durableId, objectKey);
       if (err instanceof PersistenceError) throw err;
@@ -190,13 +218,32 @@ export async function retrievePersistentSemantic(
   question: string,
   sessionId: string,
   topK = 10,
+  documentIds?: string[],
 ): Promise<RankedPassage[] | null> {
   const scope = requireScopeId(sessionId, "retrievePersistentSemantic");
   if (!isDurableConfigured() || !isEmbeddingConfigured()) return null;
   const [qVec] = await embedTexts([question]);
   validateDimension(qVec, EMBEDDING_DIMENSION);
-  const rows = await new PostgresVectorStore().queryTopK(qVec, topK, { sessionId: scope });
-  return rows.map((r) => ({ ...r, documentId: shortDocumentId(scope, r.documentId) }));
+  const store = new PostgresVectorStore();
+  const rows = documentIds
+    ? (
+        await Promise.all(
+          documentIds.map((id) =>
+            store.queryTopK(qVec, topK, {
+              sessionId: scope,
+              documentId: durableDocumentId(scope, id),
+            }),
+          ),
+        )
+      )
+        .flat()
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK)
+    : await store.queryTopK(qVec, topK, { sessionId: scope });
+  return rows.map((r) => ({
+    ...r,
+    documentId: shortDocumentId(scope, r.documentId),
+  }));
 }
 
 export async function deleteDurableVectors(sessionId: string): Promise<void> {

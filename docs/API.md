@@ -159,7 +159,7 @@ Request:
 Server validates:
 
 - authorized session;
-- 1–4 document product boundary (one document for understanding, 2–4 for comparison);
+- 1–5 document product boundary (one document for understanding, 2–5 for comparison);
 - file count;
 - allowed MIME/type intent;
 - size limit;
@@ -210,7 +210,7 @@ POST /api/sessions/:sessionId/compare
 Preconditions:
 
 - authorized session;
-- 1–4 usable registered documents;
+- 1–5 usable registered documents;
 - required core context present.
 
 Behavior:
@@ -251,7 +251,7 @@ Response includes:
 
 One-document results explain evidenced costs, benefits, eligibility rules,
 exclusions, limitations, and material unknowns; multiple-tier results may
-compare tiers internally. For 2–4 documents, the result compares validated
+compare tiers internally. For 2–5 documents, the result compares validated
 facts across plans and tiers. In Phase P2, derived group labels/order may be
 document-specific; fact/evidence identity and authorization do not change.
 
@@ -404,12 +404,20 @@ Safe response shape:
 {
   "ready": true,
   "checks": {
-    "supabase": true,
-    "storage": true,
-    "embeddings": true
+    "supabase": "reachable",
+    "storage": "reachable",
+    "pgvector": "reachable",
+    "embeddings": "reachable",
+    "llm": "reachable"
   }
 }
 ```
+
+Readiness is true only when every required check is `reachable`; missing
+configuration and failed probes return HTTP 503. Database/vector and storage
+checks are non-mutating. Embedding and generation checks use authenticated
+model-list endpoints, not inference requests; provider inference is verified by
+separate synthetic integration probes.
 
 Do not expose credentials, hostnames, model tokens, or raw provider errors.
 
@@ -420,7 +428,7 @@ Do not expose credentials, hostnames, model tokens, or raw provider errors.
 V1 session data is deliberately small:
 
 ```text
-1–4 documents
+1–5 documents
 small plan/tier sets
 one comparison workspace
 ```

@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 type Path = "documents" | "guided";
 
 export default function WelcomePage({
@@ -10,57 +8,86 @@ export default function WelcomePage({
   onChoosePath: (path: Path) => void;
 }) {
   return (
-    <main className="page welcome">
-      <header className="welcome__hero">
-        <h1>Insurance Simplified</h1>
-        <p className="welcome__tagline">
-          Understand one insurance document or compare plans, with every claim traced to its source page.
-        </p>
-      </header>
-
-      <section className="welcome__explanation" aria-label="What this does">
-        <p>
-          Insurance documents contain many details, but only some materially affect your
-          decision. Insurance Simplified helps you:
-        </p>
-        <ul className="welcome__benefits">
-          <li>Identify the differences that matter</li>
-          <li>Compare them across plans</li>
-          <li>Understand what&apos;s uncertain</li>
-          <li>Ask questions and get cited answers</li>
-          <li>Verify important claims against the original documents</li>
-        </ul>
+    <div className="welcome">
+      <section className="hero">
+        <div>
+          <span className="eyebrow">A clearer way to read insurance</span>
+          <h1>
+            Understand what your insurance actually <em>covers.</em>
+          </h1>
+          <p className="lede">
+            Insurance documents can be hard to make sense of. Bring yours here
+            and get a clear breakdown of costs, exclusions, and the questions
+            worth asking.
+          </p>
+          <div className="heroActions">
+            <button className="btn" onClick={() => onChoosePath("documents")}>
+              I have my documents <span aria-hidden="true">↗</span>
+            </button>
+            <button
+              className="btn btn--secondary"
+              onClick={() => onChoosePath("guided")}
+            >
+              I don&apos;t know where to start <span aria-hidden="true">→</span>
+            </button>
+          </div>
+          <div className="assurance">
+            <span className="dot" />A document-first tool. Important
+            uncertainties stay visible.
+          </div>
+        </div>
+        <div
+          className="composition"
+          aria-label="Illustrative policy review, not an analysis of your documents"
+        >
+          <div className="halo" />
+          <div className="dots" />
+          <div className="paper">
+            <div className="paperhead">
+              <span>Illustrative policy review</span>
+              <span>01 / 03</span>
+            </div>
+            <h3>
+              Before you choose,
+              <br />
+              know the details.
+            </h3>
+            <div className="fact">
+              <span>Deductible</span>
+              <b>Check selected option</b>
+            </div>
+            <div className="fact">
+              <span>Coverage limit</span>
+              <b>Verify policy maximum</b>
+            </div>
+            <div className="fact">
+              <span>Exclusions</span>
+              <b>Read before enrolling</b>
+            </div>
+            <div className="source">
+              Each finding should connect back to the original policy. If we
+              can&apos;t verify something, we&apos;ll say so.
+            </div>
+          </div>
+          <div className="floatnote">
+            <span aria-hidden="true">●</span> &nbsp;Evidence, not guesswork
+          </div>
+        </div>
       </section>
-
-      <div className="welcome__choices" role="group" aria-label="Choose your starting path">
-        <button
-          className="welcome__choice"
-          onClick={() => onChoosePath("documents")}
-          type="button"
-        >
-          <span className="welcome__choice-icon" aria-hidden="true">📄</span>
-          <div className="welcome__choice-content">
-            <h2>I have my documents</h2>
-            <p>Upload 1–4 insurance PDFs to understand their terms or compare plans</p>
-          </div>
-        </button>
-
-        <button
-          className="welcome__choice"
-          onClick={() => onChoosePath("guided")}
-          type="button"
-        >
-          <span className="welcome__choice-icon" aria-hidden="true">🔍</span>
-          <div className="welcome__choice-content">
-            <h2>I don&apos;t know where to start</h2>
-            <p>Get a checklist of what to collect and what to look for</p>
-          </div>
-        </button>
+      <div className="mini-tiles">
+        <div className="minitile">
+          <strong>Find the important details</strong>Costs, coverage,
+          restrictions, and missing information.
+        </div>
+        <div className="minitile">
+          <strong>Keep the original nearby</strong>Trace statements back to the
+          page they came from.
+        </div>
+        <div className="minitile">
+          <strong>Ask a follow-up</strong>Questions stay alongside your
+          analysis, not in another section.
+        </div>
       </div>
-
-      <p className="welcome__note">
-        Nothing is stored after you close the page. Saving means downloading an export file.
-      </p>
-    </main>
+    </div>
   );
 }

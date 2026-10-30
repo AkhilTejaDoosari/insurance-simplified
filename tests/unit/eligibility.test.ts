@@ -80,7 +80,7 @@ describe("Eligibility for you composite", () => {
         {
           documentId: "doc-1",
           filename: "a.pdf",
-          pageCount: 1,
+          pageCount: 2,
           pages: ["Coinsurance: you pay 20% after deductible.", "Lifetime maximum: $1,000,000 per person."],
         },
       ],

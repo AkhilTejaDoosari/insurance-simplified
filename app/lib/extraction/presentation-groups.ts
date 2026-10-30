@@ -9,7 +9,7 @@ export interface PresentationGroup {
 }
 
 export function sanitizeGroups(proposal: unknown, rows: readonly TableRow[]): PresentationGroup[] {
-  const core = new Set(SECTIONS[0].factNames);
+  const core = new Set([...SECTIONS[0].factNames, ...SECTIONS[1].factNames]);
   const names = rows
     .filter((row) => !NON_DISPLAY_FEEDERS.includes(row.factName))
     .filter((row) => row.verdict !== "NOT STATED" || core.has(row.factName))

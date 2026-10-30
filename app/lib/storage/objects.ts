@@ -41,9 +41,9 @@ export function isSha256Hex(value: unknown): value is string {
 }
 
 /**
- * Stable object key derived from the document sha256. Content-addressed, so
- * re-uploads of identical bytes share one object and the key is stable
- * across restarts: `docs/<aa>/<full-hex>.pdf`.
+ * Legacy content-addressed key derived only from the document sha256.
+ * New session-owned uploads use `sessionObjectKeyFor` so cleanup cannot remove
+ * another session's reference to the same PDF.
  */
 export function objectKeyFor(sha256: string): string {
   if (!isSha256Hex(sha256)) {
@@ -52,8 +52,20 @@ export function objectKeyFor(sha256: string): string {
   return `docs/${sha256.slice(0, 2)}/${sha256}.pdf`;
 }
 
-/** True for keys this module derives (no `..`, no absolute paths, .pdf suffix). */
-const OBJECT_KEY_PATTERN = /^docs\/[0-9a-f]{2}\/[0-9a-f]{64}\.pdf$/;
+/** Session/document-owned key: identical bytes never share cleanup ownership. */
+export function sessionObjectKeyFor(sessionId: string, documentId: string, sha256: string): string {
+  const scope = requireScopeId(sessionId, "sessionObjectKeyFor");
+  if (!/^[A-Za-z0-9][A-Za-z0-9-_]{0,127}$/.test(documentId)) {
+    throw new Error("sessionObjectKeyFor: invalid documentId");
+  }
+  if (!isSha256Hex(sha256)) {
+    throw new Error("sessionObjectKeyFor: sha256 must be 64-char lowercase hex");
+  }
+  return `sessions/${scope}/documents/${documentId}/${sha256.slice(0, 2)}/${sha256}.pdf`;
+}
+
+/** True for legacy keys or keys derived for one opaque session. */
+const OBJECT_KEY_PATTERN = /^(?:docs\/[0-9a-f]{2}|sessions\/[A-Za-z0-9][A-Za-z0-9-_]{0,127}\/documents\/[A-Za-z0-9][A-Za-z0-9-_]{0,127}\/[0-9a-f]{2})\/[0-9a-f]{64}\.pdf$/;
 export function isObjectKey(value: unknown): value is string {
   return typeof value === "string" && OBJECT_KEY_PATTERN.test(value);
 }
@@ -65,10 +77,19 @@ function requireObjectKey(key: unknown, caller: string): string {
   return key;
 }
 
+function requireSessionOwnedKey(scope: string, key: string, caller: string): string {
+  const valid = requireObjectKey(key, caller);
+  const match = valid.match(/^sessions\/([^/]+)\//);
+  if (match && match[1] !== scope) {
+    throw new Error(`${caller}: object key is outside the authorized session`);
+  }
+  return valid;
+}
+
 // -------------------------------------------------------------------- seam
 /** Provider-neutral durable byte store for ORIGINAL PDF bytes. */
 export interface ObjectStore {
-  /** Persist bytes at key (idempotent overwrite of identical bytes). */
+  /** Create bytes only when absent; an existing object must never be overwritten. */
   put(key: string, bytes: Uint8Array): Promise<void>;
   /** Fetch bytes, or undefined when the object does not exist. */
   get(key: string): Promise<Uint8Array | undefined>;
@@ -124,7 +145,7 @@ export class LocalFileObjectStore implements ObjectStore {
     const { dirname } = await import("node:path");
     const full = this.pathFor(key, "LocalFileObjectStore.put");
     await mkdir(dirname(full), { recursive: true });
-    await writeFile(full, bytes);
+    await writeFile(full, bytes, { flag: "wx" });
   }
 
   async get(key: string): Promise<Uint8Array | undefined> {
@@ -250,7 +271,7 @@ export class SupabaseStorageAdapter implements ObjectStore {
       headers: {
         ...storageHeaders(config),
         "content-type": "application/pdf",
-        "x-upsert": "true",
+        "x-upsert": "false",
       },
       body: body as unknown as BodyInit,
     });
@@ -327,11 +348,31 @@ export function setDefaultObjectStore(store: ObjectStore | undefined): void {
  */
 export async function putDocumentBytes(
   bytes: Uint8Array,
+  sessionId: string,
+  documentId: string,
   store: ObjectStore = getDefaultObjectStore(),
 ): Promise<{ sha256: string; objectKey: string }> {
+  const scope = requireScopeId(sessionId, "putDocumentBytes");
   const sha256 = sha256Hex(bytes);
-  const objectKey = objectKeyFor(sha256);
-  await store.put(objectKey, bytes);
+  const objectKey = sessionObjectKeyFor(scope, documentId, sha256);
+  const existing = await store.get(objectKey);
+  if (existing !== undefined) {
+    if (sha256Hex(existing) !== sha256) {
+      throw new Error("putDocumentBytes: existing object failed integrity verification");
+    }
+    return { sha256, objectKey };
+  }
+  try {
+    await store.put(objectKey, bytes);
+  } catch (putError) {
+    // Another concurrent request may have won the create-only write. Reuse
+    // only after reading and hashing the object; otherwise preserve the error.
+    const raced = await store.get(objectKey).catch(() => undefined);
+    if (raced === undefined) throw putError;
+    if (sha256Hex(raced) !== sha256) {
+      throw new Error("putDocumentBytes: concurrent object failed integrity verification");
+    }
+  }
   return { sha256, objectKey };
 }
 
@@ -345,8 +386,8 @@ export async function getDocumentBytes(
   objectKey: string,
   store: ObjectStore = getDefaultObjectStore(),
 ): Promise<Uint8Array | undefined> {
-  requireScopeId(scopeId, "getDocumentBytes");
-  return store.get(requireObjectKey(objectKey, "getDocumentBytes"));
+  const scope = requireScopeId(scopeId, "getDocumentBytes");
+  return store.get(requireSessionOwnedKey(scope, objectKey, "getDocumentBytes"));
 }
 
 /**
@@ -358,11 +399,11 @@ export async function deleteDocumentObjects(
   objectKeys: Array<string | null | undefined>,
   store: ObjectStore = getDefaultObjectStore(),
 ): Promise<{ deleted: number }> {
-  requireScopeId(scopeId, "deleteDocumentObjects");
+  const scope = requireScopeId(scopeId, "deleteDocumentObjects");
   let deleted = 0;
   for (const key of objectKeys) {
     if (!key) continue;
-    if (await store.delete(requireObjectKey(key, "deleteDocumentObjects"))) deleted++;
+    if (await store.delete(requireSessionOwnedKey(scope, key, "deleteDocumentObjects"))) deleted++;
   }
   return { deleted };
 }

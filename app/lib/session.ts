@@ -20,7 +20,8 @@ export interface SessionDocument {
   pages: string[];
   /** P3-A durable-object metadata (nullable: unknown stays unknown for
    *  pre-P3-A sessions). sha256 = hex of the ORIGINAL bytes; objectKey =
-   *  stable content-addressed key (objects.ts objectKeyFor). DB row stays
+   *  stable session/document-scoped content-addressed key (objects.ts sessionObjectKeyFor).
+   *  Legacy documents may retain the earlier global content-addressed key. DB row stays
    *  authoritative when persistence is configured. */
   sha256?: string;
   objectKey?: string;

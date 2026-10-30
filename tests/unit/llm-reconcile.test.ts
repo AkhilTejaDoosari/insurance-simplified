@@ -18,7 +18,8 @@ const value = (documentId: string, display: string, qualifiers: Record<string, s
   documentId,
   display,
   qualifiers,
-  evidence: [{ documentId, page: 1, quote: display }],
+  evidence: [{ documentId, page: 1, quote: qualifiers.networkTier
+    ? `${display} ${qualifiers.networkTier}` : display }],
 });
 
 function payload(rows: unknown[], documents?: unknown[]) {

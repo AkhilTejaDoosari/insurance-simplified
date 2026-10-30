@@ -8,15 +8,21 @@
 // Session ID alone is insufficient for authorization.
 
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { getSession, registerEvidence, updateSessionContext } from "@/app/lib/session";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
 import { verifyEvidenceCitation, checkDisplayGrounding } from "@/app/lib/evidence-verification";
-import type { ComparisonTable } from "@/app/lib/extraction/types";
+import type { CellValue, ComparisonTable } from "@/app/lib/extraction/types";
 import {
   extractFallback,
   extractViaLlm,
 } from "@/app/lib/extraction/extract";
 import { validateTable } from "@/app/lib/extraction/types";
+import {
+  attestPlans,
+  attributePlanScope,
+  resolveRowPlanIds,
+} from "@/app/lib/extraction/plan-identity";
 import { isLlmConfigured } from "@/app/lib/llm/client";
 import { extractContacts } from "@/app/lib/extraction/contacts";
 import { requireSessionCapability } from "@/app/lib/session-auth";
@@ -90,15 +96,40 @@ export async function POST(request: NextRequest) {
           extractFallback(session.documents, session.userContext)
         );
     const table = validateTable(raw);
+    // Plan identity is optional and never inferred from filenames. A claimed
+    // association survives only when every named source verifies on its page.
+    const proposedPlans = table.plans ?? attestPlans(session.documents.filter((doc) =>
+      table.documents.some((entry) => entry.documentId === doc.documentId)
+    ));
+    const plans = proposedPlans.flatMap((plan) => {
+      const verifiedSources = plan.sources.map((source) => {
+        const result = verifyEvidenceCitation(session.documents, source);
+        return result.ok ? { ...source, quote: result.quote } : null;
+      });
+      return verifiedSources.every((source) => source !== null)
+        ? [{ ...plan, sources: verifiedSources as NonNullable<typeof verifiedSources[number]>[] }]
+        : [];
+    });
+    // Deterministic plan scope: assign values to verified plans only when the
+    // value's own cited passage names the plan. This runs after schema
+    // validation so invented planId claims are rejected before we ever
+    // scope a value.
+    const scoped = plans.length > 0
+      ? attributePlanScope({ ...table, plans }, session.documents)
+      : table;
     // Server/session boundary: verify every cited passage against the
     // session documents and canonicalize to verbatim source spans.
     // Fail closed per value — drop unverifiable evidence, drop values left
     // with none, flip emptied rows to NOT STATED. Extraction itself stays
     // session-agnostic and never mints evidence IDs.
     const verifiedRows: ComparisonTable["rows"] = [];
-    for (const row of table.rows) {
-      const values = [];
+    for (const row of scoped.rows) {
       const groundingRationales: string[] = [];
+      // Phase 1 — verify every cited passage against the session documents
+      // and canonicalize to verbatim source spans. Fail closed per value —
+      // drop unverifiable evidence, drop values left with none. Extraction
+      // itself stays session-agnostic and never mints evidence IDs.
+      const verifiedValues: { value: CellValue; evidence: { documentId: string; page: number; quote: string }[] }[] = [];
       for (const value of row.values) {
         const evidence: { documentId: string; page: number; quote: string }[] = [];
         for (const entry of value.evidence) {
@@ -118,8 +149,31 @@ export async function POST(request: NextRequest) {
         if (!grounding.supported && grounding.rationale) {
           groundingRationales.push(grounding.rationale);
         }
-        values.push({ ...value, evidence });
+        verifiedValues.push({ value: { ...value, evidence }, evidence });
       }
+      // Phase 2 — Stage E plan attribution. A planId survives only with proof:
+      // the labelled plan/fact/value line (hasPlanValueProof, unchanged), or
+      // the controlled document-ownership proof: exactly one verified plan
+      // covers the value's own document, the provision passes the
+      // applicability guards (no rider/example/illustration/alternative/
+      // marketing/competitor/comparable-plan/shared language, no rival-plan
+      // mention, the document declares no other plan on any page), and the
+      // value's same-document peer group is free of same-scope contradictions.
+      // Multi-plan documents and contested peer groups stay unassigned and
+      // display as shared data.
+      const planIds = timeSync("extract.resolveRowPlanIds", () =>
+        resolveRowPlanIds(
+          row.factName,
+          verifiedValues.map((entry) => entry.value),
+          plans,
+          session.documents
+        )
+      );
+      const values = verifiedValues.map((entry, index) => {
+        const planId = planIds[index];
+        const { planId: _claimedPlanId, ...unscoped } = entry.value;
+        return { ...unscoped, ...(planId ? { planId } : {}), evidence: entry.evidence };
+      });
       if (values.length === 0) {
         const flipped: ComparisonTable["rows"][number] = {
           factName: row.factName,
@@ -139,7 +193,16 @@ export async function POST(request: NextRequest) {
         verifiedRows.push({ ...row, values });
       }
     }
-    const verified: ComparisonTable = { ...table, rows: verifiedRows };
+    const verified: ComparisonTable = {
+      ...table,
+      ...(plans?.length ? { plans } : { plans: undefined }),
+      rows: verifiedRows,
+    };
+    const resultFingerprint = createHash("sha256").update(JSON.stringify({
+      documents: documentFingerprint(session.documents),
+      table: verified,
+      context: session.userContext,
+    })).digest("hex");
     const contacts = timeSync("extract.extractContacts", () =>
       extractContacts(
         session.documents.map((d) => ({
@@ -158,6 +221,7 @@ export async function POST(request: NextRequest) {
         page: c.page,
         quote: c.quote,
       })),
+      ...(verified.plans?.flatMap((plan) => plan.sources) ?? []),
     ]);
     let presentationGroups = sanitizeGroups(null, verified.rows);
     if (useLlm) {
@@ -180,10 +244,12 @@ export async function POST(request: NextRequest) {
             schemaVersion: verified.schemaVersion,
             factListVersion: verified.factListVersion,
             documents: verified.documents,
+            ...(verified.plans ? { plans: verified.plans } : {}),
             rows: verified.rows,
             presentationGroups,
             contacts,
             userContext: session.userContext,
+            resultFingerprint,
           },
         })
       );
@@ -192,6 +258,8 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({
       ...verified,
+      resultFingerprint,
+      ...(verified.plans ? { plans: verified.plans.map((plan) => ({ ...plan, sources: plan.sources.map(withEvidenceId) })) } : {}),
       presentationGroups,
       rows: verified.rows.map((row) => ({
         ...row,

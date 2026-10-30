@@ -103,7 +103,7 @@ export function resolveVisaOrStatus(context: Record<string, string>): string {
  *  from split intake inputs so Results Workspace checks the same keys the
  *  server stored instead of re-asking for supplied values. */
 export function toCanonicalContext(
-  context: Record<string, string>
+  context: Record<string, string>,
 ): Record<string, string> {
   const canonical: Record<string, string> = {};
   const age = (context.age ?? "").trim();
@@ -140,6 +140,7 @@ export default function ContextInputs({
           Age
           <input
             className="input"
+            inputMode="numeric"
             value={context.age ?? ""}
             onChange={(e) => set("age", e.target.value)}
           />
@@ -158,7 +159,7 @@ export default function ContextInputs({
             ))}
           </select>
         </label>
-        <label className="field">
+        <label className="field field--wide">
           {visaLabel}
           <select
             className="select"
@@ -173,7 +174,7 @@ export default function ContextInputs({
           </select>
         </label>
         {visaSelected === VISA_OTHER && (
-          <label className="field">
+          <label className="field field--wide">
             Please specify
             <input
               className="input"

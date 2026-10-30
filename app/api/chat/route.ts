@@ -29,7 +29,23 @@ import { isLlmConfigured } from "@/app/lib/llm/client";
 import { buildTraceEvent, emitTrace } from "@/app/lib/observability/trace";
 import { errorResponse, logFailure, newRequestId } from "@/app/lib/api-errors";
 import { requireSessionCapability } from "@/app/lib/session-auth";
-import { recordTiming, timeAsync, timeSync } from "@/app/lib/observability/timing";
+import {
+  recordTiming,
+  timeAsync,
+  timeSync,
+} from "@/app/lib/observability/timing";
+import {
+  documentFingerprint,
+  comparisonTableFromPayload,
+  loadComparisonResult,
+} from "@/app/lib/comparison-result-db";
+import {
+  parseSelectionRequest,
+  selectionMatchesResultFingerprint,
+  validateSelectionScope,
+  activeViewFromSelection,
+} from "@/app/lib/extraction/selection-request";
+import { scopeDocumentsForChat } from "@/app/lib/rag/selection-scope";
 
 export async function POST(request: NextRequest) {
   const requestId = newRequestId();
@@ -37,8 +53,13 @@ export async function POST(request: NextRequest) {
     sessionId?: string;
     question?: string;
     engine?: string;
+    selection?: unknown;
   } | null;
-  if (!body?.sessionId || typeof body.question !== "string" || !body.question.trim()) {
+  if (
+    !body?.sessionId ||
+    typeof body.question !== "string" ||
+    !body.question.trim()
+  ) {
     return errorResponse("BAD_INPUT", 400, { requestId });
   }
 
@@ -50,14 +71,90 @@ export async function POST(request: NextRequest) {
 
   const session = getSession(body.sessionId);
   if (!session) {
-    return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown session" });
+    return errorResponse("NOT_FOUND", 404, {
+      requestId,
+      message: "Unknown session",
+    });
+  }
+
+  // M5 task 17: when a selection payload is present it is validated against
+  // the server-side stored result BEFORE any retrieval happens. The client
+  // names a scope (opaque fingerprint + plan IDs + tiers); it never supplies
+  // facts. Absent selection keeps the previous whole-document behaviour.
+  let scopedDocuments = session.documents;
+  if (body.selection !== undefined) {
+    const parsed = parseSelectionRequest(body.selection);
+    if (!parsed) {
+      return errorResponse("BAD_INPUT", 400, {
+        requestId,
+        message: "Malformed selection payload",
+      });
+    }
+    const record = await loadComparisonResult(session.sessionId).catch(
+      () => null,
+    );
+    if (!record) {
+      return errorResponse("STATE_CONFLICT", 409, {
+        requestId,
+        message:
+          "Selected result is no longer available. Re-run the comparison.",
+      });
+    }
+    if (record.documentFingerprint !== documentFingerprint(session.documents)) {
+      return errorResponse("STATE_CONFLICT", 409, {
+        requestId,
+        message: "Selected result does not match the current documents.",
+      });
+    }
+    if (
+      !selectionMatchesResultFingerprint(
+        parsed,
+        record.payload.resultFingerprint,
+      )
+    ) {
+      return errorResponse("STATE_CONFLICT", 409, {
+        requestId,
+        message: "Selection is stale: a newer comparison result exists.",
+      });
+    }
+    const table = comparisonTableFromPayload(record);
+    const scopeError = validateSelectionScope(parsed, table);
+    if (scopeError) {
+      return errorResponse("BAD_INPUT", 400, {
+        requestId,
+        message:
+          scopeError === "foreign-plan"
+            ? "Selection names a plan outside the verified result."
+            : scopeError === "unsupported-tier"
+              ? "Selection names a tier without verified evidence."
+              : scopeError === "too-many-plans"
+                ? "At most three plans can be selected at once."
+                : "Invalid selection payload.",
+      });
+    }
+    // Scope BEFORE retrieval: only selected-scope and evidenced shared
+    // passages are eligible; eligible lines stay verbatim so citation
+    // verification below keeps failing closed against session documents.
+    const scoped = scopeDocumentsForChat(
+      session.documents.map((d) => ({
+        documentId: d.documentId,
+        filename: d.filename,
+        pageCount: d.pageCount,
+        pages: d.pages,
+      })),
+      table,
+      parsed.planIds,
+      body.question, // validated non-empty string above
+      activeViewFromSelection(parsed),
+    );
+    scopedDocuments = scoped.documents;
   }
 
   const useLlm =
     body.engine === "llm" || (body.engine !== "fallback" && isLlmConfigured());
   const startedAt = Date.now();
   const sessionId = body.sessionId!; // validated above
-  const question = body.question!; // validated above
+  const question = body.question; // validated non-empty string above
 
   // Sanitized trace helper: metadata only (ids/pages/counts/latencies).
   // Never includes user text, prompts, document text, or keys.
@@ -84,7 +181,7 @@ export async function POST(request: NextRequest) {
           errorCategory: init.errorCategory,
           citationCount: init.citationCount,
           totalLatencyMs: Date.now() - startedAt,
-        })
+        }),
       );
     } catch {
       // tracing never breaks the response
@@ -96,9 +193,9 @@ export async function POST(request: NextRequest) {
     if (useLlm) {
       try {
         response = await timeAsync("chat.answerViaLlm", () =>
-          answerViaLlm(session.documents, question, {
+          answerViaLlm(scopedDocuments, question, {
             sessionId,
-          })
+          }),
         );
       } catch (err) {
         // Contract: degraded successes above stay 200; only a total failure lands
@@ -106,19 +203,19 @@ export async function POST(request: NextRequest) {
         // fixed CHAT_FAILED message (no secret/structure leakage).
         logFailure(requestId, "chat", err);
         console.warn(
-          `[chat] llm engine failed; degrading to semantic: ${err instanceof Error ? err.message : "unknown"}`
+          `[chat] llm engine failed; degrading to semantic: ${err instanceof Error ? err.message : "unknown"}`,
         );
         response = await timeAsync("chat.answerQuestionSemantic", () =>
-          answerQuestionSemantic(session.documents, question, {
+          answerQuestionSemantic(scopedDocuments, question, {
             sessionId,
-          })
+          }),
         );
       }
     } else {
       response = await timeAsync("chat.answerQuestionSemantic", () =>
-        answerQuestionSemantic(session.documents, question, {
+        answerQuestionSemantic(scopedDocuments, question, {
           sessionId,
-        })
+        }),
       );
     }
     const validated = validateChatResponse(response);
@@ -138,11 +235,12 @@ export async function POST(request: NextRequest) {
       let allVerified = true;
       for (const citation of validated.citations) {
         const verified = timeSync("chat.verifyEvidenceCitation", () =>
-          verifyEvidenceCitation(session.documents, citation)
+          verifyEvidenceCitation(session.documents, citation),
         );
-        if (!verified.ok) {
+        const inScope = verifyEvidenceCitation(scopedDocuments, citation);
+        if (!verified.ok || !inScope.ok) {
           console.warn(
-            `[chat-refusal] stage=verifyEvidenceCitation page=${citation.page} citationCount=${validated.citations.length}`
+            `[chat-refusal] stage=verifyEvidenceCitation page=${citation.page} citationCount=${validated.citations.length}`,
           );
           allVerified = false;
           break;
@@ -152,7 +250,10 @@ export async function POST(request: NextRequest) {
       if (!allVerified) {
         trace({
           candidateCount: validated.citations.length,
-          topK: validated.citations.map((c) => ({ documentId: c.documentId, page: c.page })),
+          topK: validated.citations.map((c) => ({
+            documentId: c.documentId,
+            page: c.page,
+          })),
           citationCount: 0,
           verification: "fail",
           refusalReason: "verification-failed",
@@ -166,7 +267,10 @@ export async function POST(request: NextRequest) {
       registerEvidence(session.sessionId, canonical);
       trace({
         candidateCount: canonical.length,
-        topK: canonical.map((c) => ({ documentId: c.documentId, page: c.page })),
+        topK: canonical.map((c) => ({
+          documentId: c.documentId,
+          page: c.page,
+        })),
         citationCount: canonical.length,
         verification: "pass",
       });
@@ -192,8 +296,9 @@ export async function POST(request: NextRequest) {
           topK: [],
           citationCount: 0,
           totalLatencyMs: Date.now() - startedAt,
-          errorCategory: err instanceof Error ? err.message.slice(0, 120) : "chat-failed",
-        })
+          errorCategory:
+            err instanceof Error ? err.message.slice(0, 120) : "chat-failed",
+        }),
       );
     } catch {
       // tracing never breaks the response

@@ -119,8 +119,12 @@ export function summarizeRulesDisplay(factName: string, source: string): RulesRe
     if (range) {
       return { display: `${range[1]} ${range[2]}–${range[3]} ${range[4]}`, certain: true };
     }
-    const max = /maximum age\s*(\d+)|(?:up to|under)\s*age\s*(\d+)/i.exec(line);
-    if (max) return { display: `Maximum age ${max[1] ?? max[2]}`, certain: true };
+    const max = /maximum age\s*(\d+)/i.exec(line);
+    if (max) return { display: `Maximum age ${max[1]}`, certain: true };
+    const underAge = /under\s+age\s*(\d+)/i.exec(line);
+    if (underAge) return { display: `Under age ${underAge[1]}`, certain: true };
+    const upToAge = /up to\s+age\s*(\d+)/i.exec(line);
+    if (upToAge) return { display: `Up to age ${upToAge[1]}`, certain: true };
     const bareAgeRange = /\bage\D{0,8}(\d+)\s*[–-]\s*(\d+)\b/i.exec(line);
     if (bareAgeRange) return { display: `Age ${bareAgeRange[1]}–${bareAgeRange[2]}`, certain: true };
     const symbolMax = /<=?\s*(\d+)\s*(years? old|years?|yrs?)\b/i.exec(line);

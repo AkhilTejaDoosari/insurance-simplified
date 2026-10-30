@@ -20,16 +20,23 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function completeJson(
   messages: LlmMessage[],
   model = process.env.LLM_MODEL ?? "default",
-  opts: { baseDelayMs?: number } = {}
+  opts: { baseDelayMs?: number; maxAttempts?: number; maxTokens?: number } = {}
 ): Promise<unknown> {
   const baseUrl = process.env.LLM_BASE_URL;
   const apiKey = process.env.LLM_API_KEY;
   if (!baseUrl || !apiKey) {
     throw new Error("LLM not configured (set LLM_BASE_URL and LLM_API_KEY)");
   }
+  const maxAttempts = opts.maxAttempts ?? MAX_ATTEMPTS;
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    throw new RangeError("LLM maxAttempts must be a positive integer");
+  }
+  if (opts.maxTokens !== undefined && (!Number.isInteger(opts.maxTokens) || opts.maxTokens < 1)) {
+    throw new RangeError("LLM maxTokens must be a positive integer");
+  }
   const baseDelayMs = opts.baseDelayMs ?? 1500;
   let res: Response | undefined;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
@@ -41,9 +48,10 @@ export async function completeJson(
         messages,
         response_format: { type: "json_object" },
         temperature: 0,
+        ...(opts.maxTokens === undefined ? {} : { max_tokens: opts.maxTokens }),
       }),
     });
-    if (res.ok || !RETRYABLE.has(res.status) || attempt === MAX_ATTEMPTS) break;
+    if (res.ok || !RETRYABLE.has(res.status) || attempt === maxAttempts) break;
     const retryAfter = Number(res.headers.get("retry-after"));
     const delay = Number.isFinite(retryAfter) && retryAfter > 0
       ? retryAfter * 1000
@@ -55,11 +63,23 @@ export async function completeJson(
     throw new Error(`LLM request failed with status ${res?.status ?? "unknown"}`);
   }
   const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
+    choices?: { finish_reason?: string | null; message?: { content?: string } }[];
   };
-  const content = data.choices?.[0]?.message?.content;
+  const choice = data.choices?.[0];
+  if (choice?.finish_reason === "length") {
+    throw new Error("LLM incomplete generation: provider finish_reason=length");
+  }
+  const content = choice?.message?.content;
   if (!content) throw new Error("LLM returned no content");
-  const parsed: unknown = JSON.parse(content);
+  const responseText = content.trim();
+  const fenced = /^```json\s*\n([\s\S]*?)\n```$/i.exec(responseText);
+  const jsonText = fenced ? fenced[1] : responseText;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    throw new Error("LLM returned malformed JSON");
+  }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return parsed;
 
   const envelopeFields = ["name", "type", "content"].filter((field) => field in parsed).length;

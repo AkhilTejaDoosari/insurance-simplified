@@ -131,7 +131,7 @@ Constraints:
 - every document belongs to exactly one session;
 - `object_key` is unique;
 - file metadata must describe the durable object actually stored;
-- normal document sessions contain 1–4 active documents;
+- normal document sessions contain 1–5 active documents;
 - duplicate detection may use `(session_id, sha256)`.
 
 ---

@@ -20,8 +20,12 @@ interface ExtractErrorBody {
 /** Map a failed /api/extract result (or network throw) to UI-safe failure. */
 export function describeExtractFailure(
   body: unknown,
-  thrown: unknown = null
+  thrown: unknown = null,
+  status?: number,
 ): ExtractFailure {
+  if (status === 401 || status === 403 || status === 404) {
+    return { message: "Your session has expired. Upload your documents again to continue.", retryable: false };
+  }
   if (thrown !== null && thrown !== undefined) {
     return { message: EXTRACT_RETRY_MESSAGE, retryable: true };
   }
@@ -40,7 +44,9 @@ export function describeExtractFailure(
     code === "DEPENDENCY_UNAVAILABLE"
   ) {
     return {
-      message: EXTRACT_RETRY_MESSAGE,
+      message: code === "PROVIDER_UNAVAILABLE" || code === "DEPENDENCY_UNAVAILABLE"
+        ? "The analysis provider is unavailable. Your files and details are still here. Try again."
+        : EXTRACT_RETRY_MESSAGE,
       retryable: code === "EXTRACTION_FAILED" ? true : retryable,
     };
   }

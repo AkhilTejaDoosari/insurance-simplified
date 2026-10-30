@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { NextRequest } from "next/server";
 import { extractText, getDocumentProxy } from "unpdf";
-import { GET } from "@/app/api/export/route";
+import { POST } from "@/app/api/export/route";
+import type { ComparisonTable } from "@/app/lib/extraction/types";
 import {
   deleteComparisonResult,
   documentFingerprint,
@@ -21,6 +22,7 @@ import {
 const SESSIONS_DIR = join(tmpdir(), "insurance-simplified-sessions");
 const created: string[] = [];
 const originalEnv = { ...process.env };
+const RESULT_FINGERPRINT = "fp-export-pdf";
 
 const documents: SessionDocument[] = [
   { documentId: "doc-1", filename: "worldtrips.pdf", pageCount: 8, pages: ["WorldTrips deductible section"] },
@@ -75,6 +77,7 @@ const payload: PersistedComparisonResultPayload = {
   ],
   contacts: [],
   userContext: { age: "24", visaOrStatus: "F-1" },
+  resultFingerprint: RESULT_FINGERPRINT,
 };
 
 function ownSession() {
@@ -83,10 +86,25 @@ function ownSession() {
   return { session, capability };
 }
 
-function request(sessionId: string, capability?: string) {
-  return new NextRequest(`http://localhost/api/export?sessionId=${sessionId}`, {
-    headers: capability ? { cookie: `${SESSION_CAPABILITY_COOKIE}=${capability}` } : {},
+function request(sessionId: string, capability: string, selection: unknown) {
+  return new NextRequest("http://localhost/api/export", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: `${SESSION_CAPABILITY_COOKIE}=${capability}`,
+    },
+    body: JSON.stringify({ sessionId, selection }),
   });
+}
+
+function selectionWith(overrides: Record<string, unknown> = {}) {
+  return {
+    resultFingerprint: RESULT_FINGERPRINT,
+    planIds: ["doc-1", "doc-2"],
+    tiers: {},
+    legacyTiersByDocument: {},
+    ...overrides,
+  };
 }
 
 async function pdfText(bytes: Uint8Array): Promise<{ text: string; pageCount: number }> {
@@ -104,7 +122,37 @@ async function saveFor(sessionId: string, docs = documents) {
   });
 }
 
-describe("GET /api/export PDF contract", () => {
+describe("POST /api/export PDF contract", () => {
+  it("preserves active comparison plan, source and value order in the immutable PDF snapshot", async () => {
+    const own = ownSession();
+    const data: PersistedComparisonResultPayload = { ...payload, plans: [
+      { planId: "alpha", name: "Alpha", sources: [{ documentId: "doc-1", page: 1, quote: "Alpha" }] },
+      { planId: "beta", name: "Beta", sources: [{ documentId: "doc-2", page: 1, quote: "Beta" }] },
+    ], rows: (payload.rows as ComparisonTable["rows"]).map((r) => ({ ...r, values: r.values.map((v) => ({ ...v, planId: v.documentId === "doc-1" ? "alpha" : "beta" })) })) };
+    await saveComparisonResult({ sessionId: own.session.sessionId, documentFingerprint: documentFingerprint(documents), payload: data });
+    const response = await POST(request(own.session.sessionId, own.capability, selectionWith({ viewMode: "compare", planIds: ["beta", "alpha"], tiers: { alpha: "Student Secure Basic" } })));
+    expect(response.status).toBe(200);
+    const { text } = await pdfText(new Uint8Array(await response.arrayBuffer()));
+    expect(text.indexOf("sevencorners.pdf")).toBeLessThan(text.indexOf("worldtrips.pdf"));
+    expect(text.indexOf("$50")).toBeLessThan(text.indexOf("$0"));
+    expect(text).not.toContain("$100");
+    expect(text).not.toContain("Student Secure Elite");
+  });
+  it("exports only the active individual document with no synthetic plan assignment", async () => {
+    const own = ownSession();
+    await saveFor(own.session.sessionId);
+    const response = await POST(request(own.session.sessionId, own.capability, selectionWith({
+      viewMode: "understand", documentId: "doc-2", planIds: [],
+    })));
+    expect(response.status).toBe(200);
+    const { text } = await pdfText(new Uint8Array(await response.arrayBuffer()));
+    expect(text).toContain("sevencorners.pdf");
+    expect(text).toContain("$50");
+    expect(text).toContain("Unverified applicability");
+    expect(text).not.toContain("worldtrips.pdf");
+    expect(text).not.toContain("$100");
+    expect(text).not.toContain(own.capability);
+  });
   beforeEach(() => {
     process.env.SUPABASE_URL = "";
     process.env.SUPABASE_SECRET_KEY = "";
@@ -122,7 +170,7 @@ describe("GET /api/export PDF contract", () => {
 
   it("fails closed when no result was persisted", async () => {
     const own = ownSession();
-    const response = await GET(request(own.session.sessionId, own.capability));
+    const response = await POST(request(own.session.sessionId, own.capability, selectionWith()));
     expect(response.status).toBe(409);
     expect(response.headers.get("content-type")).not.toContain("pdf");
   });
@@ -132,14 +180,41 @@ describe("GET /api/export PDF contract", () => {
     await saveFor(own.session.sessionId, [
       { documentId: "doc-1", filename: "old.pdf", pageCount: 1, pages: ["old text"] },
     ]);
-    const response = await GET(request(own.session.sessionId, own.capability));
+    const response = await POST(request(own.session.sessionId, own.capability, selectionWith()));
     expect(response.status).toBe(409);
   });
 
-  it("serves a PDF with tiers, citations, pagination, and no credentials", async () => {
+  it("refuses a selection built for an earlier result fingerprint with 409", async () => {
     const own = ownSession();
     await saveFor(own.session.sessionId);
-    const response = await GET(request(own.session.sessionId, own.capability));
+    const response = await POST(
+      request(own.session.sessionId, own.capability, selectionWith({ resultFingerprint: "fp-old" })),
+    );
+    expect(response.status).toBe(409);
+  });
+
+  it("refuses a selection naming a document outside the verified result with 400", async () => {
+    const own = ownSession();
+    await saveFor(own.session.sessionId);
+    const response = await POST(
+      request(own.session.sessionId, own.capability, selectionWith({ planIds: ["doc-9"] })),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses a named document tier the validated rows never state with 400", async () => {
+    const own = ownSession();
+    await saveFor(own.session.sessionId);
+    const response = await POST(
+      request(own.session.sessionId, own.capability, selectionWith({ legacyTiersByDocument: { "doc-1": "Gold Tier" } })),
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("serves a scoped PDF with tiers, citations, pagination, and no credentials", async () => {
+    const own = ownSession();
+    await saveFor(own.session.sessionId);
+    const response = await POST(request(own.session.sessionId, own.capability, selectionWith()));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/pdf");
     expect(response.headers.get("content-disposition")).toContain(".pdf");
@@ -149,7 +224,10 @@ describe("GET /api/export PDF contract", () => {
     expect(Buffer.from(bytes).subarray(0, 5).toString("latin1")).toBe("%PDF-");
     const { text, pageCount } = await pdfText(bytes);
 
+    // Both selected document views render with their tier labels intact.
     expect(text).toContain("Deductible choices");
+    expect(text).toContain("Plan name unconfirmed (upload 1)");
+    expect(text).toContain("Plan name unconfirmed (upload 2)");
     expect(text).toContain("Student Secure Basic");
     expect(text).toContain("Student Secure Elite");
     expect(text).toContain("Lone Star");
@@ -166,10 +244,40 @@ describe("GET /api/export PDF contract", () => {
     expect(text).not.toContain("ev-");
   });
 
+  it("exports only the selected document scope, not the whole session", async () => {
+    const own = ownSession();
+    await saveFor(own.session.sessionId);
+    const response = await POST(
+      request(own.session.sessionId, own.capability, selectionWith({
+        planIds: ["doc-1"],
+        tiers: { "doc-1": "Student Secure Elite" },
+        legacyTiersByDocument: { "doc-1": "Student Secure Elite" },
+      })),
+    );
+    expect(response.status).toBe(200);
+    const { text } = await pdfText(new Uint8Array(await response.arrayBuffer()));
+    expect(text).toContain("$100");
+    // The unselected second document and its tier never enter the report.
+    expect(text).not.toContain("$50");
+    expect(text).not.toContain("Lone Star");
+    expect(text).toContain("sevencorners.pdf"); // still cites the source file name list
+    expect(text).toContain("Student Secure Elite");
+    expect(text).not.toContain("Student Secure Basic");
+  });
+
+  it("parameter-1 never lands at all tiers; eligible text stays verbatim", async () => {
+    const own = ownSession();
+    await saveFor(own.session.sessionId);
+    const response = await POST(request(own.session.sessionId, own.capability, selectionWith()));
+    const { text } = await pdfText(new Uint8Array(await response.arrayBuffer()));
+    // Value text is verbatim and never paraphrased or refused.
+    expect(text).toContain("$0");
+    expect(text).toContain("coverage details with qualifications");
+  });
+
   it("still rejects missing and wrong capabilities before any result read", async () => {
     const own = ownSession();
     await saveFor(own.session.sessionId);
-    expect((await GET(request(own.session.sessionId))).status).toBe(401);
-    expect((await GET(request(own.session.sessionId, "wrong"))).status).toBe(401);
+    expect((await POST(request(own.session.sessionId, "", selectionWith()))).status).toBe(401);
   });
 });

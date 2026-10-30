@@ -19,8 +19,14 @@ const ev = (documentId: string, page: number, quote: string) => ({
   evidenceId: evidenceIdFor(documentId, page, quote),
 });
 
-const val = (documentId: string, display: string, quote: string, planTier?: string) => ({
+const val = (
+  documentId: string,
+  display: string,
+  quote: string,
+  planTier?: string,
+) => ({
   documentId,
+  planId: documentId,
   display,
   qualifiers: planTier ? { planTier } : {},
   evidence: [ev(documentId, 1, quote)],
@@ -38,7 +44,23 @@ const DOCS = [
 ];
 
 function table(rows: RegisteredTableRow[]): Table {
-  return { schemaVersion: "v1", factListVersion: "v1", documents: DOCS, rows };
+  return {
+    schemaVersion: "v1",
+    factListVersion: "v1",
+    documents: DOCS,
+    rows,
+    plans: DOCS.map((doc, index) => ({
+      planId: doc.documentId,
+      name: index === 0 ? "Alpha" : "Beta",
+      sources: [
+        {
+          documentId: doc.documentId,
+          page: 1,
+          quote: index === 0 ? "Alpha" : "Beta",
+        },
+      ],
+    })),
+  };
 }
 
 function html(t: Table, initialTierSelection?: Record<string, string>): string {
@@ -81,7 +103,11 @@ describe("row visibility classes", () => {
 
   it("C. one supported plan keeps a COMPARATIVE row visible", () => {
     const out = html(
-      table([row("dental-coverage", "SUPPORTED", [val("doc-1", "Cleanings covered", "Cleanings covered.")])]),
+      table([
+        row("dental-coverage", "SUPPORTED", [
+          val("doc-1", "Cleanings covered", "Cleanings covered."),
+        ]),
+      ]),
     );
     expect(out).toContain("Dental");
     expect(out).toContain("Cleanings covered");
@@ -89,7 +115,11 @@ describe("row visibility classes", () => {
 
   it("D. explicit exclusion keeps the row visible without becoming covered", () => {
     const out = html(
-      table([row("dental-coverage", "SUPPORTED", [val("doc-1", "Routine dental excluded", "Routine dental excluded.")])]),
+      table([
+        row("dental-coverage", "SUPPORTED", [
+          val("doc-1", "Routine dental excluded", "Routine dental excluded."),
+        ]),
+      ]),
     );
     expect(out).toContain("Dental");
     expect(out).toContain("Routine dental excluded");
@@ -98,19 +128,30 @@ describe("row visibility classes", () => {
 
   it("E. NEEDS VERIFICATION keeps the row visible", () => {
     const out = html(
-      table([row("urgent-care", "NEEDS VERIFICATION", [val("doc-1", "Urgent care terms vary", "Urgent care terms vary.")])]),
+      table([
+        row("urgent-care", "NEEDS VERIFICATION", [
+          val("doc-1", "Urgent care terms vary", "Urgent care terms vary."),
+        ]),
+      ]),
     );
     expect(out).toContain("Urgent / walk-in care");
   });
 
   it("F. all-14-NOT-STATED highlights render zero rows plus the empty state", () => {
     const out = html(table(HIGHLIGHTS.map((n) => row(n, "NOT STATED"))));
-    expect(out).toContain("No stated facts in this group for the selected tiers.");
+    expect(out).toContain(
+      "No stated facts in this group for the selected plans. This does not mean the plan has no coverage.",
+    );
     expect(out).not.toContain("table__fact");
   });
 
   it("G. exactly 4 supported highlights render exactly 4 rows", () => {
-    const supported = ["emergency-evacuation", "repatriation", "terrorism-coverage", "bedside-visit"];
+    const supported = [
+      "emergency-evacuation",
+      "repatriation",
+      "terrorism-coverage",
+      "bedside-visit",
+    ];
     const rows = HIGHLIGHTS.map((n) =>
       supported.includes(n)
         ? row(n, "SUPPORTED", [val("doc-1", `${n} covered`, `${n} covered.`)])
@@ -128,7 +169,9 @@ describe("row visibility classes", () => {
 
   it("H. no NOT STATED highlight rows render", () => {
     const rows = HIGHLIGHTS.map((n, i) =>
-      i < 2 ? row(n, "SUPPORTED", [val("doc-1", `${n} covered`, `${n} covered.`)]) : row(n, "NOT STATED"),
+      i < 2
+        ? row(n, "SUPPORTED", [val("doc-1", `${n} covered`, `${n} covered.`)])
+        : row(n, "NOT STATED"),
     );
     const out = html(table(rows));
     expect(out.match(/table__fact/g)?.length ?? 0).toBe(2);
@@ -138,8 +181,12 @@ describe("row visibility classes", () => {
     // doc-2 carries two tiers table-wide (picker alive via urgent-care),
     // but this row's only value sits in Platinum while Lite is selected.
     const t = table([
-      row("urgent-care", "SUPPORTED", [val("doc-2", "$20", "Lite: $20.", "Lite")]),
-      row("emergency-care", "SUPPORTED", [val("doc-2", "$0 to $25,000", "Platinum: $0 to $25,000.", "Platinum")]),
+      row("urgent-care", "SUPPORTED", [
+        val("doc-2", "$20", "Lite: $20.", "Lite"),
+      ]),
+      row("emergency-care", "SUPPORTED", [
+        val("doc-2", "$0 to $25,000", "Platinum: $0 to $25,000.", "Platinum"),
+      ]),
     ]);
     const out = html(t, { "doc-2": "Lite" });
     expect(out).not.toContain("Emergency room");
@@ -148,8 +195,12 @@ describe("row visibility classes", () => {
 
   it("J. switching to the evidenced tier reveals the row", () => {
     const t = table([
-      row("urgent-care", "SUPPORTED", [val("doc-2", "$20", "Lite: $20.", "Lite")]),
-      row("emergency-care", "SUPPORTED", [val("doc-2", "$0 to $25,000", "Platinum: $0 to $25,000.", "Platinum")]),
+      row("urgent-care", "SUPPORTED", [
+        val("doc-2", "$20", "Lite: $20.", "Lite"),
+      ]),
+      row("emergency-care", "SUPPORTED", [
+        val("doc-2", "$0 to $25,000", "Platinum: $0 to $25,000.", "Platinum"),
+      ]),
     ]);
     expect(html(t, { "doc-2": "Platinum" })).toContain("Emergency room");
     expect(html(t)).toContain("Emergency room");
@@ -157,7 +208,10 @@ describe("row visibility classes", () => {
 });
 
 describe("per-plan verdict states (no global Status column)", () => {
-  const docTable = (rows: RegisteredTableRow[], userContext?: Record<string, string>): string =>
+  const docTable = (
+    rows: RegisteredTableRow[],
+    userContext?: Record<string, string>,
+  ): string =>
     renderToStaticMarkup(
       createElement(ComparisonTable, {
         table: table(rows),
@@ -167,7 +221,11 @@ describe("per-plan verdict states (no global Status column)", () => {
     );
 
   it("renders no global Status column", () => {
-    const out = docTable([row("annual-deductible", "SUPPORTED", [val("doc-1", "$250", "Deductible $250.")])]);
+    const out = docTable([
+      row("annual-deductible", "SUPPORTED", [
+        val("doc-1", "$250", "Deductible $250."),
+      ]),
+    ]);
     expect(out).not.toContain(">Status<");
     expect(out).not.toContain("col-verdict");
   });
@@ -181,7 +239,11 @@ describe("per-plan verdict states (no global Status column)", () => {
           rationale: "User context field 'visaOrStatus' rules this fact out.",
           values: [
             val("doc-1", "F-1 only", "F-1 visa holders only."),
-            val("doc-2", "Open enrollment", "Open enrollment, H-1B holders welcome."),
+            val(
+              "doc-2",
+              "Open enrollment",
+              "Open enrollment, H-1B holders welcome.",
+            ),
           ],
         } as RegisteredTableRow,
       ],
@@ -193,7 +255,9 @@ describe("per-plan verdict states (no global Status column)", () => {
 
   it("SUPPORTED rows render values with no badge", () => {
     const out = docTable([
-      row("annual-deductible", "SUPPORTED", [val("doc-1", "$250", "Deductible $250.")]),
+      row("annual-deductible", "SUPPORTED", [
+        val("doc-1", "$250", "Deductible $250."),
+      ]),
     ]);
     expect(out).toContain("$250");
     expect(out).not.toContain("SUPPORTED");
@@ -201,7 +265,9 @@ describe("per-plan verdict states (no global Status column)", () => {
 
   it("empty cells render concise Not stated", () => {
     const out = docTable([
-      row("annual-deductible", "SUPPORTED", [val("doc-1", "$250", "Deductible $250.")]),
+      row("annual-deductible", "SUPPORTED", [
+        val("doc-1", "$250", "Deductible $250."),
+      ]),
     ]);
     expect(out).toContain("Not stated");
   });

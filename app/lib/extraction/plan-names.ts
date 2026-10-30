@@ -1,45 +1,56 @@
-// Plan name extraction utilities.
-// Per USER_FLOWS.md: "Do not use raw PDF filenames as primary plan names.
-// Use confidently extracted product/plan names. Show filename only as secondary
-// source metadata. If no reliable plan name exists: use a cleaned filename fallback.
-// Never invent a plan name."
+// Customer-facing plan titles.
+// A plan title comes ONLY from a source-verified plan identity carried by the
+// validated comparison table. Filenames — raw, numeric-prefixed or prettified —
+// are never used as plan titles; they stay document/evidence metadata. When no
+// reliable identity exists the UI shows a clear unconfirmed label,
+// distinguished by upload order when several documents lack one. No plan name
+// is ever invented (see USER_FLOWS.md).
 
-/** Clean a PDF filename into a reasonable display name fallback.
- *  Strips .pdf extension, common prefixes/suffixes, and normalizes separators. */
-export function cleanFilenameForDisplay(filename: string): string {
-  let name = filename.replace(/\.pdf$/i, "");
-  // Remove common document-type prefixes
-  name = name.replace(/^(plan|policy|summary|schedule|brochure|benefit)[-_]\s*/i, "");
-  // Replace underscores, hyphens with spaces
-  name = name.replace(/[-_]+/g, " ");
-  // Remove common suffixes like dates, versions
-  name = name.replace(/\s*(20\d{2}|v\d+|final|draft|copy)\s*$/i, "");
-  // Collapse multiple spaces
-  name = name.replace(/\s+/g, " ").trim();
-  // Title case
-  name = name
-    .split(" ")
-    .map((w) => (w.length > 2 ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w.toUpperCase()))
-    .join(" ");
-  return name || "Unnamed Plan";
+import type { ComparisonTable } from "@/app/lib/extraction/types";
+
+export const UNCONFIRMED_PLAN_TITLE = "Plan name unconfirmed";
+
+export interface PlanTitle {
+  name: string;
+  source: "verified" | "unconfirmed";
 }
 
-/** Extract a plan name from document text if confidently present.
- *  Returns null if no reliable name can be determined (caller should use fallback).
- *  This is a stub — real extraction would use NLP/patterns on the first few pages. */
-export function extractPlanNameFromText(_pages: string[]): string | null {
-  // TODO: Implement actual plan name extraction from document content.
-  // For now, return null to signal "not confident" and use filename fallback.
-  return null;
+type TitleTable = Pick<ComparisonTable, "documents" | "plans">;
+
+function ownsDocument(
+  table: TitleTable,
+  documentId: string,
+): number {
+  return (table.plans ?? []).filter((plan) =>
+    plan.sources.some((source) => source.documentId === documentId),
+  ).length;
 }
 
-/** Get the display name for a plan: extracted name if confident, else cleaned filename. */
-export function getPlanDisplayName(
-  document: { filename: string; pages?: string[] }
-): { name: string; source: "extracted" | "filename" } {
-  if (document.pages) {
-    const extracted = extractPlanNameFromText(document.pages);
-    if (extracted) return { name: extracted, source: "extracted" };
+/** Title for a document-scoped plan view: the name of the single proven plan
+ *  that carries this document, or an unconfirmed label distinguished by the
+ *  document's upload position when several documents lack a proven plan. */
+export function documentPlanTitle(
+  table: TitleTable,
+  documentId: string,
+): PlanTitle {
+  const owningCount = ownsDocument(table, documentId);
+  if (owningCount === 1) {
+    return {
+      name: (table.plans ?? []).find((plan) =>
+        plan.sources.some((source) => source.documentId === documentId),
+      )!.name,
+      source: "verified",
+    };
   }
-  return { name: cleanFilenameForDisplay(document.filename), source: "filename" };
+  // Legacy tables carry no proven plans: every document is its own
+  // unconfirmed plan view. Other ownership shapes (none, or a document
+  // shared by several proven plans) also have no single verifiable name.
+  const unconfirmedDocuments = table.documents.filter(
+    (doc) => (table.plans?.length ?? 0) === 0 && ownsDocument(table, doc.documentId) === 0,
+  );
+  const ordinal = unconfirmedDocuments.findIndex((doc) => doc.documentId === documentId) + 1;
+  if (unconfirmedDocuments.length > 1 && ordinal > 0) {
+    return { name: `${UNCONFIRMED_PLAN_TITLE} (upload ${ordinal})`, source: "unconfirmed" };
+  }
+  return { name: UNCONFIRMED_PLAN_TITLE, source: "unconfirmed" };
 }

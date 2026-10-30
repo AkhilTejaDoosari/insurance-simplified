@@ -1,19 +1,22 @@
-# Insurance Simplified Design System (Existing UI)
+# Insurance Simplified Design System (V1.1 foundation)
 
 ## 1. Atmosphere & Identity
 
-Quiet, evidence-first insurance reading: a pale canvas, understated blue
-actions, and compact side-by-side facts. The original PDF page is always one
-click away. Phase P1 preserves the existing interface while adding a one-PDF
-understanding state; Phase P2 may change group navigation after approval.
+Adaptive Medical Minimal: quiet, evidence-first reading with restrained brand
+red and blue interactive controls. The original PDF page remains one click away.
+The approved master logo remains unchanged; the small transparent icon is a
+derived crop for dark surfaces and browser icons, not a replacement brand.
 
 ## 2. Color
 
-`app/globals.css` owns the palette: `--bg` #f5f6f3, `--surface` #ffffff,
-`--surface-tint` #eef2ee, `--ink` #1c2833, `--muted` #5b6770, `--line`
-#dce1de, `--line-strong` #c3cac6, `--action` #255f99, `--focus` #1f4f80.
-Status tokens are `--ok-*`, `--bad-*`, `--none-*`, and `--warn-*`.
-The existing UI has one light theme; this document records it, not a new theme.
+`app/globals.css` owns semantic tokens. Light: background #F7F8FA, surface
+#FFFFFF, ink #171B24, line #E1E5EB, interactive blue #315EDB, brand red
+#CF3043. Dark (`prefers-color-scheme`): background #111318, surface #1D2028,
+ink #F7F8FA, line #373D48, accessible interactive blue #98AFFF and brand
+red #ED4658. Supporting surfaces, row stripes, focus, and status tokens have
+separate theme values. `--ok-*` is reserved for supported positives,
+`--warn-*` for potential conflicts, `--bad-*` for explicit exclusions/errors,
+`--none-*` for unknown/not stated. Status text is mandatory; color is not enough.
 
 ## 3. Typography
 
@@ -30,34 +33,34 @@ scroll rather than squeezing tier values into unreadable columns.
 
 ## 5. Components
 
-- **Card** (`.card`): white bordered surface, 24px inset; intake and results.
+- **Card** (`.card`): bordered semantic surface, 24px inset; intake and results.
 - **Panel** (`.panel`): tinted supporting surface for chat; preserve focus
   order when stacked on narrow screens.
 - **Button** (`.btn`): blue primary, visible hover/focus/disabled states;
   loading state disables repeat submission and announces progress.
 - **Input/select** (`.input`, `.select`): visible label and focus outline;
   validation errors appear inline with `role="alert"`.
-- **Comparison table** (`.comparison`, `.table`): section navigation, tier
-  selection, per-value evidence links, honest `Not stated`, and Verify & Contact.
-  One PDF uses one document column or its internal tier columns.
+- **Comparison table** (`.comparison`, `.table`): retains current V1 navigation
+  and tier presentation until the approved later V1.1 workspace milestone.
+  Per-value evidence links and honest `Not stated` remain mandatory.
 - **Verdict badge** (`.verdict`): separate tokens for supported, excluded,
   not stated, and verification states; verdicts never replace source links.
 
 ## 6. Motion & Interaction
 
 Existing hover feedback runs at 120ms; the processing spinner uses a transform
-animation. New copy/branching introduces no animation. Keep reduced-motion
-support and visible keyboard focus.
+animation. Respect reduced motion and keep visible keyboard focus. Loading,
+retryable errors, and unknown insurance states must remain distinct.
 
 ## 7. Depth & Surface
 
 Mixed, restrained surface treatment: a border separates cards and tables;
-tonal tint distinguishes supporting panels. The existing welcome choice has a
-subtle hover shadow. Do not add decorative gradients or new elevations for P1.
+tonal tint distinguishes supporting panels. The welcome choice has a subtle
+hover shadow. Do not add decorative gradients or excessive elevation.
 
 ## 8. Accessibility Constraints & Accepted Debt
 
 Target keyboard-reachable form controls, labelled tier selectors, live status,
-inline error alerts, and visible focus. Evidence links name the fact, source,
-and page. Existing light-only theme and horizontal table scroll remain
-pre-existing design debt; they are not expanded in this product-contract phase.
+inline error alerts, visible focus and sufficient contrast in both system
+themes. Evidence links name the fact, source, and page. Existing horizontal
+table-scroll and V1 document/tier columns remain debt until Milestone 4.

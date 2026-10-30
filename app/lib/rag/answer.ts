@@ -7,10 +7,18 @@ import { completeJson } from "@/app/lib/llm/client";
 import { chunkDocument, type ChunkableDocument } from "@/app/lib/rag/chunks";
 import { embedTexts, isEmbeddingConfigured } from "@/app/lib/rag/embeddings";
 import { InMemoryCosineIndex } from "@/app/lib/rag/cosine-index";
-import { fuseRRF, fuseSingleLeg, retrieveFused, type FusedPassage } from "@/app/lib/rag/fusion";
+import {
+  fuseRRF,
+  fuseSingleLeg,
+  retrieveFused,
+  type FusedPassage,
+} from "@/app/lib/rag/fusion";
 import { retrievePersistentSemantic } from "@/app/lib/rag/persist-session";
 import type { RankedPassage } from "@/app/lib/rag/embeddings";
-import { verifyAnswerClaims, classifyGrounding } from "@/app/lib/evidence-verification";
+import {
+  verifyAnswerClaims,
+  classifyGrounding,
+} from "@/app/lib/evidence-verification";
 
 export interface RagDocument {
   documentId: string;
@@ -28,7 +36,13 @@ export interface ChatCitation {
 export type AnswerGrounding = "explicit" | "related" | "needs-external";
 
 export type ChatResponse =
-  | { schemaVersion: "v1"; kind: "answer"; answerText: string; citations: ChatCitation[]; grounding?: AnswerGrounding }
+  | {
+      schemaVersion: "v1";
+      kind: "answer";
+      answerText: string;
+      citations: ChatCitation[];
+      grounding?: AnswerGrounding;
+    }
   | { schemaVersion: "v1"; kind: "refusal"; refusalText: string };
 
 /** Presentation-time citation: core citation plus its session-bound opaque
@@ -39,14 +53,22 @@ export type RegisteredChatCitation = ChatCitation & {
 };
 
 export type RegisteredChatResponse =
-  | { schemaVersion: "v1"; kind: "answer"; answerText: string; citations: RegisteredChatCitation[]; grounding?: AnswerGrounding }
+  | {
+      schemaVersion: "v1";
+      kind: "answer";
+      answerText: string;
+      citations: RegisteredChatCitation[];
+      grounding?: AnswerGrounding;
+    }
   | { schemaVersion: "v1"; kind: "refusal"; refusalText: string };
 
 export const REFUSAL_TEXT =
   "The uploaded documents contain no supporting evidence for this question.";
 
 const STOPWORDS = new Set(
-  "a,an,the,of,in,on,for,to,is,are,was,were,be,been,do,does,did,what,which,who,how,much,many,my,our,your,this,that,these,those,and,or,with,by,at,from,as,it,its,plan,coverage,cover,covered,four,between,compare".split(",")
+  "a,an,the,of,in,on,for,to,is,are,was,were,be,been,do,does,did,what,which,who,how,much,many,my,our,your,this,that,these,those,and,or,with,by,at,from,as,it,its,plan,coverage,cover,covered,four,between,compare".split(
+    ",",
+  ),
 );
 
 function tokens(text: string): Set<string> {
@@ -56,7 +78,7 @@ function tokens(text: string): Set<string> {
       .replace(/[^a-z0-9\s]/g, " ")
       .split(/\s+/)
       .filter((w) => w.length > 2 && !STOPWORDS.has(w))
-      .map((w) => w.endsWith("s") && w.length > 4 ? w.slice(0, -1) : w)
+      .map((w) => (w.endsWith("s") && w.length > 4 ? w.slice(0, -1) : w)),
   );
 }
 
@@ -75,7 +97,7 @@ export interface RetrievedPassage {
 export function retrieve(
   documents: RagDocument[],
   question: string,
-  maxPassages = 3
+  maxPassages = 3,
 ): RetrievedPassage[] {
   const q = tokens(question);
   if (q.size === 0) return [];
@@ -87,32 +109,53 @@ export function retrieve(
     ]),
   }));
   const namedDocuments = namedTerms
-    .filter(({ terms }) => [...terms].some((word) => word !== "pdf" && q.has(word)))
+    .filter(({ terms }) =>
+      [...terms].some((word) => word !== "pdf" && q.has(word)),
+    )
     .map(({ doc }) => doc);
-  const searchDocuments = namedDocuments.length === 1 ? namedDocuments : documents;
+  const searchDocuments =
+    namedDocuments.length === 1 ? namedDocuments : documents;
   const documentNames = new Set(namedTerms.flatMap(({ terms }) => [...terms]));
   const topical = new Set([...q].filter((word) => !documentNames.has(word)));
   const queryTerms = topical.size > 0 ? topical : q;
-  const candidates: { documentId: string; page: number; quote: string; terms: Set<string> }[] = [];
+  const candidates: {
+    documentId: string;
+    page: number;
+    quote: string;
+    terms: Set<string>;
+  }[] = [];
   const pageLines = new Map<string, Map<number, string[]>>();
   const frequency = new Map<string, number>();
   for (const doc of searchDocuments) {
     doc.pages.forEach((pageText, i) => {
-      const lines = pageText.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-      if (!pageLines.has(doc.documentId)) pageLines.set(doc.documentId, new Map());
+      const lines = pageText
+        .split(/\n+/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      if (!pageLines.has(doc.documentId))
+        pageLines.set(doc.documentId, new Map());
       pageLines.get(doc.documentId)!.set(i + 1, lines);
       for (const line of lines) {
         const lt = tokens(line);
-        candidates.push({ documentId: doc.documentId, page: i + 1, quote: line, terms: lt });
-        for (const word of queryTerms) if (lt.has(word)) frequency.set(word, (frequency.get(word) ?? 0) + 1);
+        candidates.push({
+          documentId: doc.documentId,
+          page: i + 1,
+          quote: line,
+          terms: lt,
+        });
+        for (const word of queryTerms)
+          if (lt.has(word)) frequency.set(word, (frequency.get(word) ?? 0) + 1);
       }
     });
   }
-  const scored: RetrievedPassage[] = candidates.flatMap(({ documentId, page, quote, terms }) => {
-    let score = 0;
-    for (const word of queryTerms) if (terms.has(word)) score += 1 / (frequency.get(word) ?? 1);
-    return score > 0 ? [{ documentId, page, quote, score }] : [];
-  });
+  const scored: RetrievedPassage[] = candidates.flatMap(
+    ({ documentId, page, quote, terms }) => {
+      let score = 0;
+      for (const word of queryTerms)
+        if (terms.has(word)) score += 1 / (frequency.get(word) ?? 1);
+      return score > 0 ? [{ documentId, page, quote, score }] : [];
+    },
+  );
   const top = scored.sort((a, b) => b.score - a.score).slice(0, maxPassages);
   const WINDOW = 3;
   const result = top.map((p) => {
@@ -137,11 +180,23 @@ export function retrieve(
         for (const line of lines) {
           const lt = tokens(line);
           const count = nameWords.filter((w) => lt.has(w)).length;
-          if (count > 0 && (!best || count > best.count)) best = { page, line, count };
+          if (count > 0 && (!best || count > best.count))
+            best = { page, line, count };
         }
       }
-      if (best && !result.some((p) => p.documentId === doc.documentId && p.quote.includes(best!.line))) {
-        result.push({ documentId: doc.documentId, page: best.page, quote: best.line, score: 0 });
+      if (
+        best &&
+        !result.some(
+          (p) =>
+            p.documentId === doc.documentId && p.quote.includes(best!.line),
+        )
+      ) {
+        result.push({
+          documentId: doc.documentId,
+          page: best.page,
+          quote: best.line,
+          score: 0,
+        });
       }
     }
   }
@@ -154,7 +209,10 @@ function toRankedPassage(p: RetrievedPassage): RankedPassage {
 }
 
 /** Lexical retriever leg: line-overlap, returns top-10 RankedPassage. */
-async function retrieveLexical(documents: RagDocument[], question: string): Promise<RankedPassage[]> {
+async function retrieveLexical(
+  documents: RagDocument[],
+  question: string,
+): Promise<RankedPassage[]> {
   const passages = retrieve(documents, question, 10);
   return passages.map(toRankedPassage);
 }
@@ -173,8 +231,23 @@ async function retrieveSemantic(
   if (!isEmbeddingConfigured()) return [];
   if (sessionId !== undefined) {
     try {
-      const persistent = await retrievePersistentSemantic(question, sessionId, 16);
-      if (persistent !== null) return persistent;
+      const persistent = await retrievePersistentSemantic(
+        question,
+        sessionId,
+        16,
+        documents.map((d) => d.documentId),
+      );
+      if (persistent !== null)
+        return persistent.filter((p) => {
+          const page = documents.find((d) => d.documentId === p.documentId)
+            ?.pages[p.page - 1];
+          const normalized = (text: string) => text.replace(/\s+/g, " ").trim();
+          return (
+            page !== undefined &&
+            p.quote.trim().length > 0 &&
+            normalized(page).includes(normalized(p.quote))
+          );
+        });
     } catch (e) {
       if (process.env.NODE_ENV !== "test") {
         const cls = e instanceof Error ? e.constructor.name : typeof e;
@@ -210,47 +283,70 @@ async function retrieveSemantic(
 export async function retrieveHybrid(
   documents: RagDocument[],
   question: string,
-  maxPassages = 5
+  maxPassages = 5,
 ): Promise<FusedPassage[]> {
   return retrieveFused(
     () => retrieveLexical(documents, question),
     () => retrieveSemantic(documents, question),
-    maxPassages
+    maxPassages,
   );
 }
 
 /** Deterministic fallback answer: grounded strictly in retrieved passages. */
-export function answerQuestion(documents: RagDocument[], question: string): ChatResponse {
+export function answerQuestion(
+  documents: RagDocument[],
+  question: string,
+): ChatResponse {
   const passages = retrieve(documents, question);
   if (passages.length === 0) {
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
   }
-  const citations: ChatCitation[] = passages.map(({ documentId, page, quote }) => ({
-    documentId,
-    page,
-    quote,
-  }));
-  const answerText = passages.map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
-  return { schemaVersion: "v1", kind: "answer", answerText, citations, grounding: "explicit" };
+  const citations: ChatCitation[] = passages.map(
+    ({ documentId, page, quote }) => ({
+      documentId,
+      page,
+      quote,
+    }),
+  );
+  const answerText = passages
+    .map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`)
+    .join(" ");
+  return {
+    schemaVersion: "v1",
+    kind: "answer",
+    answerText,
+    citations,
+    grounding: "explicit",
+  };
 }
 
 /** Hybrid answer: uses RRF-fused retrieval when embeddings are configured,
  *  degrades to lexical-only when they are not. Same refusal semantics. */
 export async function answerQuestionHybrid(
   documents: RagDocument[],
-  question: string
+  question: string,
 ): Promise<ChatResponse> {
   const passages = await retrieveHybrid(documents, question, 5);
   if (passages.length === 0) {
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
   }
-  const citations: ChatCitation[] = passages.map(({ documentId, page, quote }) => ({
-    documentId,
-    page,
-    quote,
-  }));
-  const answerText = passages.map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
-  return { schemaVersion: "v1", kind: "answer", answerText, citations, grounding: "explicit" };
+  const citations: ChatCitation[] = passages.map(
+    ({ documentId, page, quote }) => ({
+      documentId,
+      page,
+      quote,
+    }),
+  );
+  const answerText = passages
+    .map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`)
+    .join(" ");
+  return {
+    schemaVersion: "v1",
+    kind: "answer",
+    answerText,
+    citations,
+    grounding: "explicit",
+  };
 }
 
 /** Semantic-USEFULNESS floor (top-1 cosine similarity) applied AFTER semantic
@@ -286,7 +382,7 @@ function topSemanticScore(passages: RankedPassage[]): number {
 function isSemanticUseful(
   documents: RagDocument[],
   question: string,
-  passages: RankedPassage[]
+  passages: RankedPassage[],
 ): boolean {
   if (passages.length === 0) return false;
   if (topSemanticScore(passages) >= SEMANTIC_USEFULNESS_FLOOR) return true;
@@ -305,15 +401,33 @@ export async function answerQuestionSemantic(
     return answerQuestion(documents, question);
   }
   try {
-    const passages = await retrieveSemantic(documents, question, opts.sessionId);
-    if (passages.length > 0 && isSemanticUseful(documents, question, passages)) {
-      const citations: ChatCitation[] = passages.slice(0, 5).map(({ documentId, page, quote }) => ({
-        documentId,
-        page,
-        quote,
-      }));
-      const answerText = passages.slice(0, 5).map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`).join(" ");
-      return { schemaVersion: "v1", kind: "answer", answerText, citations, grounding: "explicit" };
+    const passages = await retrieveSemantic(
+      documents,
+      question,
+      opts.sessionId,
+    );
+    if (
+      passages.length > 0 &&
+      isSemanticUseful(documents, question, passages)
+    ) {
+      const citations: ChatCitation[] = passages
+        .slice(0, 5)
+        .map(({ documentId, page, quote }) => ({
+          documentId,
+          page,
+          quote,
+        }));
+      const answerText = passages
+        .slice(0, 5)
+        .map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`)
+        .join(" ");
+      return {
+        schemaVersion: "v1",
+        kind: "answer",
+        answerText,
+        citations,
+        grounding: "explicit",
+      };
     }
     // Semantic healthy but empty, or ranked but not useful (below-floor
     // similarity with zero lexical overlap, e.g. nonsense queries that pure
@@ -330,10 +444,10 @@ const CHAT_INSTRUCTIONS = [
   "You answer questions about insurance documents.",
   "Use ONLY the DOCUMENT blocks below. Every substantive claim MUST be backed by a cited passage.",
   'If nothing is relevant, return ONLY {"cantAnswer": true} with no other text.',
-  "Otherwise return ONLY a JSON object: {\"answerText\": string, \"citations\": [{documentId, page, quote}]}.",
+  'Otherwise return ONLY a JSON object: {"answerText": string, "citations": [{documentId, page, quote}]}.',
   "ANSWER FORMATTING (required for verification):",
   "- Each sentence of answerText MUST be composed ONLY of words that appear in the passages you cite for it. Copy the source wording near-verbatim; do not paraphrase or add connective words that are not in the source.",
-  "- Do not add meta commentary (e.g. \"According to the documents\", \"Based on the provided passages\").",
+  '- Do not add meta commentary (e.g. "According to the documents", "Based on the provided passages").',
   "- Each quote MUST be copied exactly (character-for-character) from a DOCUMENT block, including whitespace and line breaks as they appear. Preserve every punctuation mark exactly as written (commas, colons, semicolons, periods, dollar signs and digit groupings); when joining wrapped lines into one line, keep each comma and colon that was before the line break — never drop or add punctuation.",
   "- Each DOCUMENT block has a name attribute (the uploaded filename). When the question names or compares plans or insurers, answerText MUST include a short label line for each plan discussed: write name wording from a cited passage (or the filename words separated by spaces) alone on its own line as a 2-3 word label, before any sentence about that plan's values; never combine a plan name with values in one sentence unless every word of that sentence appears in a single cited passage.",
   "- Set cantAnswer ONLY when no DOCUMENT block contains any information relevant to the question. If any relevant passage exists, answer from it.",
@@ -358,23 +472,45 @@ export const MAX_CONTEXT_CHARS = 48000;
 export function buildRetrievalPrompt(
   documents: RagDocument[],
   passages: RankedPassage[],
-  question: string
+  question: string,
 ): string {
   // Group passages by documentId
-  const byDoc = new Map<string, { documentId: string; filename: string; passages: RankedPassage[] }>();
+  const byDoc = new Map<
+    string,
+    { documentId: string; filename: string; passages: RankedPassage[] }
+  >();
   for (const p of passages) {
+    if (
+      !documents.some(
+        (d) =>
+          d.documentId === p.documentId && p.page >= 1 && p.page <= d.pageCount,
+      )
+    )
+      continue;
     if (!byDoc.has(p.documentId)) {
       const doc = documents.find((d) => d.documentId === p.documentId);
-      byDoc.set(p.documentId, { documentId: p.documentId, filename: doc?.filename ?? p.documentId, passages: [] });
+      byDoc.set(p.documentId, {
+        documentId: p.documentId,
+        filename: doc?.filename ?? p.documentId,
+        passages: [],
+      });
     }
     byDoc.get(p.documentId)!.passages.push(p);
   }
 
   // Build per-document context with page tags
-  const docBlocks: Array<{ documentId: string; filename: string; pages: string[] }> = [];
+  const docBlocks: Array<{
+    documentId: string;
+    filename: string;
+    pages: string[];
+  }> = [];
   let totalChars = 0;
 
-  for (const { documentId, filename, passages: docPassages } of byDoc.values()) {
+  for (const {
+    documentId,
+    filename,
+    passages: docPassages,
+  } of byDoc.values()) {
     const pageMap = new Map<number, string>();
     for (const p of docPassages) {
       const tagged = `[Page ${p.page}]\n${p.quote}`;
@@ -396,8 +532,14 @@ export function buildRetrievalPrompt(
   // If even the first document exceeds budget, truncate its content
   if (docBlocks.length === 1 && totalChars > MAX_CONTEXT_CHARS) {
     const first = docBlocks[0];
-    const pages = first.pages.map((p) => p.substring(0, Math.max(1, MAX_CONTEXT_CHARS / first.pages.length)));
-    docBlocks[0] = { documentId: first.documentId, filename: first.filename, pages };
+    const pages = first.pages.map((p) =>
+      p.substring(0, Math.max(1, MAX_CONTEXT_CHARS / first.pages.length)),
+    );
+    docBlocks[0] = {
+      documentId: first.documentId,
+      filename: first.filename,
+      pages,
+    };
   }
 
   const blocks = docBlocks
@@ -444,21 +586,38 @@ export async function answerViaLlm(
     const lexical = retrieve(documents, question, 10).map(toRankedPassage);
     if (lexical.length === 0) {
       console.warn(`[chat-refusal] stage=retrieval-empty reason=no-embeddings`);
-      return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+      return {
+        schemaVersion: "v1",
+        kind: "refusal",
+        refusalText: REFUSAL_TEXT,
+      };
     }
     legReason = "no-embeddings";
     passages = lexical;
   } else {
     try {
-      const semantic = await retrieveSemantic(documents, question, opts.sessionId);
-      if (semantic.length > 0 && isSemanticUseful(documents, question, semantic)) {
+      const semantic = await retrieveSemantic(
+        documents,
+        question,
+        opts.sessionId,
+      );
+      if (
+        semantic.length > 0 &&
+        isSemanticUseful(documents, question, semantic)
+      ) {
         leg = "semantic";
         passages = semantic;
       } else {
         const lexical = retrieve(documents, question, 10).map(toRankedPassage);
         if (lexical.length === 0) {
-          console.warn(`[chat-refusal] stage=retrieval-empty reason=semantic-not-useful+lexical-empty`);
-          return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+          console.warn(
+            `[chat-refusal] stage=retrieval-empty reason=semantic-not-useful+lexical-empty`,
+          );
+          return {
+            schemaVersion: "v1",
+            kind: "refusal",
+            refusalText: REFUSAL_TEXT,
+          };
         }
         legReason = "semantic-not-useful";
         passages = lexical;
@@ -466,15 +625,24 @@ export async function answerViaLlm(
     } catch (e) {
       if (process.env.NODE_ENV !== "test") {
         const cls = e instanceof Error ? e.constructor.name : typeof e;
-        const cause = e instanceof Error && e.cause ? (e.cause as { code?: unknown }) : undefined;
+        const cause =
+          e instanceof Error && e.cause
+            ? (e.cause as { code?: unknown })
+            : undefined;
         const rawCode = cause?.code ?? (e as { code?: unknown }).code;
         const code = typeof rawCode === "string" ? ` code=${rawCode}` : "";
         console.warn(`[chat-retrieval] semantic-error class=${cls}${code}`);
       }
       const lexical = retrieve(documents, question, 10).map(toRankedPassage);
       if (lexical.length === 0) {
-        console.warn(`[chat-refusal] stage=retrieval-empty reason=semantic-error+lexical-empty`);
-        return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+        console.warn(
+          `[chat-refusal] stage=retrieval-empty reason=semantic-error+lexical-empty`,
+        );
+        return {
+          schemaVersion: "v1",
+          kind: "refusal",
+          refusalText: REFUSAL_TEXT,
+        };
       }
       legReason = "semantic-error";
       passages = lexical;
@@ -487,7 +655,9 @@ export async function answerViaLlm(
   }
 
   if (process.env.NODE_ENV !== "test") {
-    const pages = [...new Set(passages.map((p) => p.page))].sort((a, b) => a - b);
+    const pages = [...new Set(passages.map((p) => p.page))].sort(
+      (a, b) => a - b,
+    );
     const hay = passages.map((p) => p.quote.toLowerCase()).join("\n");
     const probe = [
       "elite",
@@ -502,22 +672,33 @@ export async function answerViaLlm(
     ];
     const present = probe.filter((t) => hay.includes(t));
     console.warn(
-      `[chat-retrieval] leg=${leg}${legReason ? ` reason=${legReason}` : ""} passages=${passages.length} pages=${pages.join(",")} present=${present.join("|") || "none"}`
+      `[chat-retrieval] leg=${leg}${legReason ? ` reason=${legReason}` : ""} passages=${passages.length} pages=${pages.join(",")} present=${present.join("|") || "none"}`,
     );
   }
   // Build prompt from top-K retrieved chunks with budget enforcement
   const prompt = buildRetrievalPrompt(documents, passages, question);
-  const raw = (await completeJson([{ role: "user", content: prompt }])) as Record<string, unknown>;
+  const raw = (await completeJson([
+    { role: "user", content: prompt },
+  ])) as Record<string, unknown>;
 
   if (raw.cantAnswer === true) {
     console.warn(`[chat-refusal] stage=llm-cantAnswer`);
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
   }
 
-  const response = validateChatResponse({ schemaVersion: "v1", kind: "answer", ...(raw as object) });
+  const response = validateChatResponse({
+    schemaVersion: "v1",
+    kind: "answer",
+    ...(raw as object),
+  });
 
   // validateChatResponse guarantees kind === "answer" here (cantAnswer handled above)
-  const answerResponse = response as { schemaVersion: "v1"; kind: "answer"; answerText: string; citations: ChatCitation[] };
+  const answerResponse = response as {
+    schemaVersion: "v1";
+    kind: "answer";
+    answerText: string;
+    citations: ChatCitation[];
+  };
 
   // Convert passages to supplied chunks format for verification
   const suppliedChunks = passages.map((p) => ({
@@ -531,13 +712,13 @@ export async function answerViaLlm(
     answerResponse.answerText,
     answerResponse.citations,
     suppliedChunks,
-    documents
+    documents,
   );
 
   if (!verification.ok) {
     const failedCitation = /p(\d+)/.exec(verification.rationale ?? "");
     console.warn(
-      `[chat-refusal] stage=verifyAnswerClaims category=${verification.rationale?.split(":")[0] ?? "unknown"} failedPage=${failedCitation?.[1] ?? "n/a"} citationCount=${answerResponse.citations.length}`
+      `[chat-refusal] stage=verifyAnswerClaims category=${verification.rationale?.split(":")[0] ?? "unknown"} failedPage=${failedCitation?.[1] ?? "n/a"} citationCount=${answerResponse.citations.length}`,
     );
     // ANY failure -> fixed refusal. NO repair.
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
@@ -558,7 +739,8 @@ export function validateChatResponse(payload: unknown): ChatResponse {
     throw new Error("Invalid chat response: not an object");
   }
   const r = payload as Record<string, unknown>;
-  if (r.schemaVersion !== "v1") throw new Error("Invalid chat response: schemaVersion must be 'v1'");
+  if (r.schemaVersion !== "v1")
+    throw new Error("Invalid chat response: schemaVersion must be 'v1'");
   if (r.kind === "refusal") {
     if (typeof r.refusalText !== "string" || !r.refusalText.trim()) {
       throw new Error("Invalid chat response: refusalText required");
@@ -567,31 +749,50 @@ export function validateChatResponse(payload: unknown): ChatResponse {
   }
   if (r.kind === "answer") {
     if (typeof r.answerText !== "string" || !r.answerText.trim()) {
-      throw new Error(`Invalid chat response: answerText required type=${typeof r.answerText}`);
+      throw new Error(
+        `Invalid chat response: answerText required type=${typeof r.answerText}`,
+      );
     }
     if (!Array.isArray(r.citations) || r.citations.length === 0) {
-      throw new Error("Invalid chat response: answers require >=1 citation (FR-012)");
+      throw new Error(
+        "Invalid chat response: answers require >=1 citation (FR-012)",
+      );
     }
     for (const c of r.citations as Record<string, unknown>[]) {
       if (typeof c !== "object" || c === null) {
-        throw new Error(`Invalid chat response: malformed citation entry type=${typeof c}`);
+        throw new Error(
+          `Invalid chat response: malformed citation entry type=${typeof c}`,
+        );
       }
       if (typeof c.documentId !== "string") {
-        throw new Error(`Invalid chat response: malformed citation field=documentId type=${typeof c.documentId}`);
+        throw new Error(
+          `Invalid chat response: malformed citation field=documentId type=${typeof c.documentId}`,
+        );
       }
       // Coerce LLM numeric-string pages ("3") to integers; non-numeric strings still fail below.
       if (typeof c.page === "string" && /^\d+$/.test(c.page.trim())) {
         c.page = Number(c.page.trim());
       }
       if (typeof c.page !== "number" || c.page < 1) {
-        throw new Error(`Invalid chat response: malformed citation field=page type=${typeof c.page}`);
+        throw new Error(
+          `Invalid chat response: malformed citation field=page type=${typeof c.page}`,
+        );
       }
       if (typeof c.quote !== "string" || !c.quote.trim()) {
-        throw new Error(`Invalid chat response: malformed citation field=quote type=${typeof c.quote}`);
+        throw new Error(
+          `Invalid chat response: malformed citation field=quote type=${typeof c.quote}`,
+        );
       }
     }
-    if (r.grounding !== undefined && r.grounding !== "explicit" && r.grounding !== "related" && r.grounding !== "needs-external") {
-      throw new Error("Invalid chat response: grounding must be explicit, related, or needs-external");
+    if (
+      r.grounding !== undefined &&
+      r.grounding !== "explicit" &&
+      r.grounding !== "related" &&
+      r.grounding !== "needs-external"
+    ) {
+      throw new Error(
+        "Invalid chat response: grounding must be explicit, related, or needs-external",
+      );
     }
     return payload as ChatResponse;
   }

@@ -72,6 +72,47 @@ describe("LocalFileObjectStore (default durable store)", () => {
     expect(await store.exists(key)).toBe(true);
   });
 
+  it("uses session-specific keys for identical bytes and keeps both references independently deletable", async () => {
+    const bytes = new TextEncoder().encode("same source PDF");
+    const first = await putDocumentBytes(bytes, SCOPE, "doc-1", store);
+    const sameSessionDuplicate = await putDocumentBytes(bytes, SCOPE, "doc-2", store);
+    const second = await putDocumentBytes(bytes, "sess-another-owner", "doc-1", store);
+
+    expect(first.sha256).toBe(second.sha256);
+    expect(first.objectKey).not.toBe(second.objectKey);
+    expect(first.objectKey).not.toBe(sameSessionDuplicate.objectKey);
+    expect(await store.get(first.objectKey)).toEqual(bytes);
+    expect(await store.get(second.objectKey)).toEqual(bytes);
+    await expect(getDocumentBytes(SCOPE, second.objectKey, store)).rejects.toThrow(/outside the authorized session/);
+    await expect(deleteDocumentObjects(SCOPE, [second.objectKey], store)).rejects.toThrow(/outside the authorized session/);
+
+    await deleteDocumentObjects(SCOPE, [first.objectKey], store);
+    expect(await store.get(first.objectKey)).toBeUndefined();
+    expect(await store.get(sameSessionDuplicate.objectKey)).toEqual(bytes);
+    expect(await store.get(second.objectKey)).toEqual(bytes);
+  });
+
+  it("refuses to reuse a pre-existing key whose bytes do not match the expected hash", async () => {
+    const expected = new TextEncoder().encode("expected original PDF");
+    const corrupted = new TextEncoder().encode("different bytes");
+    const expectedHash = sha256Hex(expected);
+    const scopedKey = `sessions/${SCOPE}/documents/doc-1/${expectedHash.slice(0, 2)}/${expectedHash}.pdf`;
+    await store.put(scopedKey, corrupted);
+
+    await expect(putDocumentBytes(expected, SCOPE, "doc-1", store)).rejects.toThrow(/integrity/i);
+    expect(await store.get(scopedKey)).toEqual(corrupted);
+  });
+
+  it("deduplicates concurrent identical writes without overwriting", async () => {
+    const bytes = new TextEncoder().encode("concurrent PDF bytes");
+    const results = await Promise.all([
+      putDocumentBytes(bytes, SCOPE, "doc-1", store),
+      putDocumentBytes(bytes, SCOPE, "doc-1", store),
+    ]);
+    expect(results[0]).toEqual(results[1]);
+    expect(await store.get(results[0].objectKey)).toEqual(bytes);
+  });
+
   it("delete removes the object; second delete is a no-op false", async () => {
     const bytes = new TextEncoder().encode("delete-me");
     const key = objectKeyFor(sha256Hex(bytes));
@@ -165,6 +206,7 @@ describe("Supabase adapter configuration (lazy, import never throws)", () => {
       const method = init?.method ?? "GET";
       if (method === "POST") {
         const body = new Uint8Array(await new Response(init?.body as BodyInit).arrayBuffer());
+        if (mem.has(u)) return new Response("already exists", { status: 409 });
         mem.set(u, body);
         return new Response("{}", { status: 200 });
       }
@@ -235,17 +277,49 @@ describe("factory fallback + scoped helpers", () => {
     }
   });
 
-  it("putDocumentBytes returns stable sha256+objectKey metadata; get round-trips scoped", async () => {
+  it("putDocumentBytes returns session-scoped sha256+objectKey metadata; get round-trips scoped", async () => {
     const dir = scratchDir();
     try {
       const store = new LocalFileObjectStore(dir);
       const bytes = new TextEncoder().encode("%PDF-scoped-doc");
-      const meta = await putDocumentBytes(bytes, store);
-      expect(meta.objectKey).toBe(objectKeyFor(meta.sha256));
+      const meta = await putDocumentBytes(bytes, SCOPE, "doc-1", store);
+      expect(meta.objectKey).toBe(
+        `sessions/${SCOPE}/documents/doc-1/${meta.sha256.slice(0, 2)}/${meta.sha256}.pdf`,
+      );
       expect(await getDocumentBytes(SCOPE, meta.objectKey, store)).toEqual(bytes);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("reuses a matching existing private object after a create-only collision", async () => {
+    const mem = new Map<string, Uint8Array>();
+    let posts = 0;
+    const fetchImpl = (async (url: unknown, init?: RequestInit) => {
+      const u = String(url);
+      if (init?.method === "POST") {
+        posts++;
+        const body = new Uint8Array(await new Response(init.body as BodyInit).arrayBuffer());
+        if (mem.has(u)) return new Response("already exists", { status: 409 });
+        mem.set(u, body);
+        return new Response("{}", { status: 200 });
+      }
+      const existing = mem.get(u);
+      return existing ? new Response(existing as unknown as BodyInit) : new Response("missing", { status: 404 });
+    }) as unknown as typeof fetch;
+    const adapter = new SupabaseStorageAdapter({
+      config: { url: "https://xyz.supabase.co", serviceKey: "service-key", bucket: "private-docs" },
+      fetchImpl,
+    });
+    const bytes = new TextEncoder().encode("existing same-session object");
+    const [first, second] = await Promise.all([
+      putDocumentBytes(bytes, SCOPE, "doc-1", adapter),
+      putDocumentBytes(bytes, SCOPE, "doc-1", adapter),
+    ]);
+    expect(second).toEqual(first);
+    expect(posts).toBe(2);
+    expect(mem.size).toBe(1);
+    expect(mem.values().next().value).toEqual(bytes);
   });
 
   it("scoped helpers fail closed without a scope id (auth before retrieval/deletion)", async () => {

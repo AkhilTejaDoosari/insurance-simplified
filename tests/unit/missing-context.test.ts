@@ -21,7 +21,14 @@ const ev = (documentId: string, page: number, quote: string) => ({
 const TABLE: Table = {
   schemaVersion: "v1",
   factListVersion: "v1",
-  documents: [{ documentId: "doc-1", filename: "plan-a.pdf", pageCount: 2 }],
+  documents: [{ documentId: "doc-1", filename: "plan-a.pdf", pageCount: 4 }],
+  plans: [
+    {
+      planId: "alpha",
+      name: "Alpha",
+      sources: [{ documentId: "doc-1", page: 1, quote: "Alpha" }],
+    },
+  ],
   rows: [
     {
       factName: ELIGIBILITY_ROW_NAME,
@@ -29,9 +36,12 @@ const TABLE: Table = {
       values: [
         {
           documentId: "doc-1",
+          planId: "alpha",
           display: "Students holding F1/M1 visas are eligible",
           qualifiers: {},
-          evidence: [ev("doc-1", 4, "Students holding F1/M1 visas are eligible")],
+          evidence: [
+            ev("doc-1", 4, "Students holding F1/M1 visas are eligible"),
+          ],
         },
       ],
     },
@@ -41,6 +51,7 @@ const TABLE: Table = {
       values: [
         {
           documentId: "doc-1",
+          planId: "alpha",
           display: "$250",
           qualifiers: {},
           evidence: [ev("doc-1", 1, "Annual deductible: $250.")],
@@ -53,7 +64,9 @@ const TABLE: Table = {
 const unstated = (factName: string): Table => ({
   ...TABLE,
   rows: TABLE.rows.map((r) =>
-    r.factName === factName ? { ...r, verdict: "NOT STATED" as const, values: [] } : r,
+    r.factName === factName
+      ? { ...r, verdict: "NOT STATED" as const, values: [] }
+      : r,
   ),
 });
 

@@ -13,12 +13,16 @@ export default function ChecklistFlow({
   onHaveDocuments,
   context: controlledContext,
   onContextChange,
+  embedded = false,
 }: {
   onHaveDocuments: () => void;
   context?: Record<string, string>;
   onContextChange?: (next: Record<string, string>) => void;
+  embedded?: boolean;
 }) {
-  const [internalContext, setInternalContext] = useState<Record<string, string>>({
+  const [internalContext, setInternalContext] = useState<
+    Record<string, string>
+  >({
     countryOrResidency: DEFAULT_COUNTRY,
   });
   const context = controlledContext ?? internalContext;
@@ -35,20 +39,26 @@ export default function ChecklistFlow({
   }
 
   return (
-    <section className="card" aria-label="What to collect">
+    <section
+      className={embedded ? "guidance-flow" : "card"}
+      aria-label="What to collect"
+    >
       <h2>No documents yet? Start here</h2>
       <p className="text-muted">
-        Tell us a little about yourself and we&apos;ll list what to look for and what documents to collect.
+        Tell us a little about yourself and we&apos;ll list what to look for and
+        what documents to collect.
       </p>
       {!list && (
         <>
-          <div style={{ marginTop: 20 }}>
-            <ContextInputs
-              context={context}
-              onChange={setContext}
-              visaLabel="Visa / status"
-            />
-          </div>
+          {!embedded && (
+            <div style={{ marginTop: 20 }}>
+              <ContextInputs
+                context={context}
+                onChange={setContext}
+                visaLabel="Visa / status"
+              />
+            </div>
+          )}
           <div className="actions">
             <button className="btn" onClick={build}>
               Build my checklist
@@ -87,7 +97,8 @@ export default function ChecklistFlow({
                 <li>Search engines and comparison sites</li>
               </ul>
               <p className="text-muted" style={{ marginTop: 8 }}>
-                Insurance Simplified does not search these sources — you&apos;ll need to collect the PDFs yourself.
+                Insurance Simplified does not search these sources — you&apos;ll
+                need to collect the PDFs yourself.
               </p>
             </div>
             <p>{list.nextStep}</p>

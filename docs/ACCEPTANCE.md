@@ -40,9 +40,10 @@ A feature is complete when its observable behavior satisfies the relevant Given/
 
 ### A-004 — Document count
 
-**Given** no PDFs or more than 4 PDFs
+**Given** no PDFs or more than 5 PDFs
 **When** the user tries to compare  
 **Then** comparison does not start and the count problem is clearly shown.
+**And** a sixth PDF is rejected without removing the five valid selections.
 
 ### A-005 — Core context only
 
@@ -112,7 +113,7 @@ eligibility, exclusions, limitations, and material unknowns
 
 ### A-012B — Multiple-document comparison
 
-**Given** 2–4 usable PDFs
+**Given** 2–5 usable PDFs
 **When** processing succeeds
 **Then** comparable facts are shown side by side across discovered plans and
 tiers without assuming one PDF equals one plan.

@@ -16,8 +16,8 @@ The architecture is already decided.
 
 Two product changes are approved without changing the component topology:
 
-1. Accept 1–4 PDFs. One PDF produces an evidence-cited insurance understanding
-   experience (and compares its tiers where present); 2–4 PDFs compare plans
+1. Accept 1–5 PDFs. One PDF produces an evidence-cited insurance understanding
+   experience (and compares its tiers where present); 2–5 PDFs compare plans
    and tiers side by side.
 2. Organize validated structured facts into AI-assisted document-specific
    semantic groups rather than mandatory fixed UI sections. Preserve unique
@@ -25,7 +25,7 @@ Two product changes are approved without changing the component topology:
 
 Execute this revision in two approval-separated phases:
 
-- **Phase P1 — 1–4 PDFs and single-document understanding:** after updating
+- **Phase P1 — 1–5 PDFs and single-document understanding:** after updating
   contracts, audit current upload, extraction, normalization, comparison,
   chat and UI; reuse existing authorization, storage, fact/evidence pipeline,
   tier selector and workspace. Add one-/multi-PDF and multi-tier regression
@@ -185,7 +185,7 @@ Move PDF bytes to the approved browser → private Supabase Storage path.
 
 - expose Supabase secret key;
 - trust client object paths;
-- bypass 2–4 document product rule;
+- bypass 1–5 document product rule;
 - break original-PDF evidence links.
 
 ## Exit Gate

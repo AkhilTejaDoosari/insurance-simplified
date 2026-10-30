@@ -3,7 +3,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { NextRequest } from "next/server";
-import { GET } from "@/app/api/export/route";
+import { POST } from "@/app/api/export/route";
 import { createSession, deleteSession, SESSION_CAPABILITY_COOKIE } from "@/app/lib/session";
 import {
   deleteComparisonResult,
@@ -14,6 +14,7 @@ import {
 const created: string[] = [];
 const originalEnv = { ...process.env };
 const SESSIONS_DIR = join(tmpdir(), "insurance-simplified-sessions");
+const RESULT_FINGERPRINT = "fp-export-auth";
 
 function session() {
   const result = createSession(
@@ -47,20 +48,34 @@ async function persistFor(result: ReturnType<typeof session>) {
       presentationGroups: [],
       contacts: [],
       userContext: {},
+      resultFingerprint: RESULT_FINGERPRINT,
     },
   });
 }
 
+// The export POST carries the same validated selection contract as chat
+// (M5 task 19): opaque fingerprint + selected plan/tier scope.
 function request(sessionId: string, capability?: string, extraHeaders?: HeadersInit) {
-  return new NextRequest(`http://localhost/api/export?sessionId=${sessionId}`, {
+  return new NextRequest("http://localhost/api/export", {
+    method: "POST",
     headers: {
+      "content-type": "application/json",
       ...(capability ? { cookie: `${SESSION_CAPABILITY_COOKIE}=${capability}` } : {}),
       ...extraHeaders,
     },
+    body: JSON.stringify({
+      sessionId,
+      selection: {
+        resultFingerprint: RESULT_FINGERPRINT,
+        planIds: ["doc-1"],
+        tiers: { "doc-1": null },
+        legacyTiersByDocument: {},
+      },
+    }),
   });
 }
 
-describe("GET /api/export session authorization", () => {
+describe("POST /api/export session authorization", () => {
   afterEach(() => {
     vi.useRealTimers();
     process.env = { ...originalEnv };
@@ -74,7 +89,7 @@ describe("GET /api/export session authorization", () => {
   it("rejects a session ID alone before reading comparison data", async () => {
     process.env.SUPABASE_URL = "";
     const own = session();
-    const response = await GET(request(own.session.sessionId));
+    const response = await POST(request(own.session.sessionId));
     expect(response.status).toBe(401);
     expect(response.headers.get("content-disposition")).toBeNull();
   });
@@ -83,14 +98,14 @@ describe("GET /api/export session authorization", () => {
     process.env.SUPABASE_URL = "";
     const own = session();
     const other = session();
-    expect((await GET(request(own.session.sessionId, "incorrect"))).status).toBe(401);
-    expect((await GET(request(own.session.sessionId, other.capability))).status).toBe(401);
+    expect((await POST(request(own.session.sessionId, "incorrect"))).status).toBe(401);
+    expect((await POST(request(own.session.sessionId, other.capability))).status).toBe(401);
   });
 
   it("rejects conflicting capability transports", async () => {
     process.env.SUPABASE_URL = "";
     const own = session();
-    const response = await GET(request(own.session.sessionId, own.capability, {
+    const response = await POST(request(own.session.sessionId, own.capability, {
       authorization: "Bearer conflicting",
     }));
     expect(response.status).toBe(401);
@@ -102,7 +117,7 @@ describe("GET /api/export session authorization", () => {
     vi.setSystemTime(new Date("2020-01-01T00:00:00Z"));
     const own = session();
     vi.useRealTimers();
-    const response = await GET(request(own.session.sessionId, own.capability));
+    const response = await POST(request(own.session.sessionId, own.capability));
     expect(response.status).toBe(401);
   });
 
@@ -110,9 +125,27 @@ describe("GET /api/export session authorization", () => {
     process.env.SUPABASE_URL = "";
     const own = session();
     await persistFor(own);
-    const response = await GET(request(own.session.sessionId, own.capability));
+    const response = await POST(request(own.session.sessionId, own.capability));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-disposition")).toContain("attachment");
     expect((await response.text()).includes(own.capability)).toBe(false);
+  });
+
+  it("requires a selection payload on the POST body", async () => {
+    process.env.SUPABASE_URL = "";
+    const own = session();
+    await persistFor(own);
+    const response = await POST(
+      new NextRequest("http://localhost/api/export", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: `${SESSION_CAPABILITY_COOKIE}=${own.capability}`,
+        },
+        body: JSON.stringify({ sessionId: own.session.sessionId }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-disposition")).toBeNull();
   });
 });

@@ -10,13 +10,17 @@ vi.mock("@/app/lib/llm/client", () => ({
 const mockedComplete = vi.mocked(completeJson);
 
 describe("describeExtractFailure user mapping", () => {
+  it("distinguishes expired capability and provider outage from ordinary retry", () => {
+    expect(describeExtractFailure({ error: { code: "UNAUTHORIZED" } }, null, 401)).toEqual({
+      message: "Your session has expired. Upload your documents again to continue.", retryable: false,
+    });
+    expect(describeExtractFailure({ error: { code: "PROVIDER_UNAVAILABLE", retryable: true } }).message).toMatch(/provider.*unavailable/i);
+  });
   it("upstream 502 produces retryable technical error", () => {
     const res = describeExtractFailure({
       error: { code: "PROVIDER_UNAVAILABLE", retryable: true },
     });
-    expect(res.message).toBe(
-      "We couldn't finish reading your documents. Your files and details are still here. Try again."
-    );
+    expect(res.message).toBe("The analysis provider is unavailable. Your files and details are still here. Try again.");
     expect(res.retryable).toBe(true);
   });
 
@@ -46,9 +50,7 @@ describe("describeExtractFailure user mapping", () => {
       { error: { code: "PROVIDER_UNAVAILABLE", retryable: true } },
       new Error("LLM request failed with status 502")
     );
-    expect(res.message).toBe(
-      "We couldn't finish reading your documents. Your files and details are still here. Try again."
-    );
+    expect(res.message).toBe("We couldn't finish reading your documents. Your files and details are still here. Try again.");
     expect(res.retryable).toBe(true);
   });
 

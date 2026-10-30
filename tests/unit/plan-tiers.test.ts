@@ -78,4 +78,55 @@ describe("multi-tier documents (planTier qualifier)", () => {
     bad.rows[0].values[0].qualifiers = { planTier: 3 };
     expect(() => validateTable(bad)).toThrow(/planTier/);
   });
+
+  it("schema rejects joining two PDFs under one plan without a corroborating policy identifier", () => {
+    // A name that merely appears in both documents (or comes from similar
+    // filenames) must not merge them into one proven plan.
+    const merged = {
+      schemaVersion: "v1",
+      factListVersion: "v1",
+      documents: [
+        { documentId: "doc-1", filename: "patriot-travel-brochure.pdf", pageCount: 1 },
+        { documentId: "doc-2", filename: "patriot_travel_brochure.pdf", pageCount: 1 },
+      ],
+      plans: [
+        {
+          planId: "plan-1",
+          name: "Patriot America",
+          sources: [
+            { documentId: "doc-1", page: 1, quote: "Plan name: Patriot America" },
+            { documentId: "doc-2", page: 1, quote: "Plan name: Patriot America" },
+          ],
+        },
+      ],
+      rows: [],
+    };
+    expect(() => validateTable(merged)).toThrow(/policy identifier/);
+  });
+
+  it("schema keeps same-named plans from separate PDFs as separate plans", () => {
+    const separate = {
+      schemaVersion: "v1",
+      factListVersion: "v1",
+      documents: [
+        { documentId: "doc-1", filename: "gold.pdf", pageCount: 1 },
+        { documentId: "doc-2", filename: "gold.pdf", pageCount: 1 },
+      ],
+      plans: [
+        {
+          planId: "plan-1",
+          name: "Gold",
+          sources: [{ documentId: "doc-1", page: 1, quote: "Plan name: Gold" }],
+        },
+        {
+          planId: "plan-2",
+          name: "Gold",
+          sources: [{ documentId: "doc-2", page: 1, quote: "Plan name: Gold" }],
+        },
+      ],
+      rows: [],
+    };
+    expect(() => validateTable(separate)).not.toThrow();
+    expect(validateTable(separate).plans).toHaveLength(2);
+  });
 });

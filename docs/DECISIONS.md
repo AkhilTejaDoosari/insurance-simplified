@@ -287,18 +287,19 @@ absences, or contact evidence cannot be represented in existing state.
 
 ---
 
-# D-024 — One-to-Four Documents and Evidence-Grounded Organization
+# D-024 — One-to-Five Documents and Evidence-Grounded Organization
 
-**Decision:** An owner-approved V1 product revision supersedes the old
+**Decision:** An owner-approved V1 product revision supersedes the former
 2–4-document minimum and D-007's mandatory fixed sections. One PDF gets a
 document-specific insurance explanation, including internal tier comparison
-when relevant; 2–4 PDFs get a side-by-side comparison. AI may organize and
+when relevant; 2–5 PDFs get a side-by-side comparison. The owner has approved
+a maximum of five PDFs per session. AI may organize and
 rank validated facts into document-specific groups, retain unique features,
 and use supplied context to prioritize, but cannot create facts, evidence,
 eligibility outcomes, or coverage from missing information. Verify & Contact
 remains available as a capability; it need not be a fixed tab.
 
-**Rollout:** Phase P1 implements 1–4 PDFs and one-PDF understanding. Phase P2
+**Rollout:** Phase P1 implements 1–5 PDFs and one-PDF understanding. Phase P2
 implements dynamic organization only after separate human approval. During
 Phase P1, existing fixed sections may remain as a transitional UI.
 

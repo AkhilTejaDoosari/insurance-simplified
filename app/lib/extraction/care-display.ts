@@ -20,6 +20,11 @@ const DISCOUNT_ONLY = /\bdiscount\b/i;
 /** Derive a concise cell summary for a Care parent fact from one source line. */
 export function summarizeCareDisplay(factName: string, source: string): CareReading {
   const line = source.trim();
+  // A first-amount summary would discard other material conditional costs.
+  // Keep the cited line for per-figure attribution at the binding boundary.
+  if ((line.match(/\$\s?[\d,]+(?:\.\d+)?|\d+(?:\.\d+)?\s*%/g) ?? []).length > 1) {
+    return { display: line, certain: true };
+  }
   if (factName === "dental-coverage") {
     if (TRAUMATIC_DENTAL.test(line) && !ROUTINE_DENTAL.test(line)) {
       return { display: "Emergency/traumatic dental only", certain: true };

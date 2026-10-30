@@ -59,6 +59,6 @@ export function buildChecklist(
     whatToLookFor,
     documentsToCollect,
     nextStep:
-      "Once you have one PDF, return to upload and understand it; with 2–4 PDFs, you can also compare them.",
+      "Once you have one PDF, return to upload and understand it; with 2–5 PDFs, you can also compare them.",
   };
 }

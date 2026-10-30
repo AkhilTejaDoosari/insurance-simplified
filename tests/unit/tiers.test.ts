@@ -67,3 +67,48 @@ describe("cellValues", () => {
     expect(cellValues(row.values, "doc-2", "Lite").map((v) => v.display)).toEqual(["$0 to $2,500"]);
   });
 });
+
+describe("tier scope isolation (no bleed)", () => {
+  it("keeps a same-named tier in another document separate", () => {
+    const rowValues: CellValue[] = [
+      value("doc-1", "$250", "Gold"),
+      value("doc-2", "$500", "Gold"),
+    ];
+    expect(cellValues(rowValues, "doc-1", "Gold").map((v) => v.display)).toEqual(["$250"]);
+    expect(cellValues(rowValues, "doc-2", "Gold").map((v) => v.display)).toEqual(["$500"]);
+    // Selecting Gold in doc-1 must never surface doc-2's Gold value.
+    expect(cellValues(rowValues, "doc-1", "Gold").some((v) => v.documentId === "doc-2")).toBe(false);
+  });
+
+  it("never surfaces a value tagged for a sibling tier", () => {
+    const rowValues: CellValue[] = [
+      value("doc-2", "$2,500", "Gold"),
+      value("doc-2", "$500", "Silver"),
+    ];
+    expect(cellValues(rowValues, "doc-2", "Silver").map((v) => v.display)).toEqual(["$500"]);
+    expect(cellValues(rowValues, "doc-2", "Gold").map((v) => v.display)).toEqual(["$2,500"]);
+  });
+
+  it("applies a shared untagged fact to each tier of its own document only", () => {
+    const rowValues: CellValue[] = [
+      value("doc-1", "Shared across whole document"),
+      value("doc-2", "$500", "Gold"),
+    ];
+    // The shared fact applies document-wide — visible in its own document's
+    // tier view, but it must never bleed into another document's tier column.
+    expect(cellValues(rowValues, "doc-1", "Gold").map((v) => v.display)).toEqual([
+      "Shared across whole document",
+    ]);
+    expect(cellValues(rowValues, "doc-2", "Gold").map((v) => v.display)).toEqual(["$500"]);
+  });
+
+  it("does not assign an unscoped document fact to either proven plan", () => {
+    const rowValues: CellValue[] = [
+      value("doc-1", "Document-wide text with no proven plan"),
+      { ...value("doc-1", "$250", "Gold"), planId: "plan-a" },
+      { ...value("doc-1", "$500", "Gold"), planId: "plan-b" },
+    ];
+    expect(cellValues(rowValues, "doc-1", "Gold", "plan-a").map((v) => v.display)).toEqual(["$250"]);
+    expect(cellValues(rowValues, "doc-1", "Gold", "plan-b").map((v) => v.display)).toEqual(["$500"]);
+  });
+});

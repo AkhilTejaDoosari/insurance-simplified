@@ -15,17 +15,17 @@ export interface FactDefinition {
 export const FACT_LIST_VERSION = "v1";
 
 export const FACTS: FactDefinition[] = [
-  { name: "premium", label: "Premium / price", patterns: ["premium", "monthly premium", "\\bprice\\b"] },
-  { name: "annual-deductible", label: "Annual deductible", patterns: ["deductible"] },
+  { name: "premium", label: "Premium / price", patterns: ["premium(?=.*(?:\\$|\\b\\d))", "\\bprice\\b(?=.*(?:\\$|\\b\\d))"] },
+  { name: "annual-deductible", label: "Annual deductible", patterns: ["^(?!.*\\brecommend(?:s|ed)?\\b)(?:.*\\bannual deductible\\b|.*\\bdeductible options\\b|.*\\bdeductible\\s*[:$]|.*\\$\\s?[\\d,]+\\s+deductible)"] },
   { name: "out-of-pocket-maximum", label: "Out-of-pocket maximum", patterns: ["out-of-pocket maximum", "out of pocket max"] },
   { name: "emergency-care", label: "Emergency room", patterns: ["emergency (room|department|services?|care|coverage)", "emergency[^.\\n]*copay", "copay[^.\\n]*emergency", "emergency[^.\\n]*deductible"] },
   { name: "prescriptions", label: "Prescription drugs", patterns: ["prescription"] },
   { name: "coinsurance", label: "Coinsurance / your share", patterns: ["coinsurance", "cost sharing", "cost-share", "you pay \\d+\\s*%"] },
   { name: "policy-limit", label: "Maximum coverage / policy limit", patterns: ["policy limit", "maximum coverage", "lifetime maximum", "benefit maximum", "maximum benefit"] },
   { name: "pre-existing-conditions", label: "Pre-existing-condition rule", patterns: ["pre-existing"] },
-  { name: "eligibility", label: "Eligibility", patterns: ["eligib", "who can (buy|purchase|enroll)", "must be", "required to be", "non-?u\\.?s\\.? resident", "green card", "permanent resident", "primary residence", "home country", "age.*\\d+.*(day|year)", "\\d+.*(day|year).*age"] },
-  { name: "student-eligibility", label: "Student / visa eligibility", patterns: ["F-1|J-1|student|visa", "who can (buy|purchase|enroll)", "must be", "non-?u\\.?s\\.? resident", "green card", "permanent resident"], contextField: "visaOrStatus" },
-  { name: "network", label: "Provider network", patterns: ["network|provider"] },
+  { name: "eligibility", label: "Eligibility", patterns: ["\\b(?:eligibility\\s*:\\s*\\w+|eligible to (?:buy|purchase|enroll)|eligibility requirements)\\b", "must be (?:under age|at least|a non-?u\\.?s\\.? resident|residing|enrolled|a full-time student)", "required to be", "\\b\\d+ days? of age or older\\b"] },
+  { name: "student-eligibility", label: "Student / visa eligibility", patterns: ["F-1|J-1|student eligibility|student status|full-time student", "must be (?:under age|a full-time student)"], contextField: "visaOrStatus" },
+  { name: "network", label: "Provider network", patterns: ["provider network", "(?<!out of )PPO network", "network of (?:U\\.?S\\.? )?providers"] },
   { name: "primary-care-visit", label: "Primary / physician visits", patterns: ["primary care", "office visit", "physician visit"] },
   { name: "specialist-visit", label: "Specialist", patterns: ["specialist"] },
   { name: "hospitalization", label: "Hospitalization / inpatient", patterns: ["hospital|inpatient|in-patient|admitted", "intensive care", "\\bICU\\b", "room and board", "extended care facility", "inpatient facility"] },
@@ -82,7 +82,7 @@ export function extractQualifiers(line: string) {
   if (net) qualifiers.networkTier = net.join(" / ").trim();
   const period = line.match(/per (year|month|visit|day)|annual(?:ly)?|lifetime/gi);
   if (period) qualifiers.period = [...new Set(period.map((p) => p.toLowerCase()))].join(", ");
-  const age = line.match(/(?:age\s*)?\d+\s*(?:years? old|\+)?\s*(?:and (?:over|under))?|under \d+|over \d+/i);
+  const age = line.match(/\bage\s*\d+(?:\s*(?:years? old|\+))?(?:\s+and\s+(?:over|under))?|\b(?:under|over)\s+(?:age\s*)?\d+\b|\b\d+\s+(?:days?|years?)\s+of age(?: or older)?\b/i);
   if (age) qualifiers.ageBand = age[0].trim();
   const cond = line.match(/(?:if|when|unless|waived[^.,;]*|after[^.,;]*)/i);
   if (cond) qualifiers.conditions = cond[0].trim();

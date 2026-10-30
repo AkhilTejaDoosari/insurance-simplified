@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractFallback } from "@/app/lib/extraction/extract";
+import { extractFallback, unresolvedDisagreements } from "@/app/lib/extraction/extract";
 
 const DOCS = [
   {
@@ -31,5 +31,26 @@ describe("structural benefit differences", () => {
     expect(row?.verdict).toBe("SUPPORTED");
     expect(row?.verdict).not.toBe("CONFLICTED");
     expect(row?.verdict).not.toBe("NEEDS VERIFICATION");
+  });
+
+  it("keeps structural differences SUPPORTED while reporting an unresolved disagreement with traceable citations", () => {
+    const table = extractFallback(DOCS, {});
+    const row = table.rows.find((r) => r.factName === "annual-deductible");
+    expect(row?.verdict).toBe("SUPPORTED");
+    expect(row?.values).toHaveLength(3);
+
+    const d = unresolvedDisagreements(table).find(
+      (x) => x.factName === "annual-deductible"
+    );
+    expect(d).toBeDefined();
+    // Scope-strict: only documents in the same extracted qualifier scope are
+    // grouped; every reported side keeps its own document/page citation.
+    expect(d!.sources.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(d!.sources.map((s) => s.documentId)).size).toBe(d!.sources.length);
+    for (const source of d!.sources) {
+      expect(["doc-1", "doc-2", "doc-3"]).toContain(source.documentId);
+      expect(source.page).toBeGreaterThanOrEqual(1);
+      expect(source.quote.length).toBeGreaterThan(0);
+    }
   });
 });
