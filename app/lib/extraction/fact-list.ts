@@ -80,7 +80,7 @@ export function extractQualifiers(line: string) {
   const qualifiers: Record<string, string> = {};
   const net = line.match(/in-network[^.,;]*|out-of-network[^.,;]*/gi);
   if (net) qualifiers.networkTier = net.join(" / ").trim();
-  const period = line.match(/per (year|month|visit|day)|annual(?:ly)?|lifetime/gi);
+  const period = line.match(/\bper (year|month|visit|day)\b|\bannual(?:ly)?\b|\blifetime\b/gi);
   if (period) qualifiers.period = [...new Set(period.map((p) => p.toLowerCase()))].join(", ");
   const age = line.match(/\bage\s*\d+(?:\s*(?:years? old|\+))?(?:\s+and\s+(?:over|under))?|\b(?:under|over)\s+(?:age\s*)?\d+\b|\b\d+\s+(?:days?|years?)\s+of age(?: or older)?\b/i);
   if (age) qualifiers.ageBand = age[0].trim();
