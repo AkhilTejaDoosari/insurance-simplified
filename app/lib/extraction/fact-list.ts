@@ -16,7 +16,7 @@ export const FACT_LIST_VERSION = "v1";
 
 export const FACTS: FactDefinition[] = [
   { name: "premium", label: "Premium / price", patterns: ["premium(?=.*(?:\\$|\\b\\d))", "\\bprice\\b(?=.*(?:\\$|\\b\\d))"] },
-  { name: "annual-deductible", label: "Annual deductible", patterns: ["^(?!.*\\brecommend(?:s|ed)?\\b)(?:.*\\bannual deductible\\b|.*\\bdeductible options\\b|.*\\bdeductible\\s*[:$]|.*\\$\\s?[\\d,]+\\s+deductible)"] },
+  { name: "annual-deductible", label: "Annual deductible", patterns: ["^(?!.*\\brecommend(?:s|ed)?\\b)(?:.*\\bannual deductible\\b|.*\\bdeductible options\\b|.*\\bdeductible\\s*[:$]|.*\\$\\s?[\\d,]+\\s+deductible|.*\\bcalendar[- ]year deductibles?(?:\\s+is)?(?:\\s+now)?\\s*:?\\s*\\$\\s?[\\d,]+)"] },
   { name: "out-of-pocket-maximum", label: "Out-of-pocket maximum", patterns: ["out-of-pocket maximum", "out of pocket max"] },
   { name: "emergency-care", label: "Emergency room", patterns: ["emergency (room|department|services?|care|coverage)", "emergency[^.\\n]*copay", "copay[^.\\n]*emergency", "emergency[^.\\n]*deductible"] },
   { name: "prescriptions", label: "Prescription drugs", patterns: ["prescription"] },
@@ -45,7 +45,7 @@ export const FACTS: FactDefinition[] = [
   { name: "waiting-period", label: "Waiting periods", patterns: ["waiting period"] },
   { name: "geographic-restrictions", label: "Geographic restrictions", patterns: ["service area", "home country", "coverage area", "state of residence", "destination country"] },
   { name: "coverage-duration", label: "Coverage-duration limits", patterns: ["maximum trip", "minimum \\d+\\s*(day|week|month|year)", "maximum \\d+\\s*(day|week|month|year)", "renewable", "up to \\d+\\s*months? of coverage"] },
-  { name: "age-limits", label: "Age limits", patterns: ["age \\d+|under \\d+|over \\d+"], contextField: "age" },
+  { name: "age-limits", label: "Age limits", patterns: ["\\bage \\d+|under \\d+|over \\d+"], contextField: "age" },
   { name: "referral-requirement", label: "Referrals", patterns: ["referral"] },
   { name: "coverage-dates", label: "Coverage dates / term", patterns: ["coverage (period|dates|term|begins|ends)|effective date"], contextField: "coverageDates" },
   // Plan Highlights candidates — unusual/plan-specific benefits
