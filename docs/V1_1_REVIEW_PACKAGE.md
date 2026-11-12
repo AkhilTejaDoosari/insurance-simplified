@@ -1,6 +1,6 @@
 # Insurance Simplified — V1.1 Product & Design Specification
 
-**Status:** Approved for implementation planning; implementation not authorized
+**Status:** V1.1 M1–M3 independently accepted and closed; M4–M6 require milestone-specific approval. This document records the updated product direction, not blanket implementation authorization.
 
 **Project:** Insurance Simplified
 
@@ -20,7 +20,7 @@ Insurance Simplified V1 is a working document-first insurance understanding and 
 
 Verified capabilities include:
 
-- Uploading 1–4 user-provided insurance PDFs.
+- Uploading 1–4 user-provided insurance PDFs in the frozen V1 baseline (V1.1 target: 1–5 PDFs per session).
 
 - Understanding one PDF without requiring another document.
 
@@ -116,6 +116,16 @@ The user must be able to answer:
 
 **Personalized overview → Documented upsides / potential conflicts / unknowns → Key financial facts → Maximum five navigation sections → Dynamic comparison table → Expandable evidence.**
 
+### V1.1 customer-understanding refinement (approved product direction; implementation subject to milestone scope)
+
+- **Intake:** 1–5 PDFs per comparison session; display up to three user-selected, source-proven plans side by side, not one column per uploaded PDF by assumption.
+- **First screen:** no more than three high-impact, distinct insights based on validated evidence and supplied context; prioritize material applicability conflicts and costs, then relevant differentiating benefits. No invented plan winners or numerical suitability scores.
+- **Information architecture:** short at-a-glance explanation, personal fit, costs, coverage, limits/risks, side-by-side differences, and at most three high-priority verification actions. These are presentation concerns; retain the maximum-five-top-level-navigation contract in Section E.
+- **Progressive disclosure:** do not display empty or purely repetitive sections such as a "More from your documents" tab containing only the same missing values. Keep full verified detail and citations accessible on demand; consolidate shared missing-data messages.
+- **Factual nuance:** do not equate a sparse extraction result with weak insurance coverage. Distinguish genuinely missing source facts, unsupported/failed extraction, and evidence-verification failures. No unverified plan/tier attribution, false contradiction between different network/benefit scopes, or claim that "Not stated" means "Not covered."
+- **Interaction quality:** logo navigates to the welcome/intake flow without unexpectedly destroying valid context; overview elements have stable unique identities; light/dark and mobile remain usable.
+- **AI boundary:** the validated-fact and deterministic interpretation layers remain authoritative. A new generative explanation system prompt or provider call is **not required** for V1.1. If separately approved later, require a versioned prompt, structured output, source-ID checking, plan/tier scope validation, and safe fallback.
+
 ### Scope
 
 V1.1 includes:
@@ -168,7 +178,7 @@ The user should not need to open multiple tabs to discover critical restrictions
 
 **IMG Patriot America Plus**
 
-*Review required — possible coverage applicability conflict*
+**Review required — possible coverage applicability conflict**
 
 **Potential coverage conflict**
 
@@ -330,9 +340,15 @@ A document may describe one plan, multiple plans, several tiers, or a shared pol
 
 ---
 
-## G. Two-to-Four-PDF Comparison Experience
+## G. One-to-Five-PDF Intake and Up-to-Three-Plan Comparison Experience
 
-The overall interface must remain consistent regardless of document count.
+The overall interface must remain consistent across **1–5 uploaded PDFs per comparison session**. Five is the V1.1 intake maximum, not an assertion that each PDF is a distinct plan. Maintain existing file-size, security, and processing safeguards.
+
+**Comparison selection rule:** display **up to three user-selected, evidence-identified plans side by side**. When uploaded documents establish more than three plans, present a clear plan picker to choose up to three; do not discard the other documents or silently pick a winner. A single document may establish multiple plans; several documents may support one plan only when their identity is corroborated. Never infer plan identity from file order, file count, or proximity of an unlabeled value.
+
+The user can inspect one plan alone. If one PDF contains more than three plans, the three-plan visible limit still applies. All-tiers mode retains one column per selected plan, with tier-labeled details within each column. Plan changes must invalidate stale derived views without modifying source evidence.
+
+Allow users to remove or replace an uploaded document with clear consequences for affected selections and results. Reject a sixth PDF with an understandable limit message before processing. Do not introduce unlimited ingestion or a plan marketplace.
 
 ### Three-document wireframe
 
@@ -382,7 +398,7 @@ The table values above describe the intended structure, not new assertions about
 
 - Preserve the factor column and readable plan headers during horizontal scrolling.
 
-- Do not compress four plans into unreadable columns.
+- Do not compress selected plan columns into unreadable widths: keep a sticky factor column, readable plan headers, and accessible horizontal scrolling for up to three visible plans.
 
 - Allow expandable, source-linked details within cells.
 
@@ -630,7 +646,7 @@ For any selected tier, the summary, table, chatbot answer, and exported PDF must
 
 - Keep plan identities understandable.
 
-- Do not squeeze three or four plans into narrow unreadable cells.
+- Do not squeeze up to three selected plans into narrow unreadable cells.
 
 - Maintain accessible controls and keyboard navigation.
 
@@ -800,7 +816,7 @@ The implementation agent must verify exact paths and existing ownership before e
 
 - Improve comparative labels and cross-policy factor alignment.
 
-- Ensure three- and four-document layouts remain readable.
+- Ensure one- through five-document intake works while the selected up-to-three-plan comparison remains readable.
 
 **Completion:** Changing a tier never mixes or misrepresents policies.
 
@@ -844,7 +860,27 @@ Do not add unrelated improvements while working on the experience.
 
 | UX-03 | Upload three PDFs | Readable comparison and independent selectors |
 
-| UX-04 | Upload four PDFs | No clipped or misaligned material information |
+| UX-04 | Upload four PDFs | All four sources remain available; choose up to three supported plans; no clipped or misaligned comparison content |
+
+| UX-26 | Upload five PDFs | All sources accepted within resource limits; plan identities retained; no more than three selected plan columns |
+
+| UX-27 | Attempt sixth PDF | Clear limit message; no partial ingestion or invalidated valid prior session |
+
+| UX-28 | Five PDFs establishing more than three plans | Customer can select up to three; nonselected plans are not merged, falsely omitted from inventory, or used in selected-plan claims |
+
+| UX-29 | Multiple PDFs supporting one plan | Join only on corroborated identity, retain all citations, and do not create duplicate plan columns |
+
+| UX-30 | One PDF describing multiple plans | Plan-first selection uses source-proven identities; unsupported attribution remains unresolved |
+
+| UX-31 | Change plan shortlist, remove, or replace PDF | Overview/table/evidence invalidate stale selections and preserve unaffected context |
+
+| UX-32 | Empty or redundant comparison sections | Hide empty groups; summarize repeated missing fields; detailed facts remain accessible |
+
+| UX-33 | Personalized insight priority | At most three distinct, evidence-grounded high-impact insights upfront; other items expand on request |
+
+| UX-34 | Distinct dental or network conditions | Different applicability scopes do not generate false same-scope conflicts |
+
+| UX-35 | Navigation and overview identity | Clicking the approved logo returns to intake appropriately; overview list uses stable unique React keys |
 
 | UX-05 | Single PDF with several tiers | Validated tier selector appears |
 
@@ -950,7 +986,7 @@ The test passes only when the user can answer without making material false assu
 
 - Personalized explanations can become misleading if evidence qualifications are omitted.
 
-- Long tables may remain difficult to read with four documents.
+- Long tables may remain difficult to read with up to three selected plan columns; up to five source documents may contribute to those plans.
 
 - Live LLM outputs may vary; deterministic and evidence safeguards remain necessary.
 
@@ -1012,7 +1048,7 @@ The revised product decision must be recorded in canonical documentation after a
 
 - [ ] One PDF produces a complete understanding experience.
 
-- [ ] Two to four PDFs use shared-factor comparison columns.
+- [ ] One to five PDFs are supported at intake; up to three evidence-identified plans use shared-factor comparison columns.
 
 - [ ] Multiple tiers remain independently selectable.
 
@@ -1372,7 +1408,7 @@ V1.1 passes visual review when:
 
 - All five navigation sections remain usable.
 
-- One to four document comparisons remain legible.
+- One to five document uploads are supported; up to three selected plan columns remain legible.
 
 - Tier selectors remain aligned and functional.
 
@@ -1432,7 +1468,7 @@ A single PDF may contain multiple plans, and a plan may have multiple tiers. Mul
 
 Document → Plan → Tier
 
-Users select the relevant plan first when multiple plans exist, then choose a tier when documented tiers are available.
+Users select up to three relevant evidence-identified plans for comparison first when multiple plans exist, then choose a tier when documented tiers are available. Up to five source PDFs may be uploaded in one session.
 
 Do not automatically assume one PDF equals one plan.
 
@@ -1586,7 +1622,7 @@ The exported findings and material values must match the selected UI state repre
 
 **Approved brand asset:**
 
-\\`public/insurance-simplified-logo.png\\`
+\`public/insurance-simplified-logo.png\`
 
 Preserve the original asset unchanged.
 
@@ -1604,7 +1640,7 @@ Do not redesign the logo, replace it with a generic medical cross, or change its
 
 **Theme behavior:**
 
-- Follow the user's system appearance using \\`prefers-color-scheme\\`.
+- Follow the user's system appearance using \`prefers-color-scheme\`.
 
 - Maintain accessible semantic color tokens for both light and dark modes.
 
@@ -1648,7 +1684,7 @@ The implementation plan must include acceptance checks for:
 
 - One PDF and multiple tiers.
 
-- Two, three, and four PDF comparisons.
+- One, two, three, four, and five PDF intake scenarios, with up to three selected plans displayed concurrently and a plan picker when more than three are identified.
 
 - Multiple plans within one PDF.
 
@@ -1692,10 +1728,10 @@ The implementation plan must include acceptance checks for:
 
 **Product review verdict:** APPROVED FOR IMPLEMENTATION PLANNING.
 
-**Implementation authorization:** NOT YET GRANTED.
+**Implementation authorization:** Milestones 1–3 separately authorized and completed; M4–M6 require explicit authorization.
 
-The next step is for Prometheus to inspect the repository and create an implementation plan based on Sections A–R.
+The current implementation plan is `.omo/plans/insurance-simplified-v1-1.md`. Before implementing changed intake and customer-UX requirements, reconcile its affected milestone tasks and acceptance tests with this updated specification; preserve completed M1–M3 work.
 
-The plan must be reviewed before Atlas or Sisyphus begins application implementation.
+Use the current Build agent for separately authorized implementation and a different-model Plan agent for independent acceptance. No completed milestones should be reimplemented merely because the document has been clarified.
 
-**END OF V1.1 PRODUCT & DESIGN SPECIFICATION — APPROVED FOR PLANNING ONLY.**
+**END OF V1.1 PRODUCT & DESIGN SPECIFICATION — UPDATED CUSTOMER EXPERIENCE CONTRACT; M4–M6 REQUIRE EXPLICIT AUTHORIZATION.**
