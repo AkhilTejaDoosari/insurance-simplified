@@ -31,7 +31,7 @@ import { summarizeRulesDisplay } from "@/app/lib/extraction/rules-display";
 import { applyPremiumPersonalization } from "@/app/lib/extraction/premium";
 import { SECTIONS } from "@/app/lib/extraction/sections";
 import { hasSameScopeContradiction, applicabilityScopeKey, benefitScope, scopeSignature, SCOPE_KEYS } from "@/app/lib/extraction/contradictions";
-import { attestedQualifiers, MATERIAL_QUALIFIERS, sourcedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
+import { attestedQualifiers, MATERIAL_QUALIFIERS, scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
 export { hasSameScopeContradiction } from "@/app/lib/extraction/contradictions";
 import {
   amounts,
@@ -39,6 +39,9 @@ import {
   offersChoices,
 } from "@/app/lib/extraction/conditions";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
+import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
+import { quoteInTable, tableClaims, tableOwnedSpans } from "@/app/lib/extraction/table-facts";
+import { statementClaims, statementOwnedSpans } from "@/app/lib/extraction/statement-facts";
 
 const CARE_FACTS: ReadonlySet<string> = new Set(
   SECTIONS.find((s) => s.title === "Coverage")?.factNames ?? []
@@ -52,6 +55,7 @@ export interface ExtractInputDocument {
   filename: string;
   pageCount: number;
   pages: string[];
+  tables?: LayoutTable[];
 }
 
 function normalize(display: string): string {
@@ -191,9 +195,14 @@ function deriveCurrency(value: CellValue): string | undefined {
  *  kind is already named by the row's fact. */
 function deriveCostType(value: CellValue): string | undefined {
   if (amounts(value.display).length < 2) return undefined;
-  const text = [value.display, ...value.evidence.map((e) => e.quote)].join("\n");
+  // A cost word inside a condition ("not subject to coinsurance", "after
+  // deductible") names what the amount is conditioned on, not what it is.
+  const text = [value.display, ...value.evidence.map((e) => e.quote)].join("\n").replace(COST_CONDITION_PHRASE, " ");
   return COST_TYPE_PHRASE.exec(text)?.[0].toLowerCase();
 }
+
+const COST_CONDITION_PHRASE =
+  /\b(?:not\s+subject\s+to|subject\s+to|after|before|in\s+addition\s+to|separate\s+from|waived|toward|towards|applies\s+to|apply\s+to)\s+(?:the\s+|a\s+|any\s+|applicable\s+|your\s+)?(?:calendar[-\s]year\s+|annual\s+)?(?:out[-\s]of[-\s]pocket\s+(?:maximum|limit)|deductibles?|coinsurance|copay(?:ment)?s?|premiums?|lifetime\s+maximum|policy\s+limit)\b/gi;
 
 function deriveSelectionStatus(value: CellValue): SelectionStatus | undefined {
   const text = [value.display, ...value.evidence.map((e) => e.quote)].join("\n");
@@ -218,7 +227,7 @@ export function applyConditionBindings<T extends ComparisonTable>(table: T): T {
         if (currency !== undefined) qualifiers.currency = currency;
         if (costType !== undefined) qualifiers.costType = costType;
         if (selectionStatus !== undefined) qualifiers.selectionStatus = selectionStatus;
-        return { ...value, qualifiers: sourcedQualifiers({ ...value, qualifiers }) };
+        return { ...value, qualifiers: scopedQualifiers({ ...value, qualifiers }) };
       });
       const unresolved = row.verdict === "SUPPORTED" || row.verdict === "CONFLICTED"
         ? values.some((value) => !conditionBindingKnown(value))
@@ -351,6 +360,14 @@ export function computeTierHeaders(pages: string[]): Map<number, TierHeader[]> {
   return tierHeadersByPage;
 }
 
+/** True when a values line starts with its own text label (a word of 3+
+ *  letters before the first amount), e.g. "Emergency Medical Evacuation &
+ *  Repatriation $250,000 …"; a bare values line ("$10 per visit …") has none. */
+function hasOwnLabel(line: string): boolean {
+  const lead = line.split(/[$\d]/)[0];
+  return /[A-Za-z]{3,}/.test(lead);
+}
+
 /** Find all matching lines per fact per document, using pre-computed tier headers. */
 export function findAllMatchesWithHeaders(
   factPatterns: string[],
@@ -389,6 +406,10 @@ export function findAllMatchesWithHeaders(
               if (lineIdx + lookahead >= lines.length) break;
               const nextLine = lines[lineIdx + lookahead];
               if (/\d/.test(nextLine) || /\$/.test(nextLine)) {
+                // A values line that carries its own benefit label belongs to
+                // that label: never borrow its amounts for this fact unless the
+                // label itself matches this fact.
+                if (hasOwnLabel(nextLine) && !regexes.some((re) => re.test(nextLine))) break;
                 const tierValues = parseTieredLine(nextLine, relevantHeader);
                 for (const { tier, value } of tierValues) {
                   if (value) {
@@ -420,6 +441,12 @@ export function extractFallback(
   for (const doc of documents) {
     tierHeadersByDoc.set(doc.documentId, computeTierHeaders(doc.pages));
   }
+  // Table claims own their lines: the line engine never emits its own
+  // (column-blind) reading of a line that lies inside a detected table.
+  const ownedByDoc = new Map(documents.map((doc) => [doc.documentId, tableOwnedSpans(doc)]));
+  const claimsByDoc = new Map(documents.map((doc) => [doc.documentId, [...tableClaims(doc), ...statementClaims(doc)]]));
+  // A grammar-parsed statement owns its sentence for its own fact only.
+  const statementOwnedByDoc = new Map(documents.map((doc) => [doc.documentId, statementOwnedSpans(doc)]));
 
   const rows: TableRow[] = FACTS.map((fact) => {
     const values: CellValue[] = [];
@@ -429,7 +456,6 @@ export function extractFallback(
 
     for (const doc of documents) {
       const matches = findAllMatchesWithHeaders(fact.patterns, doc.pages, tierHeadersByDoc.get(doc.documentId)!);
-      if (matches.length === 0) continue;
 
       for (const match of matches) {
         const verified = verifyEvidenceCitation([doc], {
@@ -441,6 +467,9 @@ export function extractFallback(
           ambiguousEvidence = true;
           continue;
         }
+        if (quoteInTable(doc, ownedByDoc.get(doc.documentId)!, match.page, verified.quote)) continue;
+        const statementOwned = statementOwnedByDoc.get(doc.documentId)!.get(fact.name);
+        if (statementOwned && quoteInTable(doc, statementOwned, match.page, verified.quote)) continue;
         const vague = isVague(match.quote);
         if (!vague) allVague = false;
         const ruledOut = contextFieldRulesOut(fact.contextField, userContext, match.quote);
@@ -452,6 +481,13 @@ export function extractFallback(
           evidence: [{ documentId: doc.documentId, page: match.page, quote: verified.quote }],
         };
         values.push({ ...value, qualifiers: attestedQualifiers(value, [doc]) });
+      }
+      // Structural claims for this fact: table cells (verbatim label/cell,
+      // column scope) and grammar-parsed statements (verbatim sentence).
+      for (const claim of claimsByDoc.get(doc.documentId) ?? []) {
+        if (claim.factName !== fact.name) continue;
+        values.push(claim.value);
+        allVague = false;
       }
     }
 
@@ -465,18 +501,14 @@ export function extractFallback(
           }
         : { factName: fact.name, verdict: "NOT STATED", values: [] };
     }
-    // Concise Care/Rules cells are presentational: rule-outs evaluate raw quotes.
-    const careDerived = CARE_FACTS.has(fact.name);
+    // Line values display their cited source text verbatim. Concise
+    // paraphrases ("Covered after deductible", "You pay $10/visit") were
+    // derived by keyword proximity and measured to invert or invent meaning
+    // (e.g. "we also waive the $10 office visit copayments" → "You pay
+    // $10/visit"); a display is a claim and must be the source's own words.
+    // The care/rules readers still decide uncertainty (verdict), never text.
     const rulesDerived = RULES_FACTS.has(fact.name);
-    const displayValues =
-      careDerived || rulesDerived
-        ? values.map((v) => {
-            const reading = careDerived
-              ? summarizeCareDisplay(fact.name, v.display)
-              : summarizeRulesDisplay(fact.name, v.display);
-            return reading.certain ? { ...v, display: reading.display } : v;
-          })
-        : values;
+    const displayValues = values;
     const rulesCertain =
       !rulesDerived ||
       values.every((v) => summarizeRulesDisplay(fact.name, v.display).certain);
@@ -500,14 +532,10 @@ export function extractFallback(
         value: v,
         reading: interpretCoinsuranceShare(v.display),
       }));
-      const certain = readings.map(({ value, reading }) => ({
-        ...value,
-        display: reading.display,
-      }));
       if (readings.some(({ reading }) => reading.isMemberShare)) {
-        return { factName: fact.name, verdict: "SUPPORTED", values: certain };
+        return { factName: fact.name, verdict: "SUPPORTED", values };
       }
-      return { factName: fact.name, verdict: "NEEDS VERIFICATION", values: certain };
+      return { factName: fact.name, verdict: "NEEDS VERIFICATION", values };
     }
     // Cross-document differences are comparison data, not evidence
     // conflict: separate plans are expected to state different figures
@@ -654,7 +682,7 @@ export function prepareLlmOutput(raw: unknown, documents: ExtractInputDocument[]
       }
       if (!rejectCode) {
         const candidateValue = { ...value, documentId, qualifiers };
-        const retained = sourcedQualifiers({
+        const retained = scopedQualifiers({
           display: typeof value.display === "string" ? value.display : "",
           evidence: evidence as CellValue["evidence"],
           qualifiers: qualifiers as Qualifiers,
@@ -733,7 +761,7 @@ export function normalizeLlmTable(raw: unknown): unknown {
             }
             cleaned[key] = trimmed;
           }
-          return { ...v, qualifiers: sourcedQualifiers({
+          return { ...v, qualifiers: scopedQualifiers({
             display: typeof v.display === "string" ? v.display : "",
             evidence: Array.isArray(v.evidence) ? v.evidence : [],
             qualifiers: cleaned,
@@ -785,7 +813,7 @@ export function dropEvidenceLessValues(raw: unknown): unknown {
             })
           : [];
         if (evidence.length > 0) {
-          kept.push({ ...v, evidence, qualifiers: sourcedQualifiers({
+          kept.push({ ...v, evidence, qualifiers: scopedQualifiers({
             display: typeof v.display === "string" ? v.display : "",
             evidence,
             qualifiers: typeof v.qualifiers === "object" && v.qualifiers !== null

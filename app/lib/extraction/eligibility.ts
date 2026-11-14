@@ -109,6 +109,7 @@ export function buildEligibilityRow(
           display: v.display,
           qualifiers: { ...v.qualifiers },
           evidence: v.evidence.map((e) => ({ ...e })),
+          ...(v.anchor ? { anchor: { ...v.anchor } } : {}),
         })),
       };
     }
@@ -127,6 +128,7 @@ export function buildEligibilityRow(
       display: v.display,
       qualifiers: { ...v.qualifiers },
       evidence: v.evidence.map((e) => ({ ...e })),
+      ...(v.anchor ? { anchor: { ...v.anchor } } : {}),
     }))
   );
   const row: TableRow = {

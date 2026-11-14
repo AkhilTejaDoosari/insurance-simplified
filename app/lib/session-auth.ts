@@ -110,6 +110,21 @@ export async function requireSessionCapability(
 }
 
 /**
+ * Verify a capability already extracted (e.g. from a server component's
+ * cookie store) against the stored hash: DB first, tmpdir fallback.
+ * Never throws; false on any failure.
+ */
+export async function capabilityAuthorizes(sessionId: string, capability: string | undefined): Promise<boolean> {
+  if (!capability) return false;
+  try {
+    return await verifySessionCapability(sessionId, capability);
+  } catch (err) {
+    if (err instanceof SessionDbUnconfiguredError) return verifySessionCapabilityTmpdir(sessionId, capability);
+    return false;
+  }
+}
+
+/**
  * Extract the sessionId from request params and verify capability.
  * Convenience wrapper for route handlers with dynamic params.
  */

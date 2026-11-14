@@ -69,6 +69,34 @@ export function qualifierHasEvidence(value: Pick<CellValue, "display" | "evidenc
   }));
 }
 
+const SCOPE_KEYS = ["planTier", "networkTier", "conditions"] as const;
+const squash = (t: string) => t.replace(/\s+/g, " ").trim().toLowerCase();
+
+/** THE qualifier contract for every consumer (extraction, presentation,
+ *  overview, conditional values, PDF report).
+ *
+ *  Unstructured value: material qualifiers survive only with clause-level
+ *  lexical evidence (sourcedQualifiers, unchanged).
+ *  Structural claim (table cell / grammar statement, `anchor`): its scope
+ *  (planTier / networkTier / conditions) was bound by layout or grammar and is
+ *  re-verified by re-derivation at the server boundary; a clause split by a
+ *  line wrap or a separate header span cannot "disprove" it. It is kept only
+ *  when it is literally stated in the claim's own display (true by
+ *  construction for genuine claims) — never guessed, never widened. Derived
+ *  qualifiers (age, currency, frequency…) keep the lexical rule. */
+export function scopedQualifiers(value: Pick<CellValue, "display" | "evidence" | "qualifiers" | "anchor">): Qualifiers {
+  const lexical = sourcedQualifiers(value);
+  if (!value.anchor) return lexical;
+  const display = squash(value.display);
+  const next: Qualifiers = { ...lexical };
+  for (const key of SCOPE_KEYS) {
+    const stated = value.qualifiers[key];
+    if (typeof stated === "string" && stated.trim() && display.includes(squash(stated))) next[key] = stated;
+    else delete next[key];
+  }
+  return next;
+}
+
 /** Remove only unsupported claims; keep the amount and its original evidence. */
 export function sourcedQualifiers(value: Pick<CellValue, "display" | "evidence" | "qualifiers">): Qualifiers {
   const qualifiers = { ...value.qualifiers };

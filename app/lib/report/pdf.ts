@@ -32,7 +32,7 @@ import {
 } from "@/app/lib/extraction/verify-items";
 import { documentPlanTitle } from "@/app/lib/extraction/plan-names";
 import type { PersonalizedOverview } from "@/app/lib/extraction/overview";
-import { sourcedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
+import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
 import {
   buildPresentation,
   indexFacts,
@@ -200,7 +200,7 @@ function sourceLine(
 }
 
 function conditionLines(value: RegisteredCellValue): string[] {
-  const q = sourcedQualifiers(value);
+  const q = scopedQualifiers(value);
   return [
     q.networkTier ? `Network: ${q.networkTier}` : "",
     q.ageBand ? `Ages: ${q.ageBand}` : "",

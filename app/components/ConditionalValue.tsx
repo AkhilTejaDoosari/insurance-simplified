@@ -5,7 +5,7 @@ import type { Qualifiers, RegisteredCellValue } from "@/app/lib/extraction/types
 import { moneyAmounts, conditionBindingKnown } from "@/app/lib/extraction/conditions";
 import { summarizeNetworkDisplay } from "@/app/lib/extraction/network-display";
 import { documentUrl } from "@/app/lib/document-url";
-import { sourcedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
+import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
 
 /** V1.1 M2 task 6: one material value, rendered with the conditions needed to
  *  understand it beside the amount, its original-page citation intact, and an
@@ -149,7 +149,7 @@ export default function ConditionalValue({
   numericScope = false,
   showTierQualifier = true,
 }: ConditionalValueProps) {
-  const q = sourcedQualifiers(value);
+  const q = scopedQualifiers(value);
   const primary = value.evidence[0];
   const base = concise ? summarizeNetworkDisplay(value.display) : value.display;
   const scope = numericScope && primary

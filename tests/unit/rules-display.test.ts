@@ -129,7 +129,8 @@ describe("rules extraction", () => {
     );
     const row = table.rows.find((r) => r.factName === "preauthorization")!;
     expect(row.verdict).toBe("SUPPORTED");
-    expect(row.values[0].display).toBe("Preauthorization required for inpatient admission");
+    // Verbatim source display (2026-11-14).
+    expect(row.values[0].display).toBe("Preauthorization required for inpatient admission.");
   });
 
   it("fallback marks unclear referrals NEEDS VERIFICATION instead of guessing", () => {

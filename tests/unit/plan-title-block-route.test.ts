@@ -74,6 +74,9 @@ const value = (page: number, display: string, quote: string, conditions?: string
 });
 
 describe("POST /api/extract — enrollment scope through Stage E and presentation", () => {
+// Policy 2026-11-14: prose line values are not attributed by inference; the
+// enrollment-scoped value stays displayed with its scope (unattributed).
+// Restoring attribution needs a structured prose-statement claim (planned).
   it("recognizes FEP Blue Focus and carries each enrollment scope to the comparison facts", async () => {
     const { table, planId, view, facts } = await run([FEP_P1, SYNTHETIC_P2], [
       value(2, "$1,000", "For Self Only contracts, the deductible is $1,000.", "Self Only"),
@@ -83,10 +86,11 @@ describe("POST /api/extract — enrollment scope through Stage E and presentatio
     expect(table.plans?.map((p) => p.name)).toEqual(["FEP® Blue Focus"]);
     expect(table.plans?.[0].sources[0]).toMatchObject({ documentId: "fep", page: 1, quote: "FEP® Blue Focus" });
     const values = table.rows[0].values;
-    expect(values.map((v) => v.planId)).toEqual([planId, planId, planId]);
+    expect(planId).toBeDefined();
+    expect(values.map((v) => v.planId)).toEqual([undefined, undefined, undefined]);
     expect(values.map((v) => v.qualifiers.conditions)).toEqual(["Self Only", "Self Plus One", "Self and Family"]);
-    // Comparison output: each fact is plan-verified AND still scoped.
-    expect(facts.map((f) => f.state)).toEqual(["verified-plan", "verified-plan", "verified-plan"]);
+    // Comparison output: each fact keeps its scope; not plan-verified (line value).
+    expect(facts.map((f) => f.state)).toEqual(["unverified-applicability", "unverified-applicability", "unverified-applicability"]);
     expect(facts.map((f) => f.qualifiers.conditions)).toEqual(["Self Only", "Self Plus One", "Self and Family"]);
     const spec = buildPresentation(table, view, {});
     const shown = new Set(spec.blocks.flatMap((b) => b.factIds));
@@ -109,12 +113,13 @@ describe("POST /api/extract — enrollment scope through Stage E and presentatio
       value(17, "$2,000", "For Self Plus One, and Self and Family contracts, the deductible is now $2,000", "Self Plus One, and Self and Family"),
     ]);
     const [selfOnly, selfPlusOne] = table.rows[0].values;
-    expect(selfOnly.planId).toBe(planId);
+    expect(planId).toBeDefined();
+    expect(selfOnly.planId).toBeUndefined();
     expect(selfOnly.qualifiers.conditions).toBe("Self Only");
     // The canonical source span wraps across a line break, so the scope cannot be
     // re-proven downstream: the value stays unattributed instead of losing scope.
     expect(selfPlusOne.planId).toBeUndefined();
-    expect(facts.map((f) => f.state)).toEqual(["verified-plan", "unverified-applicability"]);
+    expect(facts.map((f) => f.state)).toEqual(["unverified-applicability", "unverified-applicability"]);
     expect(facts[0].qualifiers.conditions).toBe("Self Only");
   });
 });

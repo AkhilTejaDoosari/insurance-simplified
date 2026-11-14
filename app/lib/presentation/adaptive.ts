@@ -7,7 +7,7 @@ import type {
 } from "@/app/lib/extraction/types";
 import { FACTS } from "@/app/lib/extraction/fact-list";
 import { sanitizeGroups } from "@/app/lib/extraction/presentation-groups";
-import { sourcedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
+import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
 import { hasSameScopeContradiction } from "@/app/lib/extraction/contradictions";
 import {
   eligibilityMissingField,
@@ -224,7 +224,7 @@ export function indexFacts(table: Table, view: ActiveView, context: Record<strin
           tier: value.qualifiers.planTier ?? null,
         },
         state,
-        qualifiers: sourcedQualifiers(value),
+        qualifiers: scopedQualifiers(value),
         interpretations: deriveInterpretations([{ ...row, values: [value] }], context),
       });
     });
@@ -290,11 +290,16 @@ function makeBlock(
 function impact(f: PresentationFact, context: Record<string, string>): number {
   if (f.interpretations.some((i) => i.kind === "potential-conflict")) return 99;
   if (f.state === "conflicting-evidence") return 100;
+  // Unattributed document text (a PDF line, not a verified plan fact) only
+  // fills the brief after verified facts of any concept: otherwise stray
+  // lines ("Pursuing your education outside your home country?") outrank the
+  // plan's own deductible and limits.
+  const unverified = f.state === "unverified-applicability" ? 40 : 0;
   if (/eligib|residen|geograph|age-limit/.test(f.concept))
-    return 90 + (context.age || context.visaOrStatus ? 2 : 0);
-  if (/exclu|pre-existing|restrict|waiting/.test(f.concept)) return 85;
-  if (/premium|deductible|coinsurance|maximum|limit/.test(f.concept)) return 80;
-  return 50;
+    return 90 + (context.age || context.visaOrStatus ? 2 : 0) - unverified;
+  if (/exclu|pre-existing|restrict|waiting/.test(f.concept)) return 85 - unverified;
+  if (/premium|deductible|coinsurance|maximum|limit/.test(f.concept)) return 80 - unverified;
+  return 50 - unverified;
 }
 function deterministic(
   table: Table,

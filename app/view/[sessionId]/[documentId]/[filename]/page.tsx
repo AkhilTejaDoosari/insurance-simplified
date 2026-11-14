@@ -1,5 +1,19 @@
 import type { Metadata } from "next";
-import { getEvidenceRecord, getSession } from "@/app/lib/session";
+import { cookies } from "next/headers";
+import { getEvidenceRecord, SESSION_CAPABILITY_COOKIE } from "@/app/lib/session";
+import { loadSession } from "@/app/lib/session-store";
+import { capabilityAuthorizes } from "@/app/lib/session-auth";
+
+/** The ONLY way this page reads a session: the request's capability is
+ *  verified for THIS session first (DB hash; tmpdir fallback only when the DB
+ *  is unconfigured) — for a cache hit exactly as for a durable restore. No
+ *  capability, a wrong one, or another session's ⇒ undefined, rendered exactly
+ *  like an unknown session (no filename, page count, passage or link). */
+async function authorizedViewerSession(sessionId: string) {
+  const capability = (await cookies()).get(SESSION_CAPABILITY_COOKIE)?.value;
+  if (!(await capabilityAuthorizes(sessionId, capability))) return undefined;
+  return loadSession(sessionId);
+}
 import { isMatchingEvidence, resolveCitationPage } from "@/app/lib/citation";
 import { documentUrl, rawDocumentUrl } from "@/app/lib/document-url";
 import PdfEvidenceViewer from "@/app/components/PdfEvidenceViewer";
@@ -9,22 +23,21 @@ type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-/** Browser tab uses the ACTUAL stored document filename (documentId is
- *  authoritative for lookup; the URL filename segment is display-only and
- *  is never trusted for metadata). Falls back to the URL segment only when
- *  the session is gone and there is nothing stored to name. */
+/** Browser tab uses the ACTUAL stored document filename — only for an
+ *  authorized request. Otherwise a neutral title (the URL segment is never
+ *  trusted as metadata). */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { sessionId, documentId, filename } = await params;
-  const stored = getSession(sessionId)?.documents.find(
+  const { sessionId, documentId } = await params;
+  const stored = (await authorizedViewerSession(sessionId))?.documents.find(
     (d) => d.documentId === documentId
   )?.filename;
-  return { title: `${stored ?? filename} — citation` };
+  return { title: stored ? `${stored} — citation` : "Citation" };
 }
 
 export default async function CitationViewer({ params, searchParams }: Props) {
   const { sessionId, documentId } = await params;
   const { page, evidence } = await searchParams;
-  const resolved = resolveCitationPage(getSession(sessionId), documentId, page);
+  const resolved = resolveCitationPage(await authorizedViewerSession(sessionId), documentId, page);
 
   if (!resolved.ok) {
     let message: string;

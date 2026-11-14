@@ -61,7 +61,9 @@ describe("care parent consolidation", () => {
     expect(table.rows.some((r) => r.factName === "emergency-copay")).toBe(false);
     const row = table.rows.find((r) => r.factName === "emergency-care")!;
     expect(row.verdict).toBe("SUPPORTED");
-    expect(row.values[0].display).toBe("You pay $100 ER copay");
+    // Line values display the cited source verbatim (2026-11-14): a paraphrase
+    // dropped material conditions (e.g. "waived if admitted", "after deductible").
+    expect(row.values[0].display).toBe("Emergency copay: $100, waived if admitted.");
   });
 
   it("detail lines attach to parents: ICU, anesthesia, walk-in", () => {
@@ -78,7 +80,9 @@ describe("care parent consolidation", () => {
     expect(table.rows.find((r) => r.factName === "hospitalization")?.verdict).toBe("SUPPORTED");
     expect(table.rows.find((r) => r.factName === "surgery")?.verdict).toBe("SUPPORTED");
     const urgent = table.rows.find((r) => r.factName === "urgent-care")!;
-    expect(urgent.values[0].display).toBe("You pay $20/visit");
+    // Line values display the cited source verbatim (2026-11-14): a paraphrase
+    // dropped material conditions (e.g. "waived if admitted", "after deductible").
+    expect(urgent.values[0].display).toBe("Walk-in clinic visits: $20 copay.");
   });
 
   it("evacuation-style benefits never become Care rows", () => {
@@ -120,5 +124,20 @@ describe("care parent consolidation", () => {
     const table = await extractViaLlm([doc(["Urgent care copay $20 per visit."])], {});
     const row = table.rows.find((r) => r.factName === "urgent-care")!;
     expect(row.values[0].display).toBe("You pay $20/visit");
+  });
+});
+
+describe("fallback line displays are the source's own words", () => {
+  it.each([
+    ["primary-care-visit", "When you receive overseas care, we also waive the $10 office visit copayments."],
+    ["dental-coverage", "All medical and dental benefits are subject to deductible and/or copay."],
+    ["preauthorization", "This is not an assurance, authorization, preauthorization, or verification of coverage."],
+  ])("%s keeps the cited sentence verbatim (no inverted paraphrase)", (fact, line) => {
+    const table = extractFallback([{ documentId: "d", filename: "d.pdf", pageCount: 1, pages: [line] }], {});
+    const values = table.rows.find((r) => r.factName === fact)?.values ?? [];
+    for (const v of values) expect(v.evidence[0].quote.replace(/\s+/g, " ")).toContain(v.display.replace(/\s+/g, " "));
+    expect(values.map((v) => v.display)).not.toContain("You pay $10/visit");
+    expect(values.map((v) => v.display)).not.toContain("Covered after deductible");
+    expect(values.map((v) => v.display)).not.toContain("Preauthorization required");
   });
 });

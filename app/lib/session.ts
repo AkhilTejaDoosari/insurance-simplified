@@ -11,6 +11,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { evidenceIdFor, type EvidenceRecord } from "@/app/lib/evidence-ids";
+import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 
 export interface SessionDocument {
   documentId: string;
@@ -18,6 +19,9 @@ export interface SessionDocument {
   pageCount: number;
   /** Extracted text, one entry per page (1-based index = position + 1). */
   pages: string[];
+  /** Header-anchored tables computed at upload from the same text items as
+   *  `pages`. Absent on legacy sessions (the line engine then reads alone). */
+  tables?: LayoutTable[];
   /** P3-A durable-object metadata (nullable: unknown stays unknown for
    *  pre-P3-A sessions). sha256 = hex of the ORIGINAL bytes; objectKey =
    *  stable session/document-scoped content-addressed key (objects.ts sessionObjectKeyFor).
@@ -126,6 +130,21 @@ export function createSession(
   };
   writeFileSync(pathFor(sid), JSON.stringify(session));
   return { session, capability: cap, capabilityHash };
+}
+
+/** Re-create the instance-local session cache from durable state (the
+ *  capability hash is restored as stored; no raw capability is involved). */
+export function restoreSession(
+  sessionId: string,
+  documents: SessionDocument[],
+  userContext: Record<string, string>,
+  capabilityHash: string,
+  createdAt: string,
+): Session | undefined {
+  if (!isSafeId(sessionId) || !/^[0-9a-f]{64}$/.test(capabilityHash)) return undefined;
+  const session: Session = { sessionId, createdAt, documents, userContext, evidence: {}, capabilityHash };
+  writeFileSync(pathFor(sessionId), JSON.stringify(session));
+  return session;
 }
 
 export function getSession(sessionId: string): Session | undefined {

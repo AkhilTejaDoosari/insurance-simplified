@@ -85,7 +85,8 @@ describe("deterministic extraction on real-brochure text patterns", () => {
 
     expect(row?.values).toHaveLength(1);
     expect(row?.values[0]).toMatchObject({
-      display: "Under age 65",
+      // Verbatim source display; the condition stays in qualifiers.ageBand.
+      display: "You must be under age 65; and",
       qualifiers: { ageBand: "under age 65" },
     });
   });

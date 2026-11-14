@@ -3,6 +3,7 @@
 // stated reason. Creates a durable session in the database with a high-entropy
 // capability cookie (see app/lib/session-db.ts, app/lib/session-auth.ts).
 
+import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import { NextRequest, NextResponse } from "next/server";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -97,6 +98,9 @@ export async function POST(request: NextRequest) {
     filename: string;
     pageCount: number;
     pages: string[];
+    /** Layout tables from the same text items as `pages` (instance cache;
+     *  recomputed from the stored bytes on durable rehydration). */
+    tables: LayoutTable[];
   }[] = [];
   const rawFiles = new Map<string, Uint8Array>();
   const failures: { filename: string; reason: string }[] = [];
@@ -108,7 +112,7 @@ export async function POST(request: NextRequest) {
       try {
         state = transition(state, "PROCESSING");
         const buffer = await file.arrayBuffer();
-        const { pageCount, pages } = await timeAsync("upload.extractPages", () =>
+        const { pageCount, pages, tables } = await timeAsync("upload.extractPages", () =>
           extractPages(buffer, file.name),
           { pageCount: 0, filename: file.name }
         );
@@ -119,7 +123,7 @@ export async function POST(request: NextRequest) {
           return;
         }
         state = transition(state, "READY");
-        documents.push({ documentId, filename: file.name, pageCount, pages });
+        documents.push({ documentId, filename: file.name, pageCount, pages, tables });
         rawFiles.set(documentId, new Uint8Array(buffer));
       } catch (err) {
         try {

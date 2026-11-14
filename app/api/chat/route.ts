@@ -14,8 +14,9 @@
 // - Semantic unavailable/error/unconfigured -> lexical line-overlap fallback.
 // - Both empty -> fixed refusal. NO whole-document LLM fallback.
 
+import { loadSession } from "@/app/lib/session-store";
 import { NextRequest, NextResponse } from "next/server";
-import { getSession, registerEvidence } from "@/app/lib/session";
+import { registerEvidence } from "@/app/lib/session";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
 import { REFUSAL_TEXT } from "@/app/lib/rag/answer";
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
     return auth.errorResponse!;
   }
 
-  const session = getSession(body.sessionId);
+  const session = await loadSession(body.sessionId);
   if (!session) {
     return errorResponse("NOT_FOUND", 404, {
       requestId,
@@ -227,7 +228,7 @@ export async function POST(request: NextRequest) {
       // a partially unsupported answer. No new response states.
       //
       // P3-E ACCESS INVARIANT: access/scope decisions live ONLY in this route
-      // (getSession above) and ownership/session code — NEVER in model output.
+      // (loadSession above) and ownership/session code — NEVER in model output.
       // Model-supplied documentIds/quotes grant nothing; citations below are
       // re-verified against session.documents, and evidenceIds are minted here
       // via withEvidenceId, never accepted from the model.

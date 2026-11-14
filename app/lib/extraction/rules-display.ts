@@ -8,7 +8,12 @@ export interface RulesReading {
   certain: boolean;
 }
 
-const NEG = /\b(no|not|n't|without|never|waived|waives|none)\b/i;
+// Negation summaries require the negation to modify the concept itself
+// ("no waiting period", "referral is not required"). A negation elsewhere on
+// the line ("No coverage", "reduced without preauthorization", "no coverage
+// without a referral") says something else — often the opposite — and the
+// line is shown verbatim instead.
+const NO_WAITING_PERIOD = /\b(?:no\s+waiting\s+periods?|waiting\s+periods?\s+(?:is|are|does|do|will)\s+not\s+apply|waiting\s+periods?\s+(?:is|are)\s+waived)\b/i;
 
 function scopeAfter(line: string, anchor: RegExp): string {
   const at = line.search(anchor);
@@ -29,7 +34,7 @@ export function summarizeRulesDisplay(factName: string, source: string): RulesRe
   const line = source.trim();
 
   if (factName === "preauthorization") {
-    if (/\bno\b[^.\\n]{0,24}pre-?authorization|pre-?authorization[^.\\n]{0,24}\bnot required\b|without[^.\\n]{0,24}pre-?authorization/i.test(line)) {
+    if (/\bno\s+(?:pre-?authorization|prior\s+authorization|pre-?certification)\s+(?:is\s+)?(?:required|needed)\b|\b(?:pre-?authorization|prior\s+authorization|pre-?certification)\s+(?:is\s+)?not\s+required\b/i.test(line)) {
       return { display: "No preauthorization required", certain: true };
     }
     if (/pre-?authorization|prior authorization|pre-certification|precertification/i.test(line)) {
@@ -42,7 +47,7 @@ export function summarizeRulesDisplay(factName: string, source: string): RulesRe
   }
 
   if (factName === "referral-requirement") {
-    if (/\bno\b[^.\\n]{0,20}referral|referral[^.\\n]{0,20}\bnot required\b|without[^.\\n]{0,20}referral/i.test(line)) {
+    if (/\bno\s+referrals?\s+(?:is\s+|are\s+)?(?:required|needed)\b|\breferrals?\s+(?:is|are)\s+not\s+(?:required|needed)\b/i.test(line)) {
       return { display: "No referral required", certain: true };
     }
     if (/referral[^.\\n]{0,20}required|must (obtain|get)[^.\\n]{0,20}referral|referral[^.\\n]{0,20}must/i.test(line)) {
@@ -61,7 +66,7 @@ export function summarizeRulesDisplay(factName: string, source: string): RulesRe
   }
 
   if (factName === "waiting-period") {
-    if (NEG.test(line)) return { display: "No waiting period stated", certain: true };
+    if (NO_WAITING_PERIOD.test(line)) return { display: "No waiting period", certain: true };
     const duration = /(\d+)\s*-?\s*(day|week|month|year)s?/i.exec(line);
     if (duration) {
       const benefit = /for ([a-z][a-z \-]{0,32}?)(?:\.|,|;|$)/i.exec(line)?.[1].trim();
@@ -85,8 +90,8 @@ export function summarizeRulesDisplay(factName: string, source: string): RulesRe
   }
 
   if (factName === "age-limits") {
-    if (/\bno\b[^.\\n]{0,20}age (limit|restriction)/i.test(line)) {
-      return { display: "No age limit stated", certain: true };
+    if (/\bno\s+(?:maximum\s+|upper\s+)?age\s+(?:limits?|restrictions?)\b/i.test(line)) {
+      return { display: "No age limit", certain: true };
     }
     const normUnit = (u: string | undefined): string =>
       !u ? "" : /^old$/i.test(u) ? "years" : u.toLowerCase();

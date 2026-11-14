@@ -14,7 +14,12 @@
 //        no same-scope contradiction;
 //     6. the claimed labelled-line path (hasPlanValueProof) is unchanged and
 //        still decides before ownership.
+import { hasSameScopeContradiction } from "@/app/lib/extraction/contradictions";
 import { describe, expect, it } from "vitest";
+import { tableDocument } from "./helpers/table-doc";
+import { verifyComparisonTable } from "@/app/lib/extraction/verify-table";
+import { extractFallback } from "@/app/lib/extraction/extract";
+import { validateTable } from "@/app/lib/extraction/types";
 import {
   attestPlans,
   ownershipProvisionApplicable,
@@ -155,31 +160,33 @@ describe("ownership provision applicability (lexical abstention guards)", () => 
   });
 });
 
+// Policy 2026-11-14: document ownership attributes TABLE CELLS only (their
+// layout anchor proves row, column and display; see table-attribution.test.ts).
+// A line value is attributed only through the labelled plan/fact/value line.
+// The guard tests below remain: every abstention still abstains.
 describe("row plan scope resolution (Stage E ownership)", () => {
-  it("attributes every verified value of a single-plan document", () => {
+  it("does not attribute a line value by document ownership", () => {
     const docs = [doc("d1", ["Policy name: Alpha", "Annual deductible: $250"])];
     const plans = attestPlans(docs);
     const values = [value("d1", "$250", 2, "Annual deductible: $250")];
-    expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([plans[0].planId]);
+    expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([undefined]);
   });
 
-  it("attributes values of a merged plan across both documents", () => {
+  it("does not attribute line values of a merged plan by ownership", () => {
     const docs = [
       doc("d1", ["Plan name: Zeta; Policy ID: Z9; Issuer: ZetaCorp", "Annual deductible: $500"]),
-      doc("d2", ["Plan name: Zeta; Policy ID: Z9; Issuer: ZetaCorp", "Emergency care copay: $150"]),
+      doc("d2", ["Plan name: Zeta; Policy ID: Z9; Issuer: ZetaCorp", "Annual deductible: $500"]),
     ];
     const plans = attestPlans(docs);
+    // Both values cite the row's own concept (inferred ownership requires it).
     const values = [
       value("d1", "$500", 2, "Annual deductible: $500"),
-      value("d2", "$150", 2, "Emergency care copay: $150"),
+      value("d2", "$500", 2, "Annual deductible: $500"),
     ];
-    expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([
-      plans[0].planId,
-      plans[0].planId,
-    ]);
+    expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([undefined, undefined]);
   });
 
-  it("keeps a claimed planId backed by the labelled plan/value line", () => {
+  it("keeps a claimed planId backed by the labelled plan/value line; a mention is not proof", () => {
     const docs = [doc("d1", ["Policy name: Alpha"])];
     const plans: ProvenPlan[] = [
       { planId: "plan-a", name: "Alpha", sources: [{ documentId: "d1", page: 1, quote: "Policy name: Alpha" }] },
@@ -190,7 +197,7 @@ describe("row plan scope resolution (Stage E ownership)", () => {
     ];
     expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([
       "plan-a",
-      "plan-a",
+      undefined,
     ]);
   });
 
@@ -201,19 +208,22 @@ describe("row plan scope resolution (Stage E ownership)", () => {
     ];
     const values = [
       value("d1", "$250", 1, "Plan name: Alpha; annual-deductible: $250", { planId: "plan-a" }),
-      value("d1", "$250", 1, "Plan name: Alpha; annual-deductible: $500", { planId: "plan-a" }),
+      // Display matches its own labelled line, so both are claimed proofs and
+      // the pair is a genuine same-scope conflict ($250 vs $500).
+      value("d1", "$500", 1, "Plan name: Alpha; annual-deductible: $500", { planId: "plan-a" }),
     ];
+    expect(hasSameScopeContradiction(values)).toBe(true);
     expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([
       "plan-a",
       "plan-a",
     ]);
   });
 
-  it("keeps a mention-attributed value when the peer group is conflict-free", () => {
+  it("does not attribute a line value on a plan-name mention alone", () => {
     const docs = [doc("d1", ["Policy name: Alpha", "Alpha's premium is $5"])];
     const plans = attestPlans(docs);
     const values = [value("d1", "$5", 2, "Alpha's premium is $5", { planId: plans[0].planId })];
-    expect(resolveRowPlanIds("premium", values, plans, docs)).toEqual([plans[0].planId]);
+    expect(resolveRowPlanIds("premium", values, plans, docs)).toEqual([undefined]);
   });
 
   it("abstains everywhere on a multi-plan document", () => {
@@ -265,12 +275,12 @@ describe("row plan scope resolution (Stage E ownership)", () => {
     expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([undefined]);
   });
 
-  it("attributes a selectable deductible option menu", () => {
+  it("does not attribute a selectable deductible option menu line (table cells carry it)", () => {
     const docs = [doc("d1", ["Policy name: Alpha"])];
     const plans = attestPlans(docs);
     const text = "Deductible Options (You pay) $0 - $5,000 (Choose the option you want.)";
     const values = [value("d1", text, 1, text, { qualifiers: { selectionStatus: "selectable" } as CellValue["qualifiers"] })];
-    expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([plans[0].planId]);
+    expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([undefined]);
   });
 
   it("voids ownership for a document whose later page declares a different plan (multi-plan fail-closed)", () => {
@@ -292,12 +302,16 @@ describe("row plan scope resolution (Stage E ownership)", () => {
     expect(resolveRowPlanIds("emergency-care", onCleanPage, plans, docs)).toEqual([undefined]);
   });
 
-  it("does not void ownership when a later page re-declares the owning plan", () => {
-    const docs = [doc("d1", ["Policy name: Alpha", "Plan name: Alpha\nAnnual deductible: $250"])];
-    const plans = attestPlans(docs);
-    expect(plans).toHaveLength(1);
-    const values = [value("d1", "$250", 2, "Annual deductible: $250")];
-    expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([plans[0].planId]);
+  it("a later page re-declaring the owning plan does not void table-cell ownership", () => {
+    const tdoc = tableDocument("d1", [{
+      preamble: ["Policy name: Alpha"], caption: "BENEFIT", headings: ["ELITE", "BASIC"],
+      rows: [["Deductible", "$0", "$250"], ["Copay", "$10", "$20"], ["Lab", "$1", "$2"]],
+    }, "Plan name: Alpha"]);
+    const out = verifyComparisonTable(validateTable(extractFallback([tdoc], {})), [tdoc]);
+    expect(out.plans).toHaveLength(1);
+    const cells = out.rows.find((r) => r.factName === "annual-deductible")!.values.filter((v) => v.anchor);
+    expect(cells.length).toBe(2);
+    expect(cells.every((v) => v.planId === out.plans![0].planId)).toBe(true);
   });
 
   it("abstains a value whose evidence names another verified plan (rival mention)", () => {
@@ -310,20 +324,18 @@ describe("row plan scope resolution (Stage E ownership)", () => {
     const withRival = [value("d1", "$500", 2, "Annual deductible: $500 unlike Beta Plan")];
     expect(resolveRowPlanIds("annual-deductible", withRival, plans, docs)).toEqual([undefined]);
     const control = [value("d1", "$500", 2, "Annual deductible: $500")];
-    expect(resolveRowPlanIds("annual-deductible", control, plans, docs)).toEqual([plans[0].planId]);
+    expect(resolveRowPlanIds("annual-deductible", control, plans, docs)).toEqual([undefined]);
   });
 
-  it("attributes across pages of a single-plan multi-page document", () => {
-    const docs = [doc("d1", ["Policy name: Alpha", "Annual deductible: $250", "Emergency care copay: $150"])];
+  it("does not attribute line values across pages by ownership", () => {
+    const docs = [doc("d1", ["Policy name: Alpha", "Annual deductible: $250", "Annual deductible options: $250"])];
     const plans = attestPlans(docs);
+    // Both values cite the row's own concept (inferred ownership requires it).
     const values = [
       value("d1", "$250", 2, "Annual deductible: $250"),
-      value("d1", "$150", 3, "Emergency care copay: $150"),
+      value("d1", "$250", 3, "Annual deductible options: $250"),
     ];
-    expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([
-      plans[0].planId,
-      plans[0].planId,
-    ]);
+    expect(resolveRowPlanIds("annual-deductible", values, plans, docs)).toEqual([undefined, undefined]);
   });
 
   it("does not mutate the input values", () => {
@@ -345,8 +357,8 @@ describe("row plan scope resolution (Stage E ownership)", () => {
     const d2 = value("d2", "$500", 2, "Annual deductible: $500");
     const alone = resolveRowPlanIds("annual-deductible", [d1], plans, docs);
     const together = resolveRowPlanIds("annual-deductible", [d1, d2], plans, docs);
-    expect(alone).toEqual([plans[0].planId]);
+    expect(alone).toEqual([undefined]);
     expect(together[0]).toBe(alone[0]);
-    expect(together[1]).toBe(plans[1].planId);
+    expect(together[1]).toBe(undefined);
   });
 });

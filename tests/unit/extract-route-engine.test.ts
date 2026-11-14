@@ -136,7 +136,7 @@ describe("POST /api/extract engine selection", () => {
     expect(body.rows[0].values[0].planId).toBeUndefined();
   });
 
-  it("keeps ownership attribution when the labelled plan-binding citation fails verification (unique verified plan)", async () => {
+  it("drops to unattributed when the labelled plan-binding citation fails verification (no ownership inference)", async () => {
     delete process.env.LLM_BASE_URL;
     delete process.env.LLM_API_KEY;
     const { session, capability } = createSession([{
@@ -161,9 +161,9 @@ describe("POST /api/extract engine selection", () => {
     expect(res.status).toBe(200);
     expect(body.plans).toHaveLength(1);
     // The labelled binding citation failed verification, so the claimed proof
-    // is gone — but the document's unique verified plan identity plus the
-    // ownership guards still prove the value's plan scope (P1 ownership).
-    expect(body.rows[0].values[0].planId).toBe("alpha");
+    // is gone. Document ownership does not attribute a line value (policy
+    // 2026-11-14): the value stays displayed, unattributed.
+    expect(body.rows[0].values[0].planId).toBeUndefined();
     expect(body.rows[0].values[0].evidence).toEqual([expect.objectContaining({ quote: "Premium: $5", evidenceId: expect.stringMatching(/^ev-/) })]);
   });
 
@@ -221,7 +221,7 @@ describe("POST /api/extract engine selection", () => {
     expect(body.rows[0].values[0].evidence).toEqual([expect.objectContaining({ page: 1, quote: "Plan name: Alpha; premium: $5", evidenceId: expect.stringMatching(/^ev-/) })]);
   });
 
-  it("keeps a server-attributed value under the document-ownership proof without a labelled line", async () => {
+  it("does not attribute a line value by name mention or document ownership without a labelled line", async () => {
     delete process.env.LLM_BASE_URL;
     delete process.env.LLM_API_KEY;
     const { session, capability } = createSession([{
@@ -244,7 +244,8 @@ describe("POST /api/extract engine selection", () => {
     const body = await res.json();
     expect(res.status).toBe(200);
     expect(body.plans).toHaveLength(1);
-    expect(body.rows[0].values[0].planId).toBe("alpha");
+    // A plan-name mention is not proof for a line value (policy 2026-11-14).
+    expect(body.rows[0].values[0].planId).toBeUndefined();
     expect(body.rows[0].values[0].evidence).toHaveLength(1);
   });
 

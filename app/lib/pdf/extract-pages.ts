@@ -2,7 +2,8 @@
 // Page numbers are the citation unit, so extraction MUST preserve the
 // 1-based page alignment of the source document.
 
-import { extractText, getDocumentProxy } from "unpdf";
+import { getDocumentProxy } from "unpdf";
+import { detectTables, positionItems, type LayoutTable, type RawTextItem } from "@/app/lib/pdf/layout-tables";
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_PAGES = 200;
@@ -19,6 +20,8 @@ export interface ExtractedPdf {
   pageCount: number;
   /** One entry per page; index 0 === page 1. */
   pages: string[];
+  /** Header-anchored benefit tables, spans into `pages` (layout-tables.ts). */
+  tables: LayoutTable[];
 }
 
 /** Very small heuristic: reject buffers with no extractable Latin text. */
@@ -63,10 +66,22 @@ export async function extractPages(
     );
   }
 
-  const { text } = await extractText(pdf, { mergePages: false });
-  const pages = (Array.isArray(text) ? text : [text]).map((t) =>
-    typeof t === "string" ? t : String(t ?? "")
-  );
+  // One text-content pass per page. Page text is the same join unpdf's
+  // extractText produces (str + "\n" on hasEOL), so citation offsets are
+  // unchanged; the positioned items additionally feed table detection.
+  const pages: string[] = [];
+  const tables: LayoutTable[] = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const content = await (await pdf.getPage(p)).getTextContent();
+    const { text, items } = positionItems(content.items as unknown as RawTextItem[]);
+    pages.push(text);
+    try {
+      tables.push(...detectTables(text, items, p));
+    } catch {
+      // Layout reading is an enhancement: a failure leaves the page to the
+      // line engine and never fails the upload.
+    }
+  }
 
   const joined = pages.join("\n");
   if (!joined.trim()) {
@@ -82,5 +97,5 @@ export async function extractPages(
     );
   }
 
-  return { pageCount: pages.length, pages };
+  return { pageCount: pages.length, pages, tables };
 }

@@ -12,8 +12,9 @@
 // Requires valid session capability (cookie / Authorization: Bearer / x-session-capability).
 // Session ID alone is insufficient for authorization.
 
+import { loadSession } from "@/app/lib/session-store";
 import { NextRequest, NextResponse } from "next/server";
-import { getSession, readDocumentFile } from "@/app/lib/session";
+import { readDocumentFile } from "@/app/lib/session";
 import { requireScopeId } from "@/app/lib/rag/ownership";
 import { getDefaultObjectStore } from "@/app/lib/storage/objects";
 import { requireSessionCapability } from "@/app/lib/session-auth";
@@ -40,7 +41,7 @@ export async function GET(
     return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown session" });
   }
 
-  const session = getSession(sessionId);
+  const session = await loadSession(sessionId);
   if (!session) {
     return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown session" });
   }

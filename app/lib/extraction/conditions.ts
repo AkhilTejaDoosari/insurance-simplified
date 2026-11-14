@@ -78,6 +78,19 @@ function scopesAmounts(value: CellValue): boolean {
  *  names the slice each figure belongs to; otherwise it is unresolved. The
  *  extractor downgrades such a row and the renderer asks the same question. */
 export function conditionBindingKnown(value: CellValue): boolean {
+  // A table cell's row label states the provision's conditions ("Maximum
+  // Limit: $100,000") and the cell states the value: which amount is the
+  // value is structural. Only the cell's own text can be ambiguous.
+  if (value.anchor?.kind === "table-cell") {
+    // Governing notes follow the cell on their own lines (table-facts.ts).
+    const head = value.display.split("\n")[0];
+    const cut = head.lastIndexOf("): ");
+    if (cut >= 0) {
+      const cell = head.slice(cut + 3);
+      if (amounts(cell).length < 2) return true;
+      return conditionBindingKnown({ ...value, anchor: undefined, display: cell });
+    }
+  }
   if (amounts(value.display).length < 2) return true;
   const text = [value.display, ...value.evidence.map((e) => e.quote)].join("\n");
   return offersChoices(value.display, text) || scopesAmounts(value);

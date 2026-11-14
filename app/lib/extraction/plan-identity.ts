@@ -11,7 +11,9 @@
 import { createHash } from "node:crypto";
 import { hasSameScopeContradiction } from "@/app/lib/extraction/contradictions";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
-import { sourcedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
+import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
+import { verifyClaimAnchor } from "@/app/lib/extraction/claim-anchors";
+import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import { hasPlanValueProof } from "@/app/lib/extraction/types";
 import type {
   CellValue,
@@ -20,7 +22,7 @@ import type {
   TableRow,
 } from "@/app/lib/extraction/types";
 
-type SourceDocument = { documentId: string; filename: string; pages: string[] };
+type SourceDocument = { documentId: string; filename: string; pages: string[]; tables?: LayoutTable[] };
 
 type PlanSource = { planId: string; page: number; name: string };
 
@@ -521,7 +523,8 @@ function documentDeclaresOtherPlan(
 
 /** Enrollment categories a document's first page declares (supported FEHB
  *  contract types only); empty when it declares none. */
-function declaredEnrollmentCategories(page: string | undefined): string[] {
+/** Enrollment categories the document's own first-page enrollment record declares. */
+export function declaredEnrollmentCategories(page: string | undefined): string[] {
   return page ? [...new Set(scanEnrollment(page)?.categories ?? [])] : [];
 }
 
@@ -557,14 +560,35 @@ function categoriesTiedToValue(value: CellValue, categories: readonly string[]):
  *  attributing it to the plan would present it as plan-wide (or with a
  *  partial scope), so ownership abstains. Only the value's own qualifiers are
  *  read, as the presentation will re-derive them from the canonical evidence
- *  (sourcedQualifiers): no cross-value inheritance, and scope that cannot
+ *  (scopedQualifiers): no cross-value inheritance, and scope that cannot
  *  survive that re-derivation (e.g. across a wrapped line) counts as lost. */
 function lacksEnrollmentScope(value: CellValue, categories: readonly string[]): boolean {
   if (categories.length === 0) return false;
   const tied = categoriesTiedToValue(value, categories);
   if (tied.length === 0) return false;
-  const preserved = sourcedQualifiers(value).conditions ?? "";
+  const preserved = scopedQualifiers(value).conditions ?? "";
   return !tied.every((category) => mentionsCategory(preserved, category));
+}
+
+/** Capitalized FEHB enrollment words; a leftover after removing complete
+ *  category names marks a wrapped, partial category ("…and Family contracts"). */
+const ENROLLMENT_WORD = /\b(?:Self|Family|Plus One)\b/;
+
+/** An enrollment-type designator that is not a complete declared category:
+ *  an abbreviation or unknown code before "contract(s)/enrollment(s)"
+ *  ("SO contracts", "S+1 contracts", "XQ enrollments"), or a known FEHB
+ *  abbreviation labelling a figure ("SO: $11,000"). Brochures that use such
+ *  codes do not declare their mapping in the enrollment record, so the
+ *  category cannot be proved from source and the value abstains. */
+const ENROLLMENT_DESIGNATOR =
+  /(?:^|[^A-Za-z+])(?:[A-Z]{1,4}|[A-Za-z]*\+\s?1)\s+(?:contracts?|enrollments?)\b|(?:^|[^A-Za-z])(?:SO|SPO|SF|S\+1)(?=\s*[:\-–$])/;
+
+function hasPartialEnrollmentCategory(text: string, categories: readonly string[]): boolean {
+  let rest = text.replace(/\s+/g, " ");
+  for (const category of categories) {
+    rest = rest.replace(new RegExp(category.split(/\s+/).map(escaped).join("\\s+"), "g"), " ");
+  }
+  return ENROLLMENT_WORD.test(rest) || ENROLLMENT_DESIGNATOR.test(rest);
 }
 
 /** Resolve Stage E plan attribution for one row's verified values.
@@ -572,28 +596,17 @@ function lacksEnrollmentScope(value: CellValue, categories: readonly string[]): 
  *  Input: values whose citations the route has already verified and
  *  canonicalized (this function verifies nothing itself — it is pure), the
  *  route-survived proven plans (every source already page-verified), and the
- *  session documents (for page-text scope checks only).
+ *  session documents (for page-text scope checks and table re-derivation).
  *
- *  Returns one planId (or undefined = abstain) per input value, in order:
- *  1. Claimed path (unchanged C6): a value.planId covered by the plans is
- *     kept only when its evidence contains the labelled plan/fact/value line
- *     (hasPlanValueProof). A failed claim is NOT evidence — the value falls
- *     through to the guard evaluation below like any unclaimed value.
- *  2. Mention-decisive path: a value whose verified planId came from the
- *     mention attribution (its own evidence names exactly one plan scoped to
- *     its document) keeps that planId when the provision passes the
- *     applicability guards and its peer group is conflict-free — even on a
- *     multi-plan document (owner requirement 8: fail-closed "unless existing
- *     stronger proof is present"; the mention is that stronger proof).
- *  3. Ownership path (no planId): the value's document must have exactly one
- *     verified plan (uniqueDocumentPlanId); the provision must pass
- *     ownershipProvisionApplicable; it must not name another verified plan;
- *     its whole document must declare no other plan (document-level scope
- *     void); and its same-document peer
- *     group — evaluated on the uniform assignment (claimed/mention values
- *     included, so a contested group is detected) — must contain no
- *     same-scope contradiction.
- *  4. Everything else abstains (planId undefined → shared/unassigned data). */
+ *  Returns one planId (or undefined = abstain) per input value, in order.
+ *  Every path first passes the FEHB enrollment-scope gates. Then:
+ *  A. Table cell (value.anchor): the value's document has exactly one
+ *     verified plan; the anchor re-derives exactly from the document layout
+ *     (verifyTableAnchor); no abstention language in the provision; no other
+ *     verified plan named; the document declares no other plan; no same-scope
+ *     contradiction with a non-table reading of the fact.
+ *  B. Line value: only the labelled plan/fact/value line (hasPlanValueProof).
+ *  Everything else abstains (planId undefined → unattributed document data). */
 export function resolveRowPlanIds(
   factName: string,
   values: readonly CellValue[],
@@ -624,32 +637,73 @@ export function resolveRowPlanIds(
     // Enrollment-scope gate: applies to EVERY attribution path, including a
     // labelled explicit planId (C6 proof is unchanged but never sufficient
     // for an enrollment-specific figure whose scope is not fully preserved).
-    if (lacksEnrollmentScope(
-      value,
-      declaredEnrollmentCategories(pagesByDocument.get(value.documentId)?.[0]),
-    )) return undefined;
-    if (
-      value.planId === planId &&
-      hasPlanValueProof(plan.name, factName, value.display, value.evidence)
-    ) {
-      return planId;
-    }
-    if (!ownershipProvisionApplicable(
-      value.display,
-      value.evidence.map((e) => e.quote),
+    const categories = declaredEnrollmentCategories(pagesByDocument.get(value.documentId)?.[0]);
+    // A grammar-parsed statement binds its declared enrollment scope to its
+    // amount by parse (re-verified via its anchor below); the clause-level
+    // lexical gates exist for unstructured text and cannot see across the
+    // statement's own line wrap.
+    const statement = value.anchor?.kind === "statement";
+    if (!statement && lacksEnrollmentScope(value, categories)) return undefined;
+    // Same every-path gate: an abbreviated, partial or unknown FEHB enrollment
+    // designator cannot be proved from source (no declared mapping).
+    if (!statement && categories.length > 0 && hasPartialEnrollmentCategory(
+      `${value.display} ${value.evidence.map((e) => e.quote).join(" ")}`,
+      categories,
     )) return undefined;
     const text = `${value.display} ${value.evidence.map((e) => e.quote).join(" ")}`;
-    if (mentionsOtherVerifiedPlan(plan, text, plans)) return undefined;
-    if (documentDeclaresOtherPlan(plan, value.documentId, pagesByDocument)) {
-      return undefined;
+
+    // Path A — structural claim (table cell or grammar-parsed statement). The
+    // anchor must reproduce exactly from this document: for a table cell the
+    // fact is the row label's, the scope the column heading's, the display the
+    // label and cell verbatim; for a statement, scope/concept/amount are bound
+    // by the closed statement grammar. Lexical binding heuristics do not apply; the
+    // applicability guards that concern the provision itself still do.
+    if (value.anchor) {
+      if (!verifyClaimAnchor(factName, value, documents)) return undefined;
+      if (OWNERSHIP_ABSTENTION_PATTERN.test(value.display)) return undefined;
+      if (mentionsOtherVerifiedPlan(plan, text, plans)) return undefined;
+      if (documentDeclaresOtherPlan(plan, value.documentId, pagesByDocument)) return undefined;
+      // Distinct structural claims are distinct provisions. A contradiction is
+      // a same-scope disagreement between THIS claim and an unstructured
+      // reading of the same fact — disagreements among other readings are
+      // theirs, not this claim's.
+      const contradicted = values.some((peer, peerIndex) =>
+        peer !== value && !peer.anchor && peer.documentId === value.documentId &&
+        uniform[peerIndex] === planId && hasSameScopeContradiction([value, peer]));
+      if (contradicted) return undefined;
+      return planId;
     }
-    const peers = values.filter(
-      (peer, peerIndex) =>
-        peer.documentId === value.documentId && uniform[peerIndex] === planId,
-    );
-    if (hasSameScopeContradiction(peers)) return undefined;
-    return planId;
+
+    // Line values (no structure). Only the labelled plan/fact/value line
+    // (C6 structured claim, hasPlanValueProof) attributes them. Neither the
+    // document's ownership nor a plan-name mention in the line does: a PDF
+    // line is not a complete provision — table cells, wrapped qualifiers and
+    // negations live on other lines. Measured on the real corpus (2026-11-14)
+    // inferred line attribution was ~2/16 correct. Such values stay visible
+    // as unattributed, cited document text.
+    if (value.planId === planId && hasPlanValueProof(plan.name, factName, value.display, value.evidence)) {
+      // The record's display is the whole stated value (polarity included by
+      // construction). A structured network scope must not narrow it.
+      return networkScopeConsistent(value) ? planId : undefined;
+    }
+    return undefined;
   });
+}
+
+const NETWORK_TERM = /\b(in|out[-\s]of)[-\s]network\b/gi;
+const networkTerms = (text: string) =>
+  new Set([...text.matchAll(NETWORK_TERM)].map((m) => m[1].toLowerCase().replace(/\s+/g, "-")));
+
+/** A structured networkTier, when present, names exactly the network scope(s)
+ *  the display states — never a subset ("In-network or Out-of-network" is not
+ *  "Out-of-network"). */
+function networkScopeConsistent(value: CellValue): boolean {
+  const claimed = value.qualifiers.networkTier;
+  if (!claimed) return true;
+  const stated = networkTerms(value.display);
+  if (stated.size === 0) return true;
+  const scoped = networkTerms(claimed);
+  return scoped.size === stated.size && [...stated].every((t) => scoped.has(t));
 }
 
 /** Return a table whose values carry deterministic `planId` assignments against

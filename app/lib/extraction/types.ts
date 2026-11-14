@@ -70,6 +70,33 @@ export type RegisteredEvidenceCitation = EvidenceCitation & {
   evidenceId: string;
 };
 
+/** Structural evidence: the value is the cell of a header-anchored table.
+ *  Verified by recomputation (table-facts.ts verifyTableAnchor) — a value
+ *  whose anchor does not reproduce exactly is dropped at the route. */
+export interface TableAnchor {
+  kind: "table-cell";
+  /** 1-based page of the table. */
+  page: number;
+  /** Index into the document's detected tables. */
+  table: number;
+  row: number;
+  column: number;
+  /** The row label verbatim: identifies the provision (two cells of
+   *  different rows are different provisions, never rival values). */
+  label: string;
+}
+
+/** Structural evidence: the value is one whole prose statement parsed by the
+ *  closed statement grammar (statement-facts.ts) at this exact page span. */
+export interface StatementAnchor {
+  kind: "statement";
+  page: number;
+  start: number;
+  end: number;
+}
+
+export type ClaimAnchor = TableAnchor | StatementAnchor;
+
 export interface CellValue {
   documentId: string;
   /** Only present when evidence establishes this value belongs to a supported plan. */
@@ -78,6 +105,8 @@ export interface CellValue {
   display: string;
   qualifiers: Qualifiers;
   evidence: EvidenceCitation[];
+  /** Present only on structural claims (table cell / prose statement). */
+  anchor?: ClaimAnchor;
 }
 
 export interface TableRow {
@@ -255,7 +284,21 @@ export function validateTable(payload: unknown): ComparisonTable {
       // The verifier subsequently proves these quotes occur on the cited page;
       // do not accept scope claims absent even from the claimed source passage.
       const citedText = (v.evidence as EvidenceCitation[]).map((e) => e.quote).join("\n");
-      for (const key of MATERIAL_QUALIFIERS) {
+      const anchor = v.anchor as Record<string, unknown> | undefined;
+      if (anchor?.kind === "table-cell" && (typeof anchor.label !== "string" || !anchor.label.trim())) {
+        fail(`row ${r.factName}: invalid table anchor`);
+      }
+      const anchorKeys = anchor?.kind === "table-cell" ? ["page", "table", "row", "column"]
+        : anchor?.kind === "statement" ? ["page", "start", "end"] : null;
+      if (anchor !== undefined && (typeof anchor !== "object" || anchor === null || !anchorKeys ||
+        !anchorKeys.every((k) => Number.isInteger(anchor[k]) && (anchor[k] as number) >= 0))) {
+        fail(`row ${r.factName}: invalid table anchor`);
+      }
+      // A table cell's scope comes from its column heading, a separate cited
+      // span, not from the value's own clause. Its qualifiers are checked
+      // structurally instead: the route drops any anchored value that does
+      // not reproduce exactly from the server-computed layout.
+      if (anchor === undefined) for (const key of MATERIAL_QUALIFIERS) {
         if (q[key] !== undefined && (typeof q[key] !== "string" ||
           !qualifierHasEvidence(v as unknown as CellValue, key, q[key] as string))) {
           fail(`row ${r.factName}: qualifiers.${key} not supported by evidence`);

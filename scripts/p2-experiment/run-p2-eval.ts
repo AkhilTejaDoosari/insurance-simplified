@@ -17,6 +17,7 @@
 
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
+import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import { extractPages } from "@/app/lib/pdf/extract-pages";
 import { extractFallback } from "@/app/lib/extraction/extract";
 import { validateTable, type CellValue } from "@/app/lib/extraction/types";
@@ -26,10 +27,11 @@ import {
   resolveRowPlanIds,
 } from "@/app/lib/extraction/plan-identity";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
+import { verifyComparisonTable } from "@/app/lib/extraction/verify-table";
 import { DOCS, GROUND_TRUTH, type DocId, type GroundTruthItem } from "./ground-truth";
 import { discoverCandidates, type CandidateFact } from "./discovery";
 
-type SourceDoc = { documentId: string; filename: string; pageCount: number; pages: string[] };
+type SourceDoc = { documentId: string; filename: string; pageCount: number; pages: string[]; tables?: LayoutTable[] };
 
 /** Whitespace/case-normalized text for span-overlap matching. */
 export function norm(text: string): string {
@@ -148,8 +150,8 @@ export async function loadSourceDocs(): Promise<{ docs: SourceDoc[]; pageTexts: 
   for (const [, meta] of Object.entries(DOCS)) {
     const buf = readFileSync(meta.file);
     const bytes = new Uint8Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
-    const { pageCount, pages } = await extractPages(bytes, basename(meta.file));
-    docs.push({ documentId: meta.documentId, filename: basename(meta.file), pageCount, pages });
+    const { pageCount, pages, tables } = await extractPages(bytes, basename(meta.file));
+    docs.push({ documentId: meta.documentId, filename: basename(meta.file), pageCount, pages, tables });
     pageTexts.set(meta.documentId, pages);
   }
   return { docs, pageTexts };
@@ -157,44 +159,14 @@ export async function loadSourceDocs(): Promise<{ docs: SourceDoc[]; pageTexts: 
 
 /** Reproduce the production deterministic funnel (route.ts two-phase, P1). */
 export async function runBaselineFunnel(docs: SourceDoc[]) {
+  // The production verification boundary itself (shared with /api/extract),
+  // not a mirror of it.
   const table = validateTable(extractFallback(docs, {}));
-  const plans = attestPlans(docs).filter((p) =>
-    p.sources.every((s) => verifyEvidenceCitation(docs, s).ok)
-  );
-  const scoped = plans.length > 0 ? attributePlanScope({ ...table, plans }, docs) : table;
-  const rowFacts: { factName: string; values: (CellValue & { planId?: string })[] }[] = [];
-  for (const row of scoped.rows) {
-    const verifiedValues: { value: CellValue; evidence: { documentId: string; page: number; quote: string }[] }[] = [];
-    for (const value of row.values) {
-      const evidence: { documentId: string; page: number; quote: string }[] = [];
-      for (const e of value.evidence) {
-        const v = verifyEvidenceCitation(docs, e);
-        if (v.ok) evidence.push({ ...e, quote: v.quote });
-      }
-      if (evidence.length === 0) continue;
-      verifiedValues.push({ value: { ...value, evidence }, evidence });
-    }
-    const planIds = resolveRowPlanIds(
-      row.factName,
-      verifiedValues.map((entry) => entry.value),
-      plans,
-      docs
-    );
-    const values = verifiedValues.map((entry, index) => {
-      const planId = planIds[index];
-      // Production route semantics: strip the pre-gate planId, then re-apply
-      // only the Stage E-proven one (an abstention must not leak the
-      // mention-attributed planId).
-      const { planId: _preGatePlanId, ...unscoped } = entry.value;
-      return {
-        ...unscoped,
-        ...(planId ? { planId } : {}),
-        evidence: entry.evidence,
-      } as CellValue & { planId?: string };
-    });
-    rowFacts.push({ factName: row.factName, values });
-  }
-  return rowFacts;
+  const verified = verifyComparisonTable(table, docs);
+  return verified.rows.map((row) => ({
+    factName: row.factName,
+    values: row.values as (CellValue & { planId?: string })[],
+  }));
 }
 
 export function adjudicateBaseline(

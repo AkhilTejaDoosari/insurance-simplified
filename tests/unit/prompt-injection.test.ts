@@ -151,7 +151,8 @@ describe("P3-E cross-owner data unreachable even when the doc demands it", () =>
 
   it("route resolves session scope in code before any generation call", () => {
     const routeSrc = src("app/api/chat/route.ts");
-    const sessionAt = routeSrc.indexOf("getSession(");
+    // Session scope is resolved by the read-through loader (session-store.ts).
+    const sessionAt = routeSrc.indexOf("loadSession(");
     const genAt = Math.min(
       routeSrc.indexOf("answerViaLlm("),
       routeSrc.indexOf("answerQuestionSemantic(")

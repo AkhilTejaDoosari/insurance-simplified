@@ -20,6 +20,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import { extractPages } from "@/app/lib/pdf/extract-pages";
 import { extractFallback } from "@/app/lib/extraction/extract";
 import { validateTable, type CellValue } from "@/app/lib/extraction/types";
@@ -34,6 +35,7 @@ import {
   spansOverlap,
   valuesOverlappingSpan,
 } from "./run-p2-eval";
+import { CLAIM_LABELS } from "./claim-labels";
 import {
   CORPUS,
   NOISE_HEURISTICS,
@@ -43,7 +45,7 @@ import {
   type ValueTarget,
 } from "./ground-truth-real";
 
-type SourceDoc = { documentId: string; filename: string; pageCount: number; pages: string[] };
+type SourceDoc = { documentId: string; filename: string; pageCount: number; pages: string[]; tables?: LayoutTable[] };
 type FinalValue = CellValue & { planId?: string };
 type RowFacts = { factName: string; values: FinalValue[] }[];
 
@@ -74,8 +76,8 @@ async function loadDoc(meta: CorpusDoc, realDir: string): Promise<SourceDoc | nu
   if (!existsSync(path)) return null;
   const buf = readFileSync(path);
   const bytes = new Uint8Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
-  const { pageCount, pages } = await extractPages(bytes, basename(path));
-  return { documentId: meta.documentId, filename: basename(path), pageCount, pages };
+  const { pageCount, pages, tables } = await extractPages(bytes, basename(path));
+  return { documentId: meta.documentId, filename: basename(path), pageCount, pages, tables };
 }
 
 /** Mechanical citation verification over the RAW (pre-verification) table. */
@@ -170,6 +172,11 @@ async function main() {
   const brochureItems: Record<string, unknown>[] = [];
   const noiseResults: Record<string, unknown>[] = [];
   let crossDocAttributions = 0;
+  /** Every attributed (verified-plan) claim, adjudicated against claim-labels.ts. */
+  const claimTally = { correct: 0, "concept-adjacent": 0, "missing-qualifier": 0, "wrong-concept": 0, incorrect: 0, unlabelled: [] as string[] };
+  /** Unstructured line values whose display is not their own cited text. */
+  let nonVerbatimLineDisplays = 0;
+  const squashed = (t: string) => t.replace(/\s+/g, " ").trim().toLowerCase();
 
   for (const session of sessions) {
     const members = CORPUS.filter((c) => c.session === session);
@@ -192,6 +199,17 @@ async function main() {
       const attributed = values.filter((x) => x.v.planId);
       const foreign = attributed.filter((x) => !docPlanIds.includes(x.v.planId!));
       crossDocAttributions += foreign.length;
+      for (const { v } of values) {
+        if (!v.anchor && !squashed(v.evidence.map((e) => e.quote).join(" ")).includes(squashed(v.display))) nonVerbatimLineDisplays++;
+      }
+      for (const { row, v } of attributed) {
+        const q = v.qualifiers ?? {};
+        const scope = (["planTier", "networkTier", "conditions"] as const).filter((k) => q[k] !== undefined).map((k) => `${k}=${q[k]}`).join(" | ");
+        const key = `${meta.documentId}|${row}|${scope}|${v.display}`;
+        const label = CLAIM_LABELS[key];
+        if (!label) claimTally.unlabelled.push(key);
+        else claimTally[label.verdict]++;
+      }
 
       // Heuristic noise flags across every emitted value.
       const flagged = { "table-of-contents": [] as string[], "educational-definition": [] as string[] };
@@ -331,6 +349,13 @@ async function main() {
       },
       planAttribution: {
         crossDocumentAttributions: crossDocAttributions,
+        nonVerbatimLineDisplays,
+        verifiedClaims: {
+          ...claimTally,
+          unlabelledCount: claimTally.unlabelled.length,
+          strictPrecision: ratio(claimTally.correct, claimTally.correct + claimTally["concept-adjacent"] + claimTally["missing-qualifier"] + claimTally["wrong-concept"] + claimTally.incorrect),
+          incorrect: claimTally.incorrect,
+        },
         brochureWithholdOrOptionalAttributed: withhold.filter((i) => /^(?:unsupported-attribution|optional-attributed-as-base)/.test(String(i.verdict))).length,
         brochureDisplaySpansAttributed: ratio(display.filter((i) => i.attributed).length, display.filter((i) => i.correct).length),
         planValueTargetsCorrectlyAttributed: ratio(planTargets.filter((t) => t.attribution.startsWith("correct")).length, planTargets.length),
@@ -392,6 +417,10 @@ function printSummary(s: any) {
   }
   console.log(`citations semantic (targets)     ${fmt(m.citationCorrectness.semanticOnTargets)}`);
   console.log(`cross-document attributions      ${m.planAttribution.crossDocumentAttributions}`);
+  console.log(`non-verbatim line displays       ${m.planAttribution.nonVerbatimLineDisplays}`);
+  const vc = m.planAttribution.verifiedClaims;
+  console.log(`verified-plan claims (labelled)   correct ${vc.correct} / concept-adjacent ${vc["concept-adjacent"]} / MISSING-QUALIFIER ${vc["missing-qualifier"]} / WRONG-CONCEPT ${vc["wrong-concept"]} / INCORRECT ${vc.incorrect} / UNLABELLED ${vc.unlabelledCount}`);
+  for (const k of vc.unlabelled.slice(0, 20)) console.log(`  UNLABELLED ${k.slice(0, 150)}`);
   console.log(`brochure withhold attributed     ${m.planAttribution.brochureWithholdOrOptionalAttributed}`);
   console.log(`plan value targets attributed OK ${fmt(m.planAttribution.planValueTargetsCorrectlyAttributed)}`);
   console.log("\n-- value targets --");

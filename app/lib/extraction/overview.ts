@@ -12,7 +12,7 @@ import { ELIGIBILITY_ROW_NAME, deriveInterpretations, type Interpretation } from
 import { SECTIONS } from "@/app/lib/extraction/sections";
 import { FACTS } from "@/app/lib/extraction/fact-list";
 import { conditionBindingKnown, moneyAmounts } from "@/app/lib/extraction/conditions";
-import { sourcedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
+import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
 
 export type OverviewSection = "My Fit" | "My Costs" | "Coverage" | "Limits & Risks" | "Evidence & Actions";
 
@@ -151,7 +151,7 @@ function ageBandMatches(q: { ageBand?: string; ageMin?: number; ageMax?: number 
 /** Compact, source-bound condition notes for a financial or coverage value.
  *  Mirrors the rules in ConditionalValue so the overview and table agree. */
 function compactNotes(value: RegisteredCellValue, userAge?: string): string[] {
-  const q = sourcedQualifiers(value);
+  const q = scopedQualifiers(value);
   const notes: string[] = [];
   const statedInDisplay = (raw: string) => value.display.toLowerCase().includes(raw.toLowerCase());
 

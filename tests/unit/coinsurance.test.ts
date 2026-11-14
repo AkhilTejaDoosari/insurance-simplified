@@ -94,7 +94,8 @@ describe("coinsurance extraction", () => {
     );
     const row = table.rows.find((r) => r.factName === "coinsurance")!;
     expect(row.verdict).toBe("SUPPORTED");
-    expect(row.values[0].display).toBe("You pay 10% in-network");
+    // Verbatim source display (2026-11-14): the paraphrase dropped "after deductible".
+    expect(row.values[0].display).toBe("After deductible, insured pays 10% coinsurance in-network.");
   });
 
   it("fallback marks ambiguous percentages NEEDS VERIFICATION, not your share", () => {

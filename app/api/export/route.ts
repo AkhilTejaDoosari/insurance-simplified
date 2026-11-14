@@ -13,8 +13,8 @@
 // Requires the existing session capability before any read
 // (app/lib/session-auth.ts). Session ID alone is insufficient.
 
+import { loadSession } from "@/app/lib/session-store";
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/app/lib/session";
 import { requireSessionCapability } from "@/app/lib/session-auth";
 import { errorResponse, newRequestId } from "@/app/lib/api-errors";
 import {
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
   const auth = await requireSessionCapability(request, sessionId);
   if (!auth.ok)
     return auth.errorResponse ?? errorResponse("SESSION_AUTH_REQUIRED", 401);
-  const session = getSession(sessionId);
+  const session = await loadSession(sessionId);
   if (!session) {
     return errorResponse("NOT_FOUND", 404, {
       requestId,

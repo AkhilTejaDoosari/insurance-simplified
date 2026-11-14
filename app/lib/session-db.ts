@@ -147,6 +147,43 @@ export async function getSessionDb(sessionId: string): Promise<SessionRow | null
   return rows[0] ?? null;
 }
 
+export interface DurableSessionDocument {
+  durableId: string;
+  filename: string;
+  sha256: string;
+  objectKey: string | null;
+  /** Page texts in page order (index 0 = page 1). */
+  pages: string[];
+}
+
+/** Active documents owned by this session, with their stored page texts.
+ *  Scoped by owner_session before any read; never by a caller-chosen
+ *  document id. */
+export async function loadSessionDocumentsDb(sessionId: string): Promise<DurableSessionDocument[]> {
+  const config = resolveSessionDbConfig();
+  if (!config) throw new SessionDbUnconfiguredError();
+  const scope = requireScopeId(sessionId, "SessionDb.loadSessionDocumentsDb");
+  const docsRes = await restRequest(
+    config,
+    `/rest/v1/documents?owner_session=eq.${encodeURIComponent(scope)}&status=eq.active&select=id,filename,sha256,object_key&order=id`,
+  );
+  const docs = (await docsRes.json()) as { id: string; filename: string; sha256: string; object_key: string | null }[];
+  const out: DurableSessionDocument[] = [];
+  for (const doc of docs) {
+    // A document id outside this session's scope is never read.
+    if (!doc.id.startsWith(`${scope}--`)) continue;
+    const pagesRes = await restRequest(
+      config,
+      `/rest/v1/pages?document_id=eq.${encodeURIComponent(doc.id)}&select=page_number,text&order=page_number`,
+    );
+    const rows = (await pagesRes.json()) as { page_number: number; text: string }[];
+    // Page numbers must be exactly 1..n: a gap would shift every citation.
+    if (rows.length === 0 || rows.some((r, i) => r.page_number !== i + 1)) continue;
+    out.push({ durableId: doc.id, filename: doc.filename, sha256: doc.sha256, objectKey: doc.object_key, pages: rows.map((r) => r.text) });
+  }
+  return out;
+}
+
 /** Update session context (merges with existing context_json). */
 export async function updateSessionContextDb(
   sessionId: string,

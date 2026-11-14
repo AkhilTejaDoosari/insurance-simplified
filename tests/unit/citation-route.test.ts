@@ -166,3 +166,23 @@ describe("resolveCitationPage (viewer page resolution)", () => {
     });
   });
 });
+
+describe("protected PDF bytes require this session's capability", () => {
+  it("missing capability → 401, no bytes", async () => {
+    const { session } = seedSession();
+    const res = await get(session.sessionId, "doc-1", null, null as unknown as string);
+    expect(res.status).toBe(401);
+    expect(res.headers.get("content-type")).not.toBe("application/pdf");
+  });
+  it("invalid capability → 401", async () => {
+    const { session } = seedSession();
+    const res = await get(session.sessionId, "doc-1", null, "forged-capability");
+    expect(res.status).toBe(401);
+  });
+  it("session B's capability cannot read session A's PDF", async () => {
+    const a = seedSession();
+    const b = seedSession("other.pdf");
+    const res = await get(a.session.sessionId, "doc-1", null, b.capability);
+    expect(res.status).toBe(401);
+  });
+});

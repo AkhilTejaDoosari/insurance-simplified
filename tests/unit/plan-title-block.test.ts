@@ -274,20 +274,23 @@ describe("F4 — enrollment scope must be preserved, completely, per value", () 
   const SELF_ONLY = "For Self Only contracts, the calendar year deductible is now $1,000.";
   const SELF_PLUS_FAMILY = "For Self Plus One, and Self and Family contracts, the deductible is now $2,000";
 
-  it("keeps sourced single-category values distinct and attributed", () => {
+// Policy 2026-11-14: prose line values are not attributed by inference; the
+// enrollment-scoped value stays displayed with its scope (unattributed).
+// Restoring attribution needs a structured prose-statement claim (planned).
+  it("keeps sourced single-category values distinct (displayed, unattributed)", () => {
     const values = [
       cell("$1,000", SELF_ONLY, "Self Only"),
       cell("$2,000", "For Self Plus One contracts, the deductible is now $2,000", "Self Plus One"),
     ];
     expect(() => validates(values)).not.toThrow();
     expect(hasSameScopeContradiction(values)).toBe(false);
-    expect(resolve(values)).toEqual([plan.planId, plan.planId]);
+    expect(resolve(values)).toEqual([undefined, undefined]);
   });
 
-  it("attributes a combined-scope value only when ALL named categories are preserved", () => {
+  it("a combined-scope value with ALL categories preserved validates (displayed, unattributed)", () => {
     const complete = cell("$2,000", SELF_PLUS_FAMILY, "Self Plus One, and Self and Family");
     expect(() => validates([complete])).not.toThrow();
-    expect(resolve([complete])).toEqual([plan.planId]);
+    expect(resolve([complete])).toEqual([undefined]);
   });
 
   it("abstains on a PARTIAL scope (one of two named categories preserved)", () => {
@@ -313,7 +316,7 @@ describe("F4 — enrollment scope must be preserved, completely, per value", () 
     ];
     expect(() => validates(values)).not.toThrow();
     expect(hasSameScopeContradiction(values)).toBe(false);
-    expect(resolve(values)).toEqual([plan.planId, plan.planId, plan.planId]);
+    expect(resolve(values)).toEqual([undefined, undefined, undefined]);
     expect(values.map((v) => v.qualifiers.conditions)).toEqual(["Self Only", "Self Plus One", "Self and Family"]);
   });
 
@@ -322,9 +325,9 @@ describe("F4 — enrollment scope must be preserved, completely, per value", () 
       cell("$1,000", "For Self Only contracts, the deductible is $1,000.", "Self Only"),
       cell("$2,000", "For Self Plus One contracts, the deductible is $2,000."),
     ];
-    expect(resolve(values)).toEqual([plan.planId, undefined]);
+    expect(resolve(values)).toEqual([undefined, undefined]);
     // Order must not matter.
-    expect(resolve([values[1], values[0]])).toEqual([undefined, plan.planId]);
+    expect(resolve([values[1], values[0]])).toEqual([undefined, undefined]);
   });
 
   it("abstains when a single sentence ties the figure to several categories but only one is preserved", () => {
@@ -348,7 +351,9 @@ describe("F4 — enrollment scope must be preserved, completely, per value", () 
 
   it("does not affect a figure whose own sentence names no category", () => {
     const neutral = cell("$600", "Tier 3 specialty drugs: up to a maximum of $600 for a 30-day supply.");
-    expect(resolve([neutral])).toEqual([plan.planId]);
+    // No enrollment gate fires; the line value is still not attributed by
+    // inference (policy 2026-11-14).
+    expect(resolveRowPlanIds("prescriptions", [{ ...neutral, evidence: [{ ...neutral.evidence[0], quote: "Tier 3 specialty prescription drugs: up to a maximum of $600 for a 30-day supply." }] }], [plan], [fepDoc])).toEqual([undefined]);
   });
 });
 

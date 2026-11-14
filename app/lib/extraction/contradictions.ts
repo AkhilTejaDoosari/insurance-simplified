@@ -67,8 +67,15 @@ export function applicabilityScopeKey(
   return `${scopeSignature(value.qualifiers)}|${benefitScope(value)}`;
 }
 
+function tableLabel(value: { anchor?: unknown }): string | undefined {
+  const anchor = value.anchor as { kind?: unknown; label?: unknown } | undefined;
+  return anchor?.kind === "table-cell" && typeof anchor.label === "string"
+    ? anchor.label.trim().toLowerCase().replace(/\s+/g, " ")
+    : undefined;
+}
+
 export function hasSameScopeContradiction(
-  values: { documentId: unknown; planId?: unknown; display: unknown; qualifiers: unknown; evidence?: readonly unknown[] }[],
+  values: { documentId: unknown; planId?: unknown; display: unknown; qualifiers: unknown; evidence?: readonly unknown[]; anchor?: unknown }[],
 ): boolean {
   const normalize = (display: string) => display.trim().toLowerCase().replace(/\s+/g, " ").replace(/[.]+$/, "");
   for (let i = 0; i < values.length; i++) {
@@ -79,6 +86,12 @@ export function hasSameScopeContradiction(
       // An absent plan ID is document/unknown scope, not proof that a fact
       // belongs to whichever named plan happens to share the same PDF.
       if (a.planId !== b.planId) continue;
+      // Two table cells from differently-labelled rows are different
+      // provisions ("Maternity Care" vs "Therapeutic Termination of
+      // Pregnancy"), not rival values for one scope.
+      const la = tableLabel(a);
+      const lb = tableLabel(b);
+      if (la !== undefined && lb !== undefined && la !== lb) continue;
       if (applicabilityScopeKey(a) !== applicabilityScopeKey(b)) continue;
       if (typeof a.display !== "string" || typeof b.display !== "string") continue;
       if (normalize(a.display) !== normalize(b.display)) return true;
