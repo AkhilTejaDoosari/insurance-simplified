@@ -28,7 +28,7 @@ import {
   SESSION_CAPABILITY_COOKIE,
 } from "@/app/lib/session-db";
 import { errorResponse, newRequestId } from "@/app/lib/api-errors";
-import { recordTiming, timeAsync, timeSync } from "@/app/lib/observability/timing";
+import { timeAsync, timeSync } from "@/app/lib/observability/timing";
 
 const MIN_FILES = 1;
 const MAX_FILES = 5;
@@ -84,8 +84,8 @@ export async function POST(request: NextRequest) {
     );
     sessionId = created.sessionId;
     capability = created.capability;
-  } catch (err) {
-    console.error("[UPLOAD] createSessionDb failed:", err);
+  } catch {
+    console.error("[UPLOAD] createSessionDb failed", { requestId });
     return errorResponse("INTERNAL_ERROR", 503, { requestId, retryable: true });
   }
 
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
         const buffer = await file.arrayBuffer();
         const { pageCount, pages, tables } = await timeAsync("upload.extractPages", () =>
           extractPages(buffer, file.name),
-          { pageCount: 0, filename: file.name }
+          { documentId, byteCount: buffer.byteLength }
         );
         const gate = timeSync("upload.checkExtraction", () => checkExtraction(pages));
         if (!gate.ok) {
@@ -129,8 +129,12 @@ export async function POST(request: NextRequest) {
           // Already terminal
         }
         void state;
-        console.error("[UPLOAD] file processing failed:", file.name, err);
         const classified = classifyExtractorError(err);
+        console.error("[UPLOAD] file processing failed", {
+          requestId,
+          documentId,
+          reason: classified.reason,
+        });
         failures.push({ filename: file.name, reason: userVisibleMessage(classified.reason) });
       }
     })
@@ -171,8 +175,8 @@ export async function POST(request: NextRequest) {
         }))
       )
     );
-  } catch (err) {
-    console.error("[UPLOAD] persistSessionUpload failed:", err);
+  } catch {
+    console.error("[UPLOAD] persistSessionUpload failed", { requestId });
     try {
       await deleteSessionDb(sessionId);
     } catch {

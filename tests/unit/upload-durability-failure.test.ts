@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { inspect } from "node:util";
 
 vi.mock("@/app/lib/session-db", async (original) => ({
   ...(await original<typeof import("@/app/lib/session-db")>()),
@@ -27,18 +28,20 @@ import { createSessionDb, deleteSessionDb, SessionDbUnconfiguredError } from "@/
 import { isDurableConfigured, persistSessionUpload } from "@/app/lib/rag/persist-session";
 import * as localSession from "@/app/lib/session";
 import { extractPages } from "@/app/lib/pdf/extract-pages";
+import { clearTimings, getTimings } from "@/app/lib/observability/timing";
 
 const SID = "sess-m4-upload-durability";
 
-function request(): NextRequest {
+function request(filename = "synthetic-plan.pdf"): NextRequest {
   const form = new FormData();
-  form.append("documents", new File(["%PDF-test"], "synthetic-plan.pdf", { type: "application/pdf" }));
+  form.append("documents", new File(["%PDF-test"], filename, { type: "application/pdf" }));
   return new NextRequest("http://localhost/api/upload", { method: "POST", body: form });
 }
 
 describe("upload requires durable storage, never a tmpdir fallback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearTimings();
     vi.mocked(isDurableConfigured).mockReturnValue(true);
     vi.mocked(createSessionDb).mockResolvedValue({ sessionId: SID, capability: "test-only-capability", status: "DRAFT" });
     vi.mocked(deleteSessionDb).mockResolvedValue(true);
@@ -52,6 +55,7 @@ describe("upload requires durable storage, never a tmpdir fallback", () => {
       if (result.type === "return") localSession.deleteSession(result.value.session.sessionId);
     }
     vi.restoreAllMocks();
+    clearTimings();
   });
 
   it("returns retryable 503 before parsing or creating a cache when durability is unconfigured", async () => {
@@ -88,5 +92,39 @@ describe("upload requires durable storage, never a tmpdir fallback", () => {
     expect(localSession.createSession).not.toHaveBeenCalled();
     expect(localSession.getSession(SID)).toBeUndefined();
     expect(deleteSessionDb).toHaveBeenCalledWith(SID);
+  });
+
+  it.each([
+    ["success", 201],
+    ["parser", 422],
+    ["persistence", 503],
+    ["session database", 503],
+  ] as const)("never records an uploaded filename in logs or timings (%s)", async (stage, status) => {
+    const filename = "private-member-upload-sentinel.pdf";
+    for (const method of ["log", "warn", "info", "debug"] as const) {
+      vi.spyOn(console, method).mockImplementation(() => {});
+    }
+    if (stage === "parser") {
+      vi.mocked(extractPages).mockRejectedValueOnce(new Error(`${filename} is not a PDF`));
+    } else if (stage === "persistence") {
+      vi.mocked(persistSessionUpload).mockRejectedValueOnce(new Error(`Failed to save ${filename}`));
+    } else if (stage === "session database") {
+      vi.mocked(createSessionDb).mockRejectedValueOnce(new Error(`Failed to create session for ${filename}`));
+    }
+
+    const response = await POST(request(filename));
+    expect(response.status).toBe(status);
+    const body = await response.json();
+    // Redaction is for telemetry, not the user's own upload response.
+    if (stage === "success" || stage === "parser") {
+      expect(JSON.stringify(body)).toContain(filename);
+    }
+    const logged = ["log", "warn", "info", "debug", "error"] as const;
+    const captured = logged.flatMap((method) => vi.mocked(console[method]).mock.calls);
+    expect(inspect(captured, { depth: 10 })).not.toContain(filename);
+    expect(JSON.stringify(getTimings())).not.toContain(filename);
+    if (stage !== "session database") {
+      expect(getTimings().some((event) => event.operation === "upload.extractPages")).toBe(true);
+    }
   });
 });

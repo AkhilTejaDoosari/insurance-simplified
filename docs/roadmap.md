@@ -56,7 +56,7 @@ approval. Do not start the next milestone automatically.
 - **Responsibilities:**
   1. **Tested:** container listener, exposed/published port and compose health probe aligned at 3333; `tests/contract/container-port.test.ts` fails on the old mismatch and passes after the fix. Full suite: 1325 passed / 8 skipped; types, build, tracked-files-only Docker build and exact compose health probe in the container pass.
   2. **Tested:** upload requires durable configuration and successful persistence before populating the existing cache; session/storage failures return retryable 503 even if cleanup fails (D-018). Five regressions in `tests/unit/upload-durability-failure.test.ts` failed before the fix and pass after; existing capability assertions preserved. Full suite: 1330 passed / 8 skipped; types, build, tracked-files-only Docker build and container health pass.
-  3. Stop logging uploaded filenames (`api/upload/route.ts`).
+  3. **Tested:** uploaded filenames and raw errors are excluded from upload logs and timing metadata; request/document ids, byte counts and classified reasons remain. Four log-capture regressions in `tests/unit/upload-durability-failure.test.ts` failed before the fix and pass after. Full suite: 1334 passed / 8 skipped; types, build, tracked-files-only Docker build and container health pass.
   4. Replace the plain `>>>` document delimiter in `llm/safe-prompt.ts` with an unforgeable framing.
   5. Add CI (`.github/workflows/ci.yml`): `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run build`; e2e as a separate job. Committed locally; pushing needs owner approval.
   6. Add `tests/integration/trust-boundary.test.ts` with TB-1..TB-4 (`evidence-core.md` §5) as `it.todo` entries carrying the specification text (made real in M7).
