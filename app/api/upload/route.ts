@@ -5,9 +5,6 @@
 
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import { NextRequest, NextResponse } from "next/server";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { extractPages } from "@/app/lib/pdf/extract-pages";
 import {
   attachDocumentObjectMetadata,
@@ -19,7 +16,6 @@ import {
 import {
   deleteDocumentObjects,
   getDefaultObjectStore,
-  putDocumentBytes,
 } from "@/app/lib/storage/objects";
 import {
   checkExtraction,
@@ -29,7 +25,6 @@ import {
 import { transition, type IngestionState } from "@/app/lib/ingestion/lifecycle";
 import {
   createSessionDb,
-  SessionDbUnconfiguredError,
   SESSION_CAPABILITY_COOKIE,
 } from "@/app/lib/session-db";
 import { errorResponse, newRequestId } from "@/app/lib/api-errors";
@@ -68,11 +63,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 1. Create durable session FIRST (gets sessionId + capability)
-  // Falls back to tmpdir-only mode if durable store is unavailable.
+  // 1. Require durable storage before accepting any document. The local
+  // session remains a cache, never a fallback for unavailable persistence.
+  const { isDurableConfigured, persistSessionUpload } = await import(
+    "@/app/lib/rag/persist-session"
+  );
+  if (!isDurableConfigured()) {
+    return errorResponse("INTERNAL_ERROR", 503, {
+      requestId,
+      retryable: true,
+      message: "Durable storage is unavailable; upload was not saved.",
+    });
+  }
+
   let sessionId: string;
   let capability: string;
-  let durableSession = true;
   try {
     const created = await timeAsync("upload.createSessionDb", () =>
       createSessionDb({ context: userContext })
@@ -80,16 +85,8 @@ export async function POST(request: NextRequest) {
     sessionId = created.sessionId;
     capability = created.capability;
   } catch (err) {
-    if (err instanceof SessionDbUnconfiguredError) {
-      durableSession = false;
-      const { session, capability: cap, capabilityHash } = createSession([], userContext);
-      sessionId = session.sessionId;
-      capability = cap;
-      // The tmpdir session was created empty; documents will be added after extraction
-    } else {
-      console.error("[UPLOAD] createSessionDb failed:", err);
-      return errorResponse("INTERNAL_ERROR", 500, { requestId, retryable: true });
-    }
+    console.error("[UPLOAD] createSessionDb failed:", err);
+    return errorResponse("INTERNAL_ERROR", 503, { requestId, retryable: true });
   }
 
   // 2. Process files and extract pages
@@ -142,14 +139,10 @@ export async function POST(request: NextRequest) {
   // Never produce a silent partial comparison: any failure fails the set.
   if (failures.length > 0) {
     // Clean up the session we created
-    if (durableSession) {
-      try {
-        await deleteSessionDb(sessionId);
-      } catch {
-        // Best effort
-      }
-    } else {
-      await deleteSession(sessionId);
+    try {
+      await deleteSessionDb(sessionId);
+    } catch {
+      // Best effort
     }
     failures.sort((a, b) => a.filename.localeCompare(b.filename));
     return errorResponse("UNPROCESSABLE_DOCUMENTS", 422, {
@@ -163,68 +156,43 @@ export async function POST(request: NextRequest) {
 
   documents.sort((a, b) => a.documentId.localeCompare(b.documentId));
 
-  // 3. Store raw bytes in tmpdir for legacy document route + viewer fallback
-  // In durable mode, create tmpdir session with the SAME capability AND sessionId as the DB session.
-  // In fallback mode, update the existing empty session.
-  let session;
-  if (durableSession) {
-    const created = createSession(documents, userContext, capability, sessionId);
-    session = created.session;
-  } else {
-    // Update the existing empty tmpdir session with extracted documents
-    const existing = getSession(sessionId);
-    if (existing) {
-      existing.documents = documents;
-      existing.userContext = userContext;
-      writeFileSync(join(tmpdir(), "insurance-simplified-sessions", `${sessionId}.json`), JSON.stringify(existing));
-    }
-    session = getSession(sessionId)!;
-  }
-  const store = getDefaultObjectStore();
-  for (const [documentId, bytes] of rawFiles) {
+  // 3. Persist documents, pages, chunks and bytes before creating any local
+  // cache. A failed write must never become a tmpdir-only successful upload.
+  let persisted;
+  try {
+    persisted = await timeAsync("upload.persistSessionUpload", () =>
+      persistSessionUpload(
+        sessionId,
+        documents.map((d) => ({
+          documentId: d.documentId,
+          filename: d.filename,
+          pages: d.pages,
+          bytes: rawFiles.get(d.documentId) ?? new Uint8Array(),
+        }))
+      )
+    );
+  } catch (err) {
+    console.error("[UPLOAD] persistSessionUpload failed:", err);
     try {
-      const metadata = await timeAsync("upload.putDocumentBytes", () =>
-        putDocumentBytes(bytes, session.sessionId, documentId, store));
-      attachDocumentObjectMetadata(session.sessionId, documentId, metadata);
-    } catch (err) {
-      console.error("[UPLOAD] putDocumentBytes failed:", documentId, err);
-      // Durability upgrade is best-effort per file; temp fallback below.
+      await deleteSessionDb(sessionId);
+    } catch {
+      // Cleanup failure must not mask the retryable persistence failure.
     }
-    saveDocumentFile(session.sessionId, documentId, bytes);
+    return errorResponse("INTERNAL_ERROR", 503, {
+      requestId,
+      retryable: true,
+      message: "Durable persistence failed; upload was not saved.",
+    });
   }
 
-  // 4. Persist to durable storage (documents, pages, chunks, vectors)
-  if (durableSession) {
-    const { isDurableConfigured, persistSessionUpload } = await import(
-      "@/app/lib/rag/persist-session"
-    );
-    if (isDurableConfigured()) {
-      try {
-        const persisted = await timeAsync("upload.persistSessionUpload", () =>
-          persistSessionUpload(
-            sessionId,
-            documents.map((d) => ({
-              documentId: d.documentId,
-              filename: d.filename,
-              pages: d.pages,
-              bytes: rawFiles.get(d.documentId) ?? new Uint8Array(),
-            }))
-          )
-        );
-        for (const meta of persisted) {
-          attachDocumentObjectMetadata(session.sessionId, meta.documentId, meta);
-        }
-      } catch (err) {
-        console.error("[UPLOAD] persistSessionUpload failed:", err);
-        await deleteSessionDb(sessionId);
-        await deleteSession(session.sessionId);
-        return errorResponse("INTERNAL_ERROR", 503, {
-          requestId,
-          retryable: true,
-          message: "Durable persistence failed; upload was not saved.",
-        });
-      }
-    }
+  // 4. Populate the existing instance cache using the durable identity and
+  // capability. Reloads can rebuild it from the successfully persisted data.
+  const { session } = createSession(documents, userContext, capability, sessionId);
+  for (const meta of persisted) {
+    attachDocumentObjectMetadata(session.sessionId, meta.documentId, meta);
+  }
+  for (const [documentId, bytes] of rawFiles) {
+    saveDocumentFile(session.sessionId, documentId, bytes);
   }
 
   // 5. Return response with capability cookie

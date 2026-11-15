@@ -62,8 +62,12 @@ vi.mock("@/app/lib/storage/objects", () => ({
   isSupabaseStorageConfigured: vi.fn(() => false),
 }));
 vi.mock("@/app/lib/rag/persist-session", () => ({
-  isDurableConfigured: vi.fn(() => false),
-  persistSessionUpload: vi.fn(async () => []),
+  isDurableConfigured: vi.fn(() => true),
+  persistSessionUpload: vi.fn(async (_sessionId: string, documents: { documentId: string }[]) => documents.map(({ documentId }) => ({
+    documentId,
+    sha256: "0".repeat(64),
+    objectKey: `obj-${documentId}`,
+  }))),
   deleteDurableObjects: vi.fn(async () => {}),
   deleteDurableVectors: vi.fn(async () => {}),
 }));
