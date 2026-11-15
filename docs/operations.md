@@ -89,6 +89,10 @@ Coding-tool credentials (Claude, OpenCode, …) are never runtime configuration.
   citation opens the right page → one cited chat answer → one refusal →
   new instance keeps state → A cannot read B → delete succeeds or stays
   retryable. Capture stage timings.
+- **Spending limit: $0.** No cost may be incurred — paid API calls (LLM,
+  embeddings, OCR, rerankers), paid tiers, paid add-ons, hosted services or
+  annotation — until the owner sets a different figure in writing (D-020,
+  open decision C-4). Free tiers only, and only after their terms are checked.
 - **Cost gate:** budget alerts are warnings, not caps. Before the first deploy
   verify Cloud Run, Cloudflare and Supabase free-tier terms, set a budget alert,
   keep max instances low. Any non-zero billing exposure needs explicit owner

@@ -59,12 +59,13 @@ approval. Do not start the next milestone automatically.
   3. Stop logging uploaded filenames (`api/upload/route.ts`).
   4. Replace the plain `>>>` document delimiter in `llm/safe-prompt.ts` with an unforgeable framing.
   5. Add CI (`.github/workflows/ci.yml`): `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run build`; e2e as a separate job. Committed locally; pushing needs owner approval.
-  6. Add `tests/acceptance/trust-boundary.test.ts` with TB-1..TB-4 as `it.todo` entries carrying the specification text (made real in M7).
-  7. Independent code review of the `f538a96..15f8cc2` diff using the reviewer brief in the archived `ENGINEERING_STATE.md`; record findings here.
+  6. Add `tests/integration/trust-boundary.test.ts` with TB-1..TB-4 (`evidence-core.md` §5) as `it.todo` entries carrying the specification text (made real in M7).
+  7. Allow `.env.example` (add `!.env.example` after `.env*` in `.gitignore`) and commit it with variable names and safe placeholders only (`operations.md` §3).
+  8. Independent code review of the `f538a96..15f8cc2` diff using the reviewer brief in the archived `ENGINEERING_STATE.md`; record findings here.
 - **Depends on:** nothing.
-- **Files/contracts:** `Dockerfile`, `docker-compose.yml`, `app/api/upload/route.ts`, `app/lib/llm/safe-prompt.ts`, `operations.md` §§1–4.
+- **Files/contracts:** `Dockerfile`, `docker-compose.yml`, `.gitignore`, `.env.example`, `app/api/upload/route.ts`, `app/lib/llm/safe-prompt.ts`, `operations.md` §§1–4.
 - **Required tests:** upload route returns 503 (not tmpdir success) when the durable store is down; log-capture test proves no filename; injection test with a forged delimiter; `docker build` + container health check passes.
-- **Acceptance:** all four defects closed with tests; CI file runs green locally (`act` optional); TB tests listed as todo; review findings recorded.
+- **Acceptance:** all four defects closed with tests; CI file runs green locally (`act` optional); TB tests listed as todo; `.env.example` tracked with no values; review findings recorded.
 - **Completion evidence:** command output for the default gate + `docker build`; commit hash.
 
 ### M5 — Retrieval correctness
@@ -142,7 +143,7 @@ by design; no plugin system is built before a second domain is approved.
 | --- | --- | --- | --- |
 | C-1 | Verdict model | Keep five display verdicts; map ADR-003.1 statuses onto them | M7 |
 | C-2 | D-013 semantic-only retrieval | Keep until RET-1; exact per-session fix proceeds now | M5 |
-| C-4 | Budget for paid LLM evaluation, hosted OCR, annotation (D-020) | Owner sets a figure or "open-source only" | M6, M10, live acceptance scripts |
+| C-4 | Budget for paid LLM evaluation, hosted OCR, annotation (D-020) | Limit is **$0** until the owner sets a figure | M6, M10, live acceptance scripts |
 | C-5 | Keep D-016 (no queue/worker) | Keep unless measured p95 exceeds the request budget | M11 |
 | ADJ-1 | IMG pre-certification note (83 pending claims) | Owner adjudication | M7 scoring |
-| ADJ-2 | Confirm TB-1 exact scenario wording from ADR-003.2 | Owner confirmation | M7 |
+| D-027…D-031 | Accept or amend the proposed decisions | Owner review | Nothing in M4 |

@@ -26,6 +26,7 @@ and `operations.md` (security) win, and the agent stops and reports.
 | EC-10 | **Absence is honest.** A miss is "not found in the pages read", never "not covered"; unreadable pages are reported, not silently skipped. *(Partial: see defect register.)* |
 | EC-11 | **Session scope first.** Retrieval and verification read only the authorized session's documents. |
 | EC-12 | **Original PDF stays the authority.** The viewer opens the user's original PDF at the cited page; generated text never replaces it. |
+| EC-13 | **Exclusion source binding** (kit id INV-EC-09). Exclusion inventories and "exclusion sections read" state come only from sealed exclusion provisions and page-coverage records; no caller can declare them. Full text and tests in §5. *(Not started.)* |
 
 ## 2. Pipeline (as implemented)
 
@@ -52,7 +53,14 @@ not found in read pages, discovered-unverified, conflict — with applicability
 statuses `unrelated · not_applicable_verified · not_applicable_conditional ·
 applies_verified · unresolved_material`.
 
-**Open decision (C-1, `decisions.md`):** the proposal is to keep the five
+**Verdict layers rule.** Three layers stay separate and are never merged:
+internal provision/applicability statuses (evidence core), displayed verdicts
+(UI vocabulary), and navigation groups (the five containers). A status is
+mapped to a verdict in one place only; grouping never changes a verdict; and
+a missing item never becomes a "No" — not covered, not eligible or excluded —
+on any layer.
+
+**Open decision (C-1, `roadmap.md` §4):** the proposal is to keep the five
 display verdicts and map internal statuses onto them in one table here. Until
 the owner accepts it, do not change the display vocabulary.
 
@@ -80,15 +88,28 @@ verifier, store and renderers so other insurance domains can be added later.
 ## 5. Required trust-boundary acceptance tests
 
 These four are **required application acceptance tests**. They must exist in
-`tests/` against application code and pass before V1 can claim the evidence
-core (roadmap M7). They are not satisfied by the reference implementation.
+`tests/integration/trust-boundary.test.ts` against application code and pass
+before V1 can claim the evidence core (roadmap M7). They are not satisfied by
+the reference implementation. Numbering matches the owner's test template
+(kit v2/v2.1). `INV-EC-09` below is the kit's invariant id; in this document
+it is EC-13 (unrelated to EC-9 above).
 
-| ID | Test | Current state |
-| --- | --- | --- |
-| TB-1 | **Authoritative-exclusion source binding.** An exclusion may enter a plan's authoritative exclusion inventory — and so block or qualify a "covered" answer — only when it is bound to verified source blocks of that plan's registered document. An unbound, foreign-document or fabricated exclusion record is refused; an applying exclusion can never be dropped because retrieval missed it. | **Unresolved regression** — no exclusion inventory or applicability code exists in `app/lib`. Exact scenario wording to be confirmed with the owner from ADR-003.2 when the test is written. |
-| TB-2 | **Scope identity bound to real source blocks (R3-1).** Plan name and period come from exact spans of the document's own admissible blocks with the registered bytes; the store accepts only the registry-issued scope; scope dimensions are bound to a block of the candidate's document. | Not in application code (current plan identity: `plan-identity.ts`, different mechanism). |
-| TB-3 | **Only resolver-issued assessments carry authority (R3-2).** A forged or altered applicability record is ignored and forces `undetermined`; it can never clear an exclusion; a verified `applies` still wins. | Not in application code. |
-| TB-4 | **Rendering trusts only an unaltered resolver result for that exact provision (R3-3).** Otherwise the fixed "cannot be confirmed" text is shown. | Not in application code. |
+> **Source binding (INV-EC-09).** The inventory's exclusion list and each document's "exclusion sections read" state are derived from sealed exclusion provisions and ingestion page-coverage records for that document version. No caller, API input or registry write can declare them. An exclusion present in a document's verified evidence can never be missing from that document's inventory. The ADR-003.2 reference registry accepts caller-declared exclusion ids and completeness flags, so it does not meet this; the application must.
+>
+> | ID | Attack | Must hold |
+> |---|---|---|
+> | TB-1 | Provision with plan-name and period evidence not bound to real source blocks | Persisting it is refused; nothing is stored |
+> | TB-2 | Caller-built "not applicable" assessment for an exclusion that names the service | Conclusion is never covered |
+> | TB-3 | Resolution altered after issue, shown on comparison view, chat answer and export | Each surface shows "cannot be confirmed" |
+> | TB-4 | Exclusion coverage declared complete with an empty or partial exclusion list, while verified evidence contains an exclusion naming the service | Conclusion is never covered; the inventory equals the sealed exclusion provisions |
+>
+> Each test must also fail when its guard is removed.
+
+Origin: TB-1 = R3-1, TB-2 = R3-2, TB-3 = R3-3 (ADR-003.2 Amendment 3);
+TB-4 = the authoritative-exclusion source-binding regression, which the
+reference contract does not meet. Current state: none of the four exists in
+application code; there is no exclusion inventory or applicability code in
+`app/lib`, and plan identity (`plan-identity.ts`) uses a different mechanism.
 
 Supporting acceptance tests named in ADR-003.2 and to be ported with their
 components: AT-C4 / AT-AUTH-ORDER (authority cases, acyclic order per scope),

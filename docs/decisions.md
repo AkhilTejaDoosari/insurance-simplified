@@ -3,7 +3,7 @@
 Status: Authoritative decision log · Format unchanged since V1 (D-001…D-026
 keep their original wording as history). The **current rule** always lives in
 the owning document (`product`, `architecture`, `evidence-core`, `experience`,
-`quality`, `operations`); a decision explains why. Add new entries at the end;
+`quality`, `operations`); a decision explains why. Add new entries at the end with **Status: Proposed** until the owner accepts them;
 mark replaced entries "superseded by D-0xx" instead of editing them.
 
 ---
@@ -366,7 +366,9 @@ decided or performed.
 
 # D-027 — Import ADR-003.2 as the evidence-core contract (component level)
 
-**Decision (owner instruction, 2026-11-15):** ADR-003, ADR-003.1 and ADR-003.2
+**Status: Proposed** — awaiting owner acceptance.
+
+**Decision (proposed from the owner's 2026-11-15 cleanup instructions):** ADR-003, ADR-003.1 and ADR-003.2
 (owner design records kept in Claude Docs: ADR-003
 `https://claude.ai/artifact/Jyg3m5Er2tmsTC3waRcPDf`, ADR-003.1
 `https://claude.ai/artifact/9pw2oWrj347rchbwTtpgLn`, ADR-003.2
@@ -381,7 +383,9 @@ real documents.
 
 # D-028 — Retrieval stores are benchmark-dependent; pgvector improved in place
 
-**Decision (owner instruction, 2026-11-15):** keep Postgres + pgvector. FAISS,
+**Status: Proposed** — awaiting owner acceptance.
+
+**Decision (proposed from the owner's 2026-11-15 cleanup instructions):** keep Postgres + pgvector. FAISS,
 Qdrant, Milvus, Weaviate and other stores are not adopted and are reconsidered
 only if FILT-1/RET-1 (`quality.md` §4) show a gap pgvector cannot close.
 Making the semantic leg exact per session is a correctness fix compatible with
@@ -391,7 +395,9 @@ D-013 revision.
 
 # D-029 — Staged release gates: limited pilot, then general release
 
-**Decision (owner instruction, 2026-11-15):** zero S1 errors on ≥30 held-out
+**Status: Proposed** — awaiting owner acceptance.
+
+**Decision (proposed from the owner's 2026-11-15 cleanup instructions):** zero S1 errors on ≥30 held-out
 documents permits a clearly labelled limited pilot (95 % bound ≤ 9.5 %);
 general release requires ≥60 held-out documents (95 % bound ≤ 5 %). Both need
 ≥10 held-out documents per supported family. Details in `quality.md` §6.
@@ -399,7 +405,9 @@ general release requires ≥60 held-out documents (95 % bound ≤ 5 %). Both nee
 
 # D-030 — Structure first; no inferred line ownership
 
-**Decision (2026-11-14 engineering recovery, recorded 2026-11-15):** plan and
+**Status: Proposed** — awaiting owner acceptance.
+
+**Decision (proposed; from the 2026-11-14 engineering recovery):** plan and
 scope attribution comes from document structure (layout tables, closed-grammar
 statements) or a labelled plan/fact/value record. The earlier lexical
 evidence binder was removed. Governing notes are attached verbatim or the claim
@@ -409,7 +417,9 @@ with better recall.
 
 # D-031 — One documentation set and one roadmap
 
-**Decision (owner instruction, 2026-11-15):** eight authoritative documents in
+**Status: Proposed** — awaiting owner acceptance.
+
+**Decision (proposed from the owner's 2026-11-15 cleanup instructions):** eight authoritative documents in
 `docs/` plus `AGENTS.md`/`CLAUDE.md`/`README.md`; one roadmap
 (`docs/roadmap.md`) replaces PLAN phases, V1.1 milestones, spec-kit and agent
 plans; history lives in `docs/archive/` and is not authoritative. Health V1
