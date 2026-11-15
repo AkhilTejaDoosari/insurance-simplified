@@ -3,7 +3,7 @@
 // (source: "next" + line break + "Annual Coordinated Election"), and
 // validateTable then threw because the cited quote contains no word-bounded
 // "annual" token — aborting the entire FEP document. See
-// docs/UNSEEN_DOCUMENT_GENERALIZATION.md recommendation 1.
+// docs/archive/reports/UNSEEN_DOCUMENT_GENERALIZATION.md recommendation 1.
 import { describe, expect, it } from "vitest";
 import { extractFallback } from "@/app/lib/extraction/extract";
 import { extractQualifiers } from "@/app/lib/extraction/fact-list";

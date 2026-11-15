@@ -1,5 +1,5 @@
 #!/bin/sh
-# Smoke test for a local deployment (see docs/DEPLOY.md).
+# Smoke test for a local deployment (see docs/operations.md §4).
 # Usage: BASE_URL=http://localhost:3000 PDF_A=./a.pdf PDF_B=./b.pdf sh scripts/smoke-deploy.sh
 set -eu
 

@@ -263,7 +263,7 @@ export function attestPlans(documents: readonly SourceDocument[]): ProvenPlan[] 
       // plans. Known limitation (fail-closed): a plan declared only on a
       // later page attests nothing at all, and a phantom line that lands on
       // page 1 would still attest; ownership then voids via multi-plan
-      // abstention. Reported in docs/P1_OWNERSHIP_IMPL_REPORT.md.
+      // abstention. Reported in docs/archive/reports/P1_OWNERSHIP_IMPL_REPORT.md.
       if (index !== 0) continue;
       const lines = page.split(/\r?\n/);
       for (const [lineIndex, line] of lines.entries()) {

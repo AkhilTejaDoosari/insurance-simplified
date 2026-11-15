@@ -1,8 +1,10 @@
-# DECISIONS — Insurance Simplified
+# Decisions — why the rules are what they are
 
-| Status | Version | Owner |
-| --- | --- | --- |
-| DRAFT FOR HUMAN APPROVAL | V1 | Akhil |
+Status: Authoritative decision log · Format unchanged since V1 (D-001…D-026
+keep their original wording as history). The **current rule** always lives in
+the owning document (`product`, `architecture`, `evidence-core`, `experience`,
+`quality`, `operations`); a decision explains why. Add new entries at the end;
+mark replaced entries "superseded by D-0xx" instead of editing them.
 
 ---
 
@@ -361,3 +363,56 @@ privilege denial), revoked `TRUNCATE/REFERENCES/TRIGGER`, ledger intact
 (0001–0006). Not part of the V1 commit — the two 0006 files ship as their own
 dedicated local security-migration commit. No production rollout has been
 decided or performed.
+
+# D-027 — Import ADR-003.2 as the evidence-core contract (component level)
+
+**Decision (owner instruction, 2026-11-15):** ADR-003, ADR-003.1 and ADR-003.2
+(owner design records kept in Claude Docs: ADR-003
+`https://claude.ai/artifact/Jyg3m5Er2tmsTC3waRcPDf`, ADR-003.1
+`https://claude.ai/artifact/9pw2oWrj347rchbwTtpgLn`, ADR-003.2
+`https://claude.ai/artifact/4SmeLVYaYHSeaRqvVjpqvf`) define the target Verified
+Evidence Core. The architecture is frozen at the component and responsibility
+level and summarized in `evidence-core.md` §4. The ADR reference
+implementation is **not** production code and never counts as implemented.
+The authoritative-exclusion source-binding regression and the three R3
+trust-boundary probes become required application acceptance tests TB-1..TB-4.
+**Revisit when:** an application test proves a contract element unworkable on
+real documents.
+
+# D-028 — Retrieval stores are benchmark-dependent; pgvector improved in place
+
+**Decision (owner instruction, 2026-11-15):** keep Postgres + pgvector. FAISS,
+Qdrant, Milvus, Weaviate and other stores are not adopted and are reconsidered
+only if FILT-1/RET-1 (`quality.md` §4) show a gap pgvector cannot close.
+Making the semantic leg exact per session is a correctness fix compatible with
+D-013; enabling hybrid search or a reranker still requires RET-1 evidence and a
+D-013 revision.
+**Revisit when:** RET-1 or FILT-1 results are available.
+
+# D-029 — Staged release gates: limited pilot, then general release
+
+**Decision (owner instruction, 2026-11-15):** zero S1 errors on ≥30 held-out
+documents permits a clearly labelled limited pilot (95 % bound ≤ 9.5 %);
+general release requires ≥60 held-out documents (95 % bound ≤ 5 %). Both need
+≥10 held-out documents per supported family. Details in `quality.md` §6.
+**Revisit when:** the supported document families change.
+
+# D-030 — Structure first; no inferred line ownership
+
+**Decision (2026-11-14 engineering recovery, recorded 2026-11-15):** plan and
+scope attribution comes from document structure (layout tables, closed-grammar
+statements) or a labelled plan/fact/value record. The earlier lexical
+evidence binder was removed. Governing notes are attached verbatim or the claim
+is withheld.
+**Revisit when:** a structure-free method shows zero S1 on the validation split
+with better recall.
+
+# D-031 — One documentation set and one roadmap
+
+**Decision (owner instruction, 2026-11-15):** eight authoritative documents in
+`docs/` plus `AGENTS.md`/`CLAUDE.md`/`README.md`; one roadmap
+(`docs/roadmap.md`) replaces PLAN phases, V1.1 milestones, spec-kit and agent
+plans; history lives in `docs/archive/` and is not authoritative. Health V1
+is finished before auto, pet or home.
+**Revisit when:** a document grows past what one reader can hold, or a second
+insurance domain is approved.

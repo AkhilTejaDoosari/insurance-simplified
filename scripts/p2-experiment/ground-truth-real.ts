@@ -9,7 +9,7 @@
 //   - known noise spans that must NOT become comparison facts.
 //
 // Labels were taken from manual source inspection recorded in
-// docs/REAL_PDF_DIAGNOSTIC.md and docs/UNSEEN_DOCUMENT_GENERALIZATION.md §4,
+// docs/archive/reports/REAL_PDF_DIAGNOSTIC.md and docs/archive/reports/UNSEEN_DOCUMENT_GENERALIZATION.md §4,
 // and re-checked against the extracted text layer. Only short verbatim
 // phrases are stored; the PDFs themselves are never committed (nonstandard/
 // is gitignored; FEP/FEMA/health are read from REAL_PDFS_DIR).

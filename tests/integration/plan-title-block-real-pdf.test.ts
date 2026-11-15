@@ -38,7 +38,7 @@ describe.runIf(enabled)("P2.1 title-block recognition on the real PDFs", () => {
 
   it("full-document FEP deterministic extraction through the real route never attributes incomplete enrollment scope", async () => {
     const pages = await pagesOf(FILES.fep);
-    // The held-out FEP brochure is 140 pages (docs/UNSEEN_DOCUMENT_GENERALIZATION.md §8);
+    // The held-out FEP brochure is 140 pages (docs/archive/reports/UNSEEN_DOCUMENT_GENERALIZATION.md §8);
     // extractPages keeps one entry per original page (mergePages: false).
     expect(pages).toHaveLength(140);
     const { session, capability } = createSession(

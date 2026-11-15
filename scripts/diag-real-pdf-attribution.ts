@@ -1,4 +1,4 @@
-// P0 REAL-DOCUMENT DIAGNOSTIC (owner-authorized; audit docs/INSURANCE_ARCHITECTURE_AUDIT.md §7/§11).
+// P0 REAL-DOCUMENT DIAGNOSTIC (owner-authorized; audit docs/archive/reports/INSURANCE_ARCHITECTURE_AUDIT.md §7/§11).
 //
 // Local-only, deterministic-engine-only diagnostic that reproduces the
 // production /api/extract funnel stage-by-stage over the three authorized
