@@ -57,7 +57,7 @@ approval. Do not start the next milestone automatically.
   1. **Tested:** container listener, exposed/published port and compose health probe aligned at 3333; `tests/contract/container-port.test.ts` fails on the old mismatch and passes after the fix. Full suite: 1325 passed / 8 skipped; types, build, tracked-files-only Docker build and exact compose health probe in the container pass.
   2. **Tested:** upload requires durable configuration and successful persistence before populating the existing cache; session/storage failures return retryable 503 even if cleanup fails (D-018). Five regressions in `tests/unit/upload-durability-failure.test.ts` failed before the fix and pass after; existing capability assertions preserved. Full suite: 1330 passed / 8 skipped; types, build, tracked-files-only Docker build and container health pass.
   3. **Tested:** uploaded filenames and raw errors are excluded from upload logs and timing metadata; request/document ids, byte counts and classified reasons remain. Four log-capture regressions in `tests/unit/upload-durability-failure.test.ts` failed before the fix and pass after. Full suite: 1334 passed / 8 skipped; types, build, tracked-files-only Docker build and container health pass.
-  4. Replace the plain `>>>` document delimiter in `llm/safe-prompt.ts` with an unforgeable framing.
+  4. **Tested (requested wrapper):** `llm/safe-prompt.ts` uses fresh collision-checked frame tokens and JSON-quoted document ids, keeping page text verbatim. Five regressions in `tests/unit/safe-prompt-framing.test.ts` failed before the fix and pass after; later-document collisions also fail when checking is restricted to the first document. Full suite: 1339 passed / 8 skipped; types, build, tracked-files-only Docker build and container health pass. The separate legacy wrapper in `rag/answer.ts` is unchanged and needs owner-approved follow-up scope; this is not a claim that all model prompts are hardened.
   5. Add CI (`.github/workflows/ci.yml`): `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run build`; e2e as a separate job. Committed locally; pushing needs owner approval.
   6. Add `tests/integration/trust-boundary.test.ts` with TB-1..TB-4 (`evidence-core.md` §5) as `it.todo` entries carrying the specification text (made real in M7).
    7. **Implemented (documentation follow-up):** `.env.example` is allowed by `.gitignore` and lists only names read by the code, with empty values (`operations.md` §3).
@@ -67,6 +67,12 @@ approval. Do not start the next milestone automatically.
 - **Required tests:** upload route returns 503 (not tmpdir success) when the durable store is down; log-capture test proves no filename; injection test with a forged delimiter; `docker build` + container health check passes.
 - **Acceptance:** all four defects closed with tests; CI file runs green locally (`act` optional); TB tests listed as todo; `.env.example` tracked with no values; review findings recorded.
 - **Completion evidence:** command output for the default gate + `docker build`; commit hash.
+
+**Scoped handoff (2026-11-15):** only tasks 1–4 were authorized for this run;
+task 7 was already implemented. M4 remains current and incomplete: CI (task 5),
+trust-boundary todos (task 6) and the historical-diff review (task 8) were not
+started. Live-provider/real-PDF checks remain skipped; no new dependencies,
+paid API calls, push or deployment. No state-ownership or session-auth change.
 
 ### M5 — Retrieval correctness
 
