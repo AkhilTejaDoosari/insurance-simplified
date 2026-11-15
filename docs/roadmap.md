@@ -60,7 +60,7 @@ approval. Do not start the next milestone automatically.
   4. Replace the plain `>>>` document delimiter in `llm/safe-prompt.ts` with an unforgeable framing.
   5. Add CI (`.github/workflows/ci.yml`): `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run build`; e2e as a separate job. Committed locally; pushing needs owner approval.
   6. Add `tests/integration/trust-boundary.test.ts` with TB-1..TB-4 (`evidence-core.md` §5) as `it.todo` entries carrying the specification text (made real in M7).
-  7. Allow `.env.example` (add `!.env.example` after `.env*` in `.gitignore`) and commit it with variable names and safe placeholders only (`operations.md` §3).
+   7. **Implemented (documentation follow-up):** `.env.example` is allowed by `.gitignore` and lists only names read by the code, with empty values (`operations.md` §3).
   8. Independent code review of the `f538a96..15f8cc2` diff using the reviewer brief in the archived `ENGINEERING_STATE.md`; record findings here.
 - **Depends on:** nothing.
 - **Files/contracts:** `Dockerfile`, `docker-compose.yml`, `.gitignore`, `.env.example`, `app/api/upload/route.ts`, `app/lib/llm/safe-prompt.ts`, `operations.md` §§1–4.
@@ -102,7 +102,7 @@ approval. Do not start the next milestone automatically.
 - **Responsibilities:** versioned concept registry for SBCs plus 1–2 student-plan families (15–20 priority concepts each); server view model; renderers by provision kind; regex engine demoted to a fallback proposer; plan grouping by verified identity; eligibility tree with dates; ≤3-plan picker; hide empty/redundant groups (V1.1 M4 scope).
 - **Depends on:** M7.
 - **Files/contracts:** `experience.md` §§1–2, `product.md` A-012*/A-013A/A-016–A-018/UX-*, `extraction/{fact-list,workspace-groups,selection,eligibility}.ts`, `components/ComparisonTable.tsx`.
-- **Required tests:** unit tests per renderer and view-model rule; e2e UX-01..UX-12, UX-26..UX-35; visual screenshots desktop/mobile, light/dark.
+- **Required tests:** unit tests per renderer and view-model rule; an expected item with no evidence produces one unknown item and zero benefit rows (`experience.md` §1); e2e UX-01..UX-12, UX-26..UX-35; visual screenshots desktop/mobile, light/dark.
 - **Acceptance:** verified recall of priority concepts ≥80 % on validation; plan grouping 100 % on validation sessions; owner visual sign-off.
 - **Completion evidence:** test output, eval run, screenshots.
 
@@ -143,7 +143,7 @@ by design; no plugin system is built before a second domain is approved.
 | --- | --- | --- | --- |
 | C-1 | Verdict model | Keep five display verdicts; map ADR-003.1 statuses onto them | M7 |
 | C-2 | D-013 semantic-only retrieval | Keep until RET-1; exact per-session fix proceeds now | M5 |
-| C-4 | Budget for paid LLM evaluation, hosted OCR, annotation (D-020) | Limit is **$0** until the owner sets a figure | M6, M10, live acceptance scripts |
+| C-4 | Budget for paid LLM evaluation, hosted OCR, annotation (D-020) | Owner approval required; spending rule in `operations.md` §4 | M6, M10, live acceptance scripts |
 | C-5 | Keep D-016 (no queue/worker) | Keep unless measured p95 exceeds the request budget | M11 |
 | ADJ-1 | IMG pre-certification note (83 pending claims) | Owner adjudication | M7 scoring |
 | D-027…D-031 | Accept or amend the proposed decisions | Owner review | Nothing in M4 |

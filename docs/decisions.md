@@ -366,7 +366,7 @@ decided or performed.
 
 # D-027 — Import ADR-003.2 as the evidence-core contract (component level)
 
-**Status: Proposed** — awaiting owner acceptance.
+**Status: Proposed (awaiting owner approval)**
 
 **Decision (proposed from the owner's 2026-11-15 cleanup instructions):** ADR-003, ADR-003.1 and ADR-003.2
 (owner design records kept in Claude Docs: ADR-003
@@ -383,7 +383,7 @@ real documents.
 
 # D-028 — Retrieval stores are benchmark-dependent; pgvector improved in place
 
-**Status: Proposed** — awaiting owner acceptance.
+**Status: Proposed (awaiting owner approval)**
 
 **Decision (proposed from the owner's 2026-11-15 cleanup instructions):** keep Postgres + pgvector. FAISS,
 Qdrant, Milvus, Weaviate and other stores are not adopted and are reconsidered
@@ -395,7 +395,7 @@ D-013 revision.
 
 # D-029 — Staged release gates: limited pilot, then general release
 
-**Status: Proposed** — awaiting owner acceptance.
+**Status: Proposed (awaiting owner approval)**
 
 **Decision (proposed from the owner's 2026-11-15 cleanup instructions):** zero S1 errors on ≥30 held-out
 documents permits a clearly labelled limited pilot (95 % bound ≤ 9.5 %);
@@ -405,7 +405,7 @@ general release requires ≥60 held-out documents (95 % bound ≤ 5 %). Both nee
 
 # D-030 — Structure first; no inferred line ownership
 
-**Status: Proposed** — awaiting owner acceptance.
+**Status: Proposed (awaiting owner approval)**
 
 **Decision (proposed; from the 2026-11-14 engineering recovery):** plan and
 scope attribution comes from document structure (layout tables, closed-grammar
@@ -417,7 +417,7 @@ with better recall.
 
 # D-031 — One documentation set and one roadmap
 
-**Status: Proposed** — awaiting owner acceptance.
+**Status: Proposed (awaiting owner approval)**
 
 **Decision (proposed from the owner's 2026-11-15 cleanup instructions):** eight authoritative documents in
 `docs/` plus `AGENTS.md`/`CLAUDE.md`/`README.md`; one roadmap

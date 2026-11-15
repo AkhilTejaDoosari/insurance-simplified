@@ -57,8 +57,8 @@ applies_verified · unresolved_material`.
 internal provision/applicability statuses (evidence core), displayed verdicts
 (UI vocabulary), and navigation groups (the five containers). A status is
 mapped to a verdict in one place only; grouping never changes a verdict; and
-a missing item never becomes a "No" — not covered, not eligible or excluded —
-on any layer.
+a missing item is never shown as "No", "Not covered", "Not eligible" or
+"Excluded" on any layer.
 
 **Open decision (C-1, `roadmap.md` §4):** the proposal is to keep the five
 display verdicts and map internal statuses onto them in one table here. Until

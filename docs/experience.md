@@ -45,10 +45,12 @@ CORE / COMPARATIVE / HIGHLIGHT apply (D-023, A-042–A-045).
 | Discovered, unverified | Separate collapsed "Mentioned but not verified" section, never mixed with verified rows |
 | Conflict | Both values with sources |
 
-**Unknown rule.** A priority item expected for the user (from the registry
-priority set for their context) but not found in their documents is shown only
-as an **unknown**: no value, no citation, no verdict, and no benefit row. It
-never reads as "not covered", and it may appear as a verification action.
+**Unknown rule.** A priority item expected for the user's context but not found
+in their documents is shown as a visibly separate **unknown** item: it names
+the item and says it was not found in the documents read (or that those
+sections were not read). It has no value, qualifier, citation or verdict. No
+benefit row is created, filled or defaulted for it, and it never counts as a
+difference when comparing plans.
 
 Unassigned document evidence never appears as a confirmed value in a plan
 column; safety-relevant unassigned facts go to a separately labelled
