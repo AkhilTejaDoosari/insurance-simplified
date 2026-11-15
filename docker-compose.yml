@@ -4,7 +4,7 @@ services:
     # Loopback-only: Caddy terminates public TLS and reverse-proxies here.
     # Never publish the app port publicly.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3333:3333"
     environment:
       # LLM engine (optional — deterministic fallback when unset)
       - LLM_BASE_URL=${LLM_BASE_URL:-}
@@ -28,7 +28,7 @@ services:
     depends_on:
       - ollama
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3333/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3

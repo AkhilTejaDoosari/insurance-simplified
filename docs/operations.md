@@ -74,8 +74,8 @@ Coding-tool credentials (Claude, OpenCode, …) are never runtime configuration.
 
 - **Image:** clean-checkout Docker build; excludes `.env*`, `.git`, agent
   caches and host-only files; starts the production Next.js server on the
-  configured port. *Known defect (M4):* the Dockerfile exposes 3000 while
-  `npm start` serves 3333.
+  configured port. Dockerfile, compose port mapping/health probe and `npm start`
+  all use port 3333 (M4 task 1; `tests/contract/container-port.test.ts`).
 - **Initial service:** min 0 / max 1 instance; smallest CPU/memory and a
   request timeout proven by real-PDF smoke runs; changes only from measurement.
 - **Release path:** commit → tests → image (immutable tag/digest traceable to a

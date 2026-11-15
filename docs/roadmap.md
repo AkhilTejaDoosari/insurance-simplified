@@ -33,7 +33,7 @@ Tested · Verified). Update this file at every milestone close.
 | OCR | Not started | Scanned PDFs rejected |
 | Direct signed upload (A-033) | Not started | Bytes pass through `/api/upload` |
 | Cloudflare production embeddings (D-012) | Not started | OpenAI-compatible adapter; Ollama locally |
-| `/api/health`, `/api/ready` | Implemented | Container port mismatch (M4) |
+| `/api/health`, `/api/ready` | Implemented | Container port aligned at 3333 (M4 task 1; `tests/contract/container-port.test.ts`) |
 | CI | Not started | No workflow in the repository |
 | Production deployment | Not started | Never deployed |
 | Trust-boundary tests TB-1..TB-4 | Not started | Specified in `evidence-core.md` §5 |
@@ -54,7 +54,7 @@ approval. Do not start the next milestone automatically.
 - **Objective:** a trustworthy, continuously checked baseline before new
   capability work.
 - **Responsibilities:**
-  1. Fix the container port/health mismatch (Dockerfile 3000 vs `npm start` 3333; compose health probe).
+  1. **Tested:** container listener, exposed/published port and compose health probe aligned at 3333; `tests/contract/container-port.test.ts` fails on the old mismatch and passes after the fix. Full suite: 1325 passed / 8 skipped; types, build, tracked-files-only Docker build and exact compose health probe in the container pass.
   2. Remove the tmpdir session fallback in `api/upload/route.ts` so durable storage failures return 503 (D-018).
   3. Stop logging uploaded filenames (`api/upload/route.ts`).
   4. Replace the plain `>>>` document delimiter in `llm/safe-prompt.ts` with an unforgeable framing.
