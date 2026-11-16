@@ -28,7 +28,7 @@ db/         SQL migrations and reference schema
 tests/      unit · contract · integration · e2e · fixtures (synthetic PDFs)
 evals/      retrieval/chat evaluation harness and frozen datasets
 scripts/    fixture generation, acceptance runners, real-PDF extraction evaluation
-docs/       the eight authoritative documents, design prototypes, archive
+docs/       the eight authoritative documents, Page 2 design prototype, archive
 ```
 
 ## Run

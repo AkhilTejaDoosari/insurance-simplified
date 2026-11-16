@@ -26,5 +26,3 @@ nonstandard/
 SBCs/
 .debug-journal.md
 
-# Generated preview build
-/.next-v5-preview/

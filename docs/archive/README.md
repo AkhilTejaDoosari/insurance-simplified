@@ -10,6 +10,7 @@
 | `reports/` | Research and evaluation reports: P1/P2 experiments and reviews, FEP replay, real-PDF diagnostics, unseen-document generalization, Sonnet engine evaluation, RAG gap analysis and audits, extraction quality baseline, and the 2026-11-15 feasibility review and documentation governance plan | Findings that still hold are in `evidence-core.md` (defect register), `quality.md` (benchmarks, gates) and `roadmap.md` |
 | `plans/` | Completed or abandoned agent plans (2026-10) | `roadmap.md` |
 | `spec-kit/` | Spec-kit feature `001` and its constitution (2026-09) | `product.md`, `evidence-core.md` |
+| `design/` | Earlier Page 2 prototype (v5, "Design exploration 04") | `docs/design/insurance_simplified_page2_dual_experience_updated.html` (`experience.md` §5) |
 
 Evaluation dataset records stay with their data in `evals/`
 (`BASELINE.md`, `v2-MANIFEST.md`).
