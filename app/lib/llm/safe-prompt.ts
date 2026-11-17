@@ -2,25 +2,24 @@
 // Uploaded PDF text is DATA, never instructions. Document content is always
 // placed inside collision-checked, per-call frames below task instructions.
 // Framing protects source boundaries; output still requires verification.
+// Every model prompt that carries document text (extraction and grounded
+// chat) frames it through frameSources() so there is one boundary rule.
 
 import { randomUUID } from "node:crypto";
 
-export function wrapDocuments(
-  taskInstructions: string,
-  documents: Array<{ documentId: string; pages: string[] }>
-): string {
-  const payloads = documents
-    .map(({ documentId, pages }) => {
-      const body = pages
-        .map((text, i) => `[Page ${i + 1}]\n${text}`)
-        .join("\n\n");
-      // JSON quoting keeps ids from injecting extra header lines. Page text
-      // remains verbatim for evidence and citation verification.
-      return `<<<DOCUMENT id=${JSON.stringify(documentId)} >>>\n${body}`;
-    });
+/** `<<<DOCUMENT key="value" … >>>` header. JSON quoting keeps ids and
+ *  filenames from injecting extra header lines or attributes. */
+export function documentHeader(attributes: Record<string, string>): string {
+  const attrs = Object.entries(attributes)
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join(" ");
+  return `<<<DOCUMENT ${attrs} >>>`;
+}
 
-  // The token is generated after receiving all source content and must not
-  // appear anywhere in it, including ids. Even a coincidental match retries.
+/** Place each source payload (header + verbatim text) inside a frame whose
+ *  token is generated after all payloads are known and appears in none. */
+export function frameSources(taskInstructions: string, payloads: string[]): string {
+  // Even a coincidental match retries.
   let token: string;
   do {
     token = randomUUID();
@@ -42,4 +41,16 @@ export function wrapDocuments(
     "",
     blocks,
   ].join("\n");
+}
+
+export function wrapDocuments(
+  taskInstructions: string,
+  documents: Array<{ documentId: string; pages: string[] }>
+): string {
+  const payloads = documents.map(({ documentId, pages }) => {
+    // Page text remains verbatim for evidence and citation verification.
+    const body = pages.map((text, i) => `[Page ${i + 1}]\n${text}`).join("\n\n");
+    return `${documentHeader({ id: documentId })}\n${body}`;
+  });
+  return frameSources(taskInstructions, payloads);
 }
