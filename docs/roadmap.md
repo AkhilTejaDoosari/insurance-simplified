@@ -34,9 +34,9 @@ Tested · Verified). Update this file at every milestone close.
 | Direct signed upload (A-033) | Not started | Bytes pass through `/api/upload` |
 | Cloudflare production embeddings (D-012) | Not started | OpenAI-compatible adapter; Ollama locally |
 | `/api/health`, `/api/ready` | Implemented | Container port aligned at 3333 (M4 task 1; `tests/contract/container-port.test.ts`) |
-| CI | Not started | No workflow in the repository |
+| CI | Implemented (local) | `.github/workflows/ci.yml` (`c592ed5`); not pushed, never run on GitHub; e2e job red until the e2e-durability decision (M4 below) |
 | Production deployment | Not started | Never deployed |
-| Trust-boundary tests TB-1..TB-4 | Not started | Specified in `evidence-core.md` §5 |
+| Trust-boundary tests TB-1..TB-4 | Not started (listed as todo) | `tests/integration/trust-boundary.test.ts` — 4 `it.todo`, exact §5 text (`86e7919`); made real in M7 |
 
 **Completed history.** V1 (PLAN phases 0, 1 and 3; 2026-09 → 2026-10-22,
 gate record in the archived `ACCEPTANCE.md`) · V1.1 M1 foundation, M2 meaning,
@@ -57,22 +57,31 @@ approval. Do not start the next milestone automatically.
   1. **Tested:** container listener, exposed/published port and compose health probe aligned at 3333; `tests/contract/container-port.test.ts` fails on the old mismatch and passes after the fix. Full suite: 1325 passed / 8 skipped; types, build, tracked-files-only Docker build and exact compose health probe in the container pass.
   2. **Tested:** upload requires durable configuration and successful persistence before populating the existing cache; session/storage failures return retryable 503 even if cleanup fails (D-018). Five regressions in `tests/unit/upload-durability-failure.test.ts` failed before the fix and pass after; existing capability assertions preserved. Full suite: 1330 passed / 8 skipped; types, build, tracked-files-only Docker build and container health pass.
   3. **Tested:** uploaded filenames and raw errors are excluded from upload logs and timing metadata; request/document ids, byte counts and classified reasons remain. Four log-capture regressions in `tests/unit/upload-durability-failure.test.ts` failed before the fix and pass after. Full suite: 1334 passed / 8 skipped; types, build, tracked-files-only Docker build and container health pass.
-  4. **Tested (requested wrapper):** `llm/safe-prompt.ts` uses fresh collision-checked frame tokens and JSON-quoted document ids, keeping page text verbatim. Five regressions in `tests/unit/safe-prompt-framing.test.ts` failed before the fix and pass after; later-document collisions also fail when checking is restricted to the first document. Full suite: 1339 passed / 8 skipped; types, build, tracked-files-only Docker build and container health pass. The separate legacy wrapper in `rag/answer.ts` is unchanged and needs owner-approved follow-up scope; this is not a claim that all model prompts are hardened.
-  5. Add CI (`.github/workflows/ci.yml`): `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run build`; e2e as a separate job. Committed locally; pushing needs owner approval.
-  6. Add `tests/integration/trust-boundary.test.ts` with TB-1..TB-4 (`evidence-core.md` §5) as `it.todo` entries carrying the specification text (made real in M7).
+  4. **Tested (requested wrapper):** `llm/safe-prompt.ts` uses fresh collision-checked frame tokens and JSON-quoted document ids, keeping page text verbatim. Five regressions in `tests/unit/safe-prompt-framing.test.ts` failed before the fix and pass after; later-document collisions also fail when checking is restricted to the first document. Full suite: 1339 passed / 8 skipped; types, build, tracked-files-only Docker build and container health pass (`65e77c5`). **Chat path, Tested (`3a05b05`):** `buildRetrievalPrompt` in `rag/answer.ts` now frames retrieved passages through the same `frameSources()`/`documentHeader()` (ids and filenames JSON-quoted; real page tags kept). Four regressions in `tests/unit/chat-prompt-framing.test.ts` (forged legacy delimiter, later-document token collision, forged filename, fresh token) failed before and pass after; existing prompt assertions unchanged. Full suite: 1343 passed / 8 skipped. Framing protects source boundaries only; outputs still rely on citation verification.
+  5. **Implemented (local, `c592ed5`):** `.github/workflows/ci.yml` — job `check` (Node 20: `npm ci`, `npm test`, `npx tsc --noEmit`, `npm run build`) and job `e2e` (Playwright chromium, results uploaded on failure). Build and tests also pass locally with every `.env.example` name blank. Not run on GitHub (no push). **Known red:** e2e upload flows fail since `e4a65a7` — `playwright.config.ts` blanks Supabase and uploads now correctly return 503 ("Durable storage is unavailable"); confirmed locally on `tests/e2e/flows.spec.ts` (3 failed, 1 passed). No bypass added (would weaken D-018).
+  6. **Implemented (`86e7919`):** `tests/integration/trust-boundary.test.ts` lists TB-1..TB-4 as `it.todo` with the exact §5 Attack / Must-hold text; the suite reports `4 todo` (1343 passed / 8 skipped / 4 todo). Not tested and not satisfied — made real in M7.
    7. **Implemented (documentation follow-up):** `.env.example` is allowed by `.gitignore` and lists only names read by the code, with empty values (`operations.md` §3).
-  8. Independent code review of the `f538a96..15f8cc2` diff using the reviewer brief in the archived `ENGINEERING_STATE.md`; record findings here.
+  8. Independent code review of the `f538a96..15f8cc2` diff using the reviewer brief in the archived `ENGINEERING_STATE.md`; record findings here. **Not started** — must be independent (not the implementing agent).
+
+  Upload-log proof (task 3): `tests/unit/upload-durability-failure.test.ts` › "never records an uploaded filename in logs or timings (%s)" — success, parser, persistence and session-database cases.
 - **Depends on:** nothing.
 - **Files/contracts:** `Dockerfile`, `docker-compose.yml`, `.gitignore`, `.env.example`, `app/api/upload/route.ts`, `app/lib/llm/safe-prompt.ts`, `operations.md` §§1–4.
 - **Required tests:** upload route returns 503 (not tmpdir success) when the durable store is down; log-capture test proves no filename; injection test with a forged delimiter; `docker build` + container health check passes.
 - **Acceptance:** all four defects closed with tests; CI file runs green locally (`act` optional); TB tests listed as todo; `.env.example` tracked with no values; review findings recorded.
 - **Completion evidence:** command output for the default gate + `docker build`; commit hash.
 
-**Scoped handoff (2026-11-15):** only tasks 1–4 were authorized for this run;
-task 7 was already implemented. M4 remains current and incomplete: CI (task 5),
-trust-boundary todos (task 6) and the historical-diff review (task 8) were not
-started. Live-provider/real-PDF checks remain skipped; no new dependencies,
-paid API calls, push or deployment. No state-ownership or session-auth change.
+**Status (2026-11-16):** tasks 1–4 and 7 Tested/Implemented, 5 and 6
+Implemented, 8 not started. Nothing in M4 is Verified (no live-provider,
+real-PDF or GitHub CI run). No new dependencies, paid API calls, push or
+deployment; no state-ownership or session-auth change.
+
+**Left for M4 exit — owner actions only:**
+
+1. Commission the independent review of `f538a96..15f8cc2` (task 8).
+2. Decide how e2e gets durable storage now that uploads require it (D-018):
+   a local Postgres + storage service in the e2e job (a new CI runtime
+   component) or another approved approach. Until then the CI `e2e` job is red.
+3. Approve pushing `m4-baseline` so the CI workflow runs on GitHub.
 
 ### M5 — Retrieval correctness
 
