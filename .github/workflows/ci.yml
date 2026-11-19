@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Private-data guard (no real PDFs or real-document data)
+        run: bash scripts/check-private-data.sh
       - uses: actions/setup-node@v4
         with:
           node-version: 20 # matches the Dockerfile base image
