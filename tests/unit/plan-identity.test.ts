@@ -7,40 +7,29 @@ describe("source-attested plan identity", () => {
     const plans = attestPlans([{
       documentId: "doc-wt",
       filename: "misleading-name.pdf",
-      pages: ["Get StudentSecure insurance from WorldTrips, a member of its insurer group."],
+      pages: ["Get ScholarShield insurance from AcmeTravel, a member of its insurer group."],
     }]);
 
-    expect(plans.map((plan) => plan.name)).toEqual(["StudentSecure"]);
+    expect(plans.map((plan) => plan.name)).toEqual(["ScholarShield"]);
     expect(plans[0].sources[0]).toMatchObject({
       documentId: "doc-wt",
       page: 1,
-      quote: "Get StudentSecure insurance from WorldTrips, a member of its insurer group.",
+      quote: "Get ScholarShield insurance from AcmeTravel, a member of its insurer group.",
     });
-  });
-
-  it("recognizes a standalone insurer product title but not a carrier-only mention", () => {
-    const plans = attestPlans([{
-      documentId: "doc-sc",
-      filename: "Travel-Medical-Basic.pdf",
-      pages: ["Seven Corners Travel Medical Including the USA\nSeven Corners Assist provides support."],
-    }]);
-
-    expect(plans.map((plan) => plan.name)).toEqual(["Travel Medical Including the USA"]);
-    expect(plans[0].sources[0].quote).toBe("Seven Corners Travel Medical Including the USA");
   });
 
   it("attests a first-page program title when immediately identified as a certificate of insurance", () => {
     const plans = attestPlans([{
       documentId: "doc-program",
       filename: "unrelated-filename.pdf",
-      pages: ["Patriot Exchange ProgramSM\nCertificate of Insurance\nPolicy terms follow."],
+      pages: ["Zenith Exchange ProgramSM\nCertificate of Insurance\nPolicy terms follow."],
     }]);
 
-    expect(plans.map((plan) => plan.name)).toEqual(["Patriot Exchange ProgramSM"]);
+    expect(plans.map((plan) => plan.name)).toEqual(["Zenith Exchange ProgramSM"]);
     expect(plans[0].sources[0]).toMatchObject({
       documentId: "doc-program",
       page: 1,
-      quote: "Patriot Exchange ProgramSM",
+      quote: "Zenith Exchange ProgramSM",
     });
   });
 

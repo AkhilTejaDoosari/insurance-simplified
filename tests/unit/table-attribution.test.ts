@@ -143,7 +143,7 @@ describe("column headings and labels", () => {
 
   it("chooses facts from the label head, not from its sub-notes or parentheticals", () => {
     expect(factsForLabel("Urgent Care • Not subject to Deductible")).toEqual(["urgent-care"]);
-    expect(factsForLabel("Mental Health Disorders (Treatment must not be provided at a student health center)")).toEqual(["mental-health"]);
+    expect(factsForLabel("Mental Health Disorders (Care at a campus clinic is excluded from this benefit)")).toEqual(["mental-health"]);
     expect(factsForLabel("Deductible Options (You pay)")).toContain("annual-deductible");
   });
 });

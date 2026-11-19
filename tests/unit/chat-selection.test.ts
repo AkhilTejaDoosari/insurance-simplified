@@ -43,41 +43,41 @@ const SESSIONS_DIR = join(tmpdir(), "insurance-simplified-sessions");
 const created: string[] = [];
 const originalEnv = { ...process.env };
 
-// doc-1 mentions BOTH plans (mixed document): selecting WorldTrips must keep
-// its WorldTrips and shared lines but drop the Patriot line. doc-2 is pure
-// Patriot and disappears entirely unless Patriot is selected or widened.
+// doc-1 mentions BOTH plans (mixed document): selecting AcmeTravel must keep
+// its AcmeTravel and shared lines but drop the Zenith line. doc-2 is pure
+// Zenith and disappears entirely unless Zenith is selected or widened.
 const documents: SessionDocument[] = [
   {
     documentId: "doc-1",
-    filename: "worldtrips.pdf",
+    filename: "acmetravel.pdf",
     pageCount: 1,
-    pages: ["WorldTrips travel plan.\nWorldTrips deductible is $250.\nPatriot rates differ.\nshared: coverage territory worldwide"],
+    pages: ["AcmeTravel travel plan.\nAcmeTravel deductible is $250.\nZenith rates differ.\nshared: coverage territory worldwide"],
   },
   {
     documentId: "doc-2",
-    filename: "patriot.pdf",
+    filename: "zenith.pdf",
     pageCount: 1,
-    pages: ["Patriot plan.\nPatriot deductible is $1000."],
+    pages: ["Zenith plan.\nZenith deductible is $1000."],
   },
 ];
 
 const plans = [
   {
     planId: "plan-wt",
-    name: "WorldTrips",
-    sources: [{ documentId: "doc-1", page: 1, quote: "WorldTrips deductible is $250." }],
+    name: "AcmeTravel",
+    sources: [{ documentId: "doc-1", page: 1, quote: "AcmeTravel deductible is $250." }],
   },
   {
     planId: "plan-ex",
-    name: "Patriot",
-    sources: [{ documentId: "doc-2", page: 1, quote: "Patriot deductible is $1000." }],
+    name: "Zenith",
+    sources: [{ documentId: "doc-2", page: 1, quote: "Zenith deductible is $1000." }],
   },
   // A verified plan whose name never appears in session content: it can never
   // be scoped to a document, but it still competes in mention ambiguity.
   {
     planId: "plan-at",
     name: "Atlas America",
-    sources: [{ documentId: "doc-2", page: 1, quote: "Patriot deductible is $1000." }],
+    sources: [{ documentId: "doc-2", page: 1, quote: "Zenith deductible is $1000." }],
   },
 ];
 
@@ -99,14 +99,14 @@ function payloadWith(resultFingerprint: string): PersistedComparisonResultPayloa
             planId: "plan-wt",
             display: "$250",
             qualifiers: { planTier: "Choice" },
-            evidence: [{ documentId: "doc-1", page: 1, quote: "WorldTrips deductible is $250." }],
+            evidence: [{ documentId: "doc-1", page: 1, quote: "AcmeTravel deductible is $250." }],
           },
           {
             documentId: "doc-2",
             planId: "plan-ex",
             display: "$1000",
             qualifiers: {},
-            evidence: [{ documentId: "doc-2", page: 1, quote: "Patriot deductible is $1000." }],
+            evidence: [{ documentId: "doc-2", page: 1, quote: "Zenith deductible is $1000." }],
           },
         ],
       },
@@ -170,11 +170,11 @@ function askedDocuments(): unknown {
 describe("POST /api/chat selected-scope validation (task 17)", () => {
   it("keeps explicit individual reading within the active document even when the question names another plan", async () => {
     const { sessionId, capability } = seedWithPayload(payloadWith("fp-1"));
-    const res = await post(sessionId, capability, { question: "Compare WorldTrips", engine: "fallback", selection: selectionWith({ viewMode: "understand", documentId: "doc-2", planIds: ["plan-ex"] }) });
+    const res = await post(sessionId, capability, { question: "Compare AcmeTravel", engine: "fallback", selection: selectionWith({ viewMode: "understand", documentId: "doc-2", planIds: ["plan-ex"] }) });
     expect(res.status).toBe(200);
     const docs = askedDocuments() as { documentId: string; pages: string[] }[];
     expect(docs.map((d) => d.documentId)).toEqual(["doc-2"]);
-    expect(JSON.stringify(docs)).not.toContain("WorldTrips");
+    expect(JSON.stringify(docs)).not.toContain("AcmeTravel");
   });
   it("refuses a foreign active document before invoking retrieval", async () => {
     const { sessionId, capability } = seedWithPayload(payloadWith("fp-1"));
@@ -184,7 +184,7 @@ describe("POST /api/chat selected-scope validation (task 17)", () => {
   });
   it("rejects a returned citation that is session-owned but outside the active view", async () => {
     const { sessionId, capability } = seedWithPayload(payloadWith("fp-1"));
-    vi.mocked(answerQuestionSemantic).mockResolvedValueOnce({ schemaVersion: "v1", kind: "answer", answerText: "WorldTrips deductible is $250.", citations: [{ documentId: "doc-1", page: 1, quote: "WorldTrips deductible is $250." }] });
+    vi.mocked(answerQuestionSemantic).mockResolvedValueOnce({ schemaVersion: "v1", kind: "answer", answerText: "AcmeTravel deductible is $250.", citations: [{ documentId: "doc-1", page: 1, quote: "AcmeTravel deductible is $250." }] });
     const res = await post(sessionId, capability, { question: "deductible", engine: "fallback", selection: selectionWith({ viewMode: "understand", documentId: "doc-2", planIds: ["plan-ex"] }) });
     expect((await res.json()).kind).toBe("refusal");
   });
@@ -222,13 +222,13 @@ describe("POST /api/chat selected-scope validation (task 17)", () => {
     });
     expect(res.status).toBe(200);
     const docs = askedDocuments() as { documentId: string; pages: string[] }[];
-    // The non-selected Patriot document is out of scope entirely.
+    // The non-selected Zenith document is out of scope entirely.
     expect(docs.map((d) => d.documentId)).toEqual(["doc-1"]);
     // Within the mixed document, only selected-scope and shared lines remain
     // (verbatim, never rewritten), so citations still verify byte-for-byte.
-    expect(docs[0].pages.join("\n")).toContain("WorldTrips deductible is $250.");
+    expect(docs[0].pages.join("\n")).toContain("AcmeTravel deductible is $250.");
     expect(docs[0].pages.join("\n")).toContain("shared: coverage territory worldwide");
-    expect(docs[0].pages.join("\n")).not.toContain("Patriot rates differ.");
+    expect(docs[0].pages.join("\n")).not.toContain("Zenith rates differ.");
   });
 
   it("rejects a selection naming a plan outside the verified result", async () => {
@@ -374,7 +374,7 @@ describe("POST /api/chat selected-scope validation (task 17)", () => {
     delete process.env.LLM_API_KEY;
     const { sessionId, capability } = seedWithPayload(payloadWith("fp-1"));
     const res = await post(sessionId, capability, {
-      question: "How does the Patriot compare on deductible?",
+      question: "How does the Zenith compare on deductible?",
       engine: "fallback",
       selection: selectionWith(),
     });
@@ -388,17 +388,17 @@ describe("POST /api/chat selected-scope validation (task 17)", () => {
     delete process.env.LLM_API_KEY;
     const { sessionId, capability } = seedWithPayload(payloadWith("fp-1"));
     const res = await post(sessionId, capability, {
-      question: "Compare WorldTrips with Atlas America.",
+      question: "Compare AcmeTravel with Atlas America.",
       engine: "fallback",
       selection: selectionWith({ planIds: ["plan-ex"] }),
     });
     expect(res.status).toBe(200);
     const docs = askedDocuments() as { documentId: string; pages: string[] }[];
     // Two other verified plans are explicitly named, so the widening is
-    // ambiguous and stays inside the selected Patriot scope: doc-1 survives
-    // only its Patriot/shared lines, never the unselected WorldTrips ones.
+    // ambiguous and stays inside the selected Zenith scope: doc-1 survives
+    // only its Zenith/shared lines, never the unselected AcmeTravel ones.
     expect(docs.map((d) => d.documentId)).toEqual(["doc-1", "doc-2"]);
-    expect(docs[0].pages.join("\n")).not.toContain("WorldTrips deductible is $250.");
-    expect(docs[0].pages.join("\n")).toContain("Patriot rates differ.");
+    expect(docs[0].pages.join("\n")).not.toContain("AcmeTravel deductible is $250.");
+    expect(docs[0].pages.join("\n")).toContain("Zenith rates differ.");
   });
 });

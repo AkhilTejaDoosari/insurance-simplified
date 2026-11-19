@@ -347,7 +347,7 @@ line-leg realbench under `REAL_PDFS_DIR=/Users/akhiltejadoosari/Repositories`
 mrr@5=0.6500 mrr@10=0.6639 (per-question: rb-exchange-crisis
 1.0/0.2, rb-exchange-repatriation 0.0/0.0, rb-exchange-eligibility
 1.0/1.0, rb-travel-urgent-care 1.0/1.0, rb-travel-add 1.0/1.0,
-rb-optima-limits 1.0/1.0, rb-optima-eligibility 1.0/1.0,
+rb-doc-c-limits 1.0/1.0, rb-doc-c-eligibility 1.0/1.0,
 rb-compare-repatriation r@5 0.0 / r@10 0.5 / mrr@10 0.1111). Without
 `REAL_PDFS_DIR` the benchmark prints SKIP. This subsection is
 observation only and did not enter the survivor decision.

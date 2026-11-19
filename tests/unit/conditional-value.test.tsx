@@ -84,14 +84,14 @@ describe("ConditionalValue condition notes", () => {
       verdict: "SUPPORTED",
       values: [
         value(
-          "UnitedHealthcare PPO — in-network 90% / out-of-network 70%",
+          "Harbor Health PPO — in-network 90% / out-of-network 70%",
           { networkTier: "in-network" },
-          "UnitedHealthcare PPO network: in-network 90% / out-of-network 70%.",
+          "Harbor Health PPO network: in-network 90% / out-of-network 70%.",
         ),
       ],
     });
     // Concise identity replaces the long display…
-    expect(out).toContain("UnitedHealthcare PPO");
+    expect(out).toContain("Harbor Health PPO");
     // …but plain UI text must never silently drop the network condition.
     expect(out).toContain("90% in-network");
     expect(out).toContain("70% out-of-network");

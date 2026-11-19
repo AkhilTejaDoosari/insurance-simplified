@@ -5,7 +5,10 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { extractPages } from "@/app/lib/pdf/extract-pages";
 import { runBaselineFunnel } from "./run-p2-eval";
-import { CORPUS } from "./ground-truth-real";
+import { realFixture } from "./real-fixtures";
+import type { GroundTruthRealModule } from "./fixture-types";
+
+const { CORPUS } = realFixture<GroundTruthRealModule>("ground-truth-real");
 
 async function main() {
   const realDir = process.env.REAL_PDFS_DIR ?? "";

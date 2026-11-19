@@ -13,16 +13,16 @@ describe("documentUrl (citation viewer links)", () => {
     );
   });
   it("encodes filenames and omits the page parameter without a page", () => {
-    expect(documentUrl("sess-1", "doc-2", "Patriot Travel #2 (2026).pdf")).toBe(
-      "/view/sess-1/doc-2/Patriot%20Travel%20%232%20(2026).pdf",
+    expect(documentUrl("sess-1", "doc-2", "Zenith Travel #2 (2026).pdf")).toBe(
+      "/view/sess-1/doc-2/Zenith%20Travel%20%232%20(2026).pdf",
     );
   });
 });
 
 describe("rawDocumentUrl (uploaded PDF bytes)", () => {
   it("points at the document endpoint with the encoded filename last", () => {
-    expect(rawDocumentUrl("sess-1", "doc-2", "Patriot Travel #2 (2026).pdf")).toBe(
-      "/api/document/sess-1/doc-2/Patriot%20Travel%20%232%20(2026).pdf",
+    expect(rawDocumentUrl("sess-1", "doc-2", "Zenith Travel #2 (2026).pdf")).toBe(
+      "/api/document/sess-1/doc-2/Zenith%20Travel%20%232%20(2026).pdf",
     );
   });
 });

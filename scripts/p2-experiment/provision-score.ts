@@ -8,7 +8,10 @@
 // Usage: npx tsx scripts/p2-experiment/provision-score.ts <inventory.json> [--list]
 import { readFileSync } from "node:fs";
 import type { InventoryClaim } from "./claim-inventory";
-import { GOLD, WITHHELD_DOCUMENTS, type GoldProvision } from "./gold-provisions";
+import { realFixture } from "./real-fixtures";
+import type { GoldProvision, GoldProvisionsModule } from "./fixture-types";
+
+const { GOLD, WITHHELD_DOCUMENTS } = realFixture<GoldProvisionsModule>("gold-provisions");
 
 const n = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 const NEGATION = /\b(?:no|not|none|excluded|exclusion)\b/i;

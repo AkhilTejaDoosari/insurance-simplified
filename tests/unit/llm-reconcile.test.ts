@@ -37,7 +37,7 @@ describe("LLM boundary reconciliation", () => {
   it("keeps upload metadata even when the model rewrites filenames or page counts", async () => {
     mockedComplete.mockResolvedValue(
       payload([], [
-        { documentId: "doc-1", filename: "Patriot Travel Series", pageCount: 99 },
+        { documentId: "doc-1", filename: "Zenith Travel Series", pageCount: 99 },
         { documentId: "doc-2", filename: "b.pdf", pageCount: 2 },
         { documentId: "doc-3", filename: "c.pdf", pageCount: 1 },
       ]),

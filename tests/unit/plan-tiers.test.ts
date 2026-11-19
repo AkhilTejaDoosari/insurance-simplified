@@ -16,9 +16,9 @@ const mockedComplete = vi.mocked(completeJson);
 const DEDUCTIBLE_LINE = "Deductible $0 to $2,500 $0 to $2,500 $0 to $25,000";
 const BROCHURE = {
   documentId: "doc-1",
-  filename: "patriot-travel-brochure.pdf",
+  filename: "zenith-travel-brochure.pdf",
   pageCount: 1,
-  pages: [["Patriot America", "LITE PLUS PLATINUM", DEDUCTIBLE_LINE].join("\n")],
+  pages: [["Zenith America", "LITE PLUS PLATINUM", DEDUCTIBLE_LINE].join("\n")],
 };
 
 function tierValue(tier: string, display: string) {
@@ -86,16 +86,16 @@ describe("multi-tier documents (planTier qualifier)", () => {
       schemaVersion: "v1",
       factListVersion: "v1",
       documents: [
-        { documentId: "doc-1", filename: "patriot-travel-brochure.pdf", pageCount: 1 },
-        { documentId: "doc-2", filename: "patriot_travel_brochure.pdf", pageCount: 1 },
+        { documentId: "doc-1", filename: "zenith-travel-brochure.pdf", pageCount: 1 },
+        { documentId: "doc-2", filename: "zenith_travel_brochure.pdf", pageCount: 1 },
       ],
       plans: [
         {
           planId: "plan-1",
-          name: "Patriot America",
+          name: "Zenith America",
           sources: [
-            { documentId: "doc-1", page: 1, quote: "Plan name: Patriot America" },
-            { documentId: "doc-2", page: 1, quote: "Plan name: Patriot America" },
+            { documentId: "doc-1", page: 1, quote: "Plan name: Zenith America" },
+            { documentId: "doc-2", page: 1, quote: "Plan name: Zenith America" },
           ],
         },
       ],

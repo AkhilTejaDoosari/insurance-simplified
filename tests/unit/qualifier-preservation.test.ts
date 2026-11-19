@@ -1,9 +1,8 @@
 // Structural scope survives every consumer: extraction → verification →
 // presentation (indexFacts) → PDF report conditions. Lexical clause checks
 // must not erase evidence-backed scope of a structural claim, and must still
-// strip unsupported scope of unstructured values.
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+// strip unsupported scope of unstructured values. The real-page case lives
+// in qualifier-preservation-real.test.ts (REAL_FIXTURES_DIR).
 import { describe, expect, it } from "vitest";
 import { extractFallback } from "@/app/lib/extraction/extract";
 import { validateTable, type CellValue, type RegisteredComparisonTable } from "@/app/lib/extraction/types";
@@ -12,34 +11,12 @@ import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
 import { indexFacts, type ActiveView } from "@/app/lib/presentation/adaptive";
 import { tableDocument } from "./helpers/table-doc";
 
-const fixture = (n: string) => readFileSync(join(process.cwd(), "tests/fixtures/fep-pages", n), "utf8");
 const register = (t: ReturnType<typeof verifyComparisonTable>): RegisteredComparisonTable => ({
   ...t,
   rows: t.rows.map((r) => ({ ...r, values: r.values.map((v) => ({ ...v, evidence: v.evidence.map((e, i) => ({ ...e, evidenceId: `ev-${i}` })) })) })),
 });
 
-describe("FEP wrapped statement keeps its full enrollment scope in presentation", () => {
-  const pages = [fixture("fep-blue-focus-p1.txt"), ...Array.from({ length: 15 }, (_, i) => `Filler ${i}`), fixture("fep-blue-focus-p17.txt")];
-  const doc = { documentId: "fep", filename: "fep.pdf", pageCount: pages.length, pages };
-  const table = register(verifyComparisonTable(validateTable(extractFallback([doc], {})), [doc]));
-  const planId = table.plans![0].planId;
-  const facts = indexFacts(table, { mode: "understand", documentId: "fep", planIds: [planId], tiers: {} });
-
-  it("the $22,000 family OOP fact is verified-plan with Self Plus One and Self and Family", () => {
-    const fam = facts.find((f) => f.concept === "out-of-pocket-maximum" && f.value.display.includes("$22,000") && f.value.anchor);
-    expect(fam?.state).toBe("verified-plan");
-    expect(fam?.qualifiers.conditions).toMatch(/Self Plus One/);
-    expect(fam?.qualifiers.conditions).toMatch(/Self and Family/);
-    expect(fam?.qualifiers.networkTier).toBe("Preferred Provider");
-  });
-
-  it("the $2,000 family deductible keeps both categories", () => {
-    const fam = facts.find((f) => f.concept === "annual-deductible" && f.value.display.includes("$2,000") && f.value.anchor);
-    expect(fam?.qualifiers.conditions).toBe("Self Plus One, and Self and Family");
-  });
-});
-
-describe("IMG-style network columns keep network and applicability scope", () => {
+describe("Network-column tables keep network and applicability scope", () => {
   const doc = tableDocument("d1", [{
     preamble: ["Policy name: Alpha"], caption: "BENEFIT", headings: ["US In-Network", "International"],
     rows: [["Out of Pocket Maximum", "$1,000", "$0"], ["Copay", "$10", "$20"], ["Lab", "$1", "$2"]],

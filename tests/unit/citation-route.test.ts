@@ -75,7 +75,7 @@ describe("GET /api/document (byte-for-byte original PDF)", () => {
   });
 
   it("serves documents whose filenames need URL encoding", async () => {
-    const { session, capability } = seedSession("Patriot Travel #2 (2026).pdf");
+    const { session, capability } = seedSession("Zenith Travel #2 (2026).pdf");
     const res = await get(session.sessionId, "doc-1", null, capability);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/pdf");

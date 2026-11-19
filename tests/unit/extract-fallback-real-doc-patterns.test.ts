@@ -10,20 +10,20 @@ function doc(documentId: string, pages: string[]) {
 describe("deterministic extraction on real-brochure text patterns", () => {
   it("does not present a repeated short table fragment as supported evidence", () => {
     const source = "In PPO Network";
-    const input = doc("doc-sc", ["In PPO Network\nOut of PPO Network\nIn PPO Network"]);
+    const input = doc("doc-b", ["In PPO Network\nOut of PPO Network\nIn PPO Network"]);
     const row = extractFallback([input], {}).rows.find((candidate) => candidate.factName === "network");
 
     expect(row?.values).toEqual([]);
     expect(row?.verdict).toBe("NEEDS VERIFICATION");
     expect(verifyEvidenceCitation([input], {
-      documentId: "doc-sc",
+      documentId: "doc-b",
       page: 1,
       quote: source,
     })).toEqual({ ok: false });
   });
 
   it("does not infer tier values positionally from a nearby tier heading", () => {
-    const input = doc("doc-wt", [
+    const input = doc("doc-a", [
       "ELITE SELECT BUDGET SMART\nNetwork reimbursement: 80% in-network",
     ]);
     const row = extractFallback([input], {}).rows.find((candidate) => candidate.factName === "network");
@@ -33,7 +33,7 @@ describe("deterministic extraction on real-brochure text patterns", () => {
   });
 
   it("does not classify a student health-center benefit as student eligibility", () => {
-    const input = doc("doc-wt", ["Student Health Center: $25 per visit"]);
+    const input = doc("doc-a", ["Student Health Center: $25 per visit"]);
     const table = extractFallback([input], {});
 
     expect(table.rows.find((row) => row.factName === "student-eligibility")?.values).toEqual([]);
@@ -42,45 +42,45 @@ describe("deterministic extraction on real-brochure text patterns", () => {
   });
 
   it("does not classify a general eligible-expenses clause as enrollment eligibility", () => {
-    const input = doc("doc-wt", ["Eligible expenses are subject to applicable copayments."]);
+    const input = doc("doc-a", ["Eligible expenses are subject to applicable copayments."]);
     const row = extractFallback([input], {}).rows.find((candidate) => candidate.factName === "eligibility");
 
     expect(row?.values).toEqual([]);
   });
 
   it("does not classify premium-refund text as a premium price", () => {
-    const input = doc("doc-wt", ["Only premium for an unused whole month is eligible for refund."]);
+    const input = doc("doc-a", ["Only premium for an unused whole month is eligible for refund."]);
     const row = extractFallback([input], {}).rows.find((candidate) => candidate.factName === "premium");
 
     expect(row?.values).toEqual([]);
   });
 
   it("does not classify a section heading as eligibility evidence", () => {
-    const input = doc("doc-sc", ["Who Can Buy and Where Can I Travel?"]);
+    const input = doc("doc-b", ["Who Can Buy and Where Can I Travel?"]);
     const row = extractFallback([input], {}).rows.find((candidate) => candidate.factName === "eligibility");
 
     expect(row?.values).toEqual([]);
   });
 
   it("does not classify generic international-student prose as eligibility evidence", () => {
-    const input = doc("doc-wt", ["This coverage was designed for international students and scholars studying abroad."]);
+    const input = doc("doc-a", ["This coverage was designed for international students and scholars studying abroad."]);
     const row = extractFallback([input], {}).rows.find((candidate) => candidate.factName === "student-eligibility");
 
     expect(row?.values).toEqual([]);
   });
 
   it("excludes deductible recommendations and boilerplate but keeps the labeled options", () => {
-    const recommendation = "We recommend choosing Travel Medical Choice with a $0 deductible to meet minimum requirements.";
-    const boilerplate = "All medical and dental benefits are subject to deductible and/or copay.";
+    const recommendation = "We recommend selecting the Zenith Choice option with a $0 deductible to satisfy minimum requirements.";
+    const boilerplate = "Every medical and dental benefit is subject to deductible and/or copay.";
     const options = "Deductible Options (You pay): $0 - $5,000 (Choose the option you want.)";
-    const input = doc("doc-sc", [recommendation, boilerplate, options]);
+    const input = doc("doc-b", [recommendation, boilerplate, options]);
     const row = extractFallback([input], {}).rows.find((candidate) => candidate.factName === "annual-deductible");
 
     expect(row?.values.map((value) => value.evidence[0]?.quote)).toEqual([options]);
   });
 
   it("preserves the strict under-age condition in the displayed age fact", () => {
-    const input = doc("doc-wt", ["You must be under age 65; and"]);
+    const input = doc("doc-a", ["You must be under age 65; and"]);
     const row = extractFallback([input], {}).rows.find((candidate) => candidate.factName === "age-limits");
 
     expect(row?.values).toHaveLength(1);
@@ -97,15 +97,15 @@ describe("deterministic extraction on real-brochure text patterns", () => {
   });
 
   it("keeps each document's extracted facts identical when processed alone or together", () => {
-    const worldTrips = doc("doc-wt", ["Annual deductible: $0 for StudentSecure Elite."]);
-    const sevenCorners = doc("doc-sc", ["Annual deductible: $250 for Travel Medical Basic."]);
-    const alone = extractFallback([worldTrips], {});
-    const combined = extractFallback([worldTrips, sevenCorners], {});
+    const docA = doc("doc-a", ["Annual deductible: $0 for Zenith Student Elite."]);
+    const docB = doc("doc-b", ["Annual deductible: $250 for Zenith Travel Basic."]);
+    const alone = extractFallback([docA], {});
+    const combined = extractFallback([docA, docB], {});
     const valuesFor = (table: ReturnType<typeof extractFallback>, id: string) =>
       table.rows.flatMap((row) => row.values
         .filter((value) => value.documentId === id)
         .map((value) => [row.factName, value.display, value.qualifiers, value.evidence]));
 
-    expect(valuesFor(combined, "doc-wt")).toEqual(valuesFor(alone, "doc-wt"));
+    expect(valuesFor(combined, "doc-a")).toEqual(valuesFor(alone, "doc-a"));
   });
 });

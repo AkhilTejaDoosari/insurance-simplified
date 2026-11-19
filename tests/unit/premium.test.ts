@@ -30,12 +30,12 @@ const band = (
 });
 
 const RATE_TABLE: TableRow["values"] = [
-  band("doc-1", "$41", "OPTima Basic", 18, 24),
-  band("doc-1", "$81", "OPTima Enhanced", 18, 24),
-  band("doc-1", "$72", "OPTima Basic", 25, 29),
-  band("doc-1", "$112", "OPTima Enhanced", 25, 29),
-  band("doc-1", "$123", "OPTima Basic", 30, 64),
-  band("doc-1", "$185", "OPTima Enhanced", 30, 64),
+  band("doc-1", "$41", "Orbit Basic", 18, 24),
+  band("doc-1", "$81", "Orbit Enhanced", 18, 24),
+  band("doc-1", "$72", "Orbit Basic", 25, 29),
+  band("doc-1", "$112", "Orbit Enhanced", 25, 29),
+  band("doc-1", "$123", "Orbit Basic", 30, 64),
+  band("doc-1", "$185", "Orbit Enhanced", 30, 64),
 ];
 
 const row = (values: TableRow["values"]): TableRow => ({
@@ -47,7 +47,7 @@ const row = (values: TableRow["values"]): TableRow => ({
 const table = (rows: TableRow[]): ComparisonTable => ({
   schemaVersion: "v1",
   factListVersion: "v1",
-  documents: [{ documentId: "doc-1", filename: "optima.pdf", pageCount: 3 }],
+  documents: [{ documentId: "doc-1", filename: "orbit.pdf", pageCount: 3 }],
   rows,
 });
 
@@ -67,8 +67,8 @@ describe("personalizePremiumRow age matrix", () => {
       const out = personalizePremiumRow(row(RATE_TABLE), { age });
       expect(out.verdict).toBe("SUPPORTED");
       const byTier = new Map(out.values.map((v) => [v.qualifiers.planTier, v.display]));
-      expect(byTier.get("OPTima Basic")).toBe(basic);
-      expect(byTier.get("OPTima Enhanced")).toBe(enhanced);
+      expect(byTier.get("Orbit Basic")).toBe(basic);
+      expect(byTier.get("Orbit Enhanced")).toBe(enhanced);
       expect(displays(out).sort()).toEqual([basic, enhanced].sort());
     });
   }
@@ -90,8 +90,8 @@ describe("personalizePremiumRow age matrix", () => {
   it("tier integrity: Basic never receives Enhanced premium", () => {
     const out = personalizePremiumRow(row(RATE_TABLE), { age: "25" });
     for (const v of out.values) {
-      if (v.qualifiers.planTier === "OPTima Basic") expect(v.display).toBe("$72/mo");
-      if (v.qualifiers.planTier === "OPTima Enhanced") expect(v.display).toBe("$112/mo");
+      if (v.qualifiers.planTier === "Orbit Basic") expect(v.display).toBe("$72/mo");
+      if (v.qualifiers.planTier === "Orbit Enhanced") expect(v.display).toBe("$112/mo");
     }
   });
 
@@ -114,14 +114,14 @@ describe("personalizePremiumRow age matrix", () => {
 
 describe("premium personalization wiring", () => {
   const DOCS = [
-    { documentId: "doc-1", filename: "optima.pdf", pageCount: 3, pages: ["rates"] },
+    { documentId: "doc-1", filename: "orbit.pdf", pageCount: 3, pages: ["rates"] },
   ];
 
   it("LLM banded output is filtered to the user's age band", async () => {
     mockedComplete.mockResolvedValue({
       schemaVersion: "v1",
       factListVersion: "v1",
-      documents: [{ documentId: "doc-1", filename: "optima.pdf", pageCount: 3 }],
+      documents: [{ documentId: "doc-1", filename: "orbit.pdf", pageCount: 3 }],
       rows: [{ factName: "premium", verdict: "SUPPORTED", values: RATE_TABLE }],
     });
     const result = await extractViaLlm(DOCS, { age: "25" });

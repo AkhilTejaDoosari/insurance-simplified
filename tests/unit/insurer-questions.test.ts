@@ -56,9 +56,9 @@ describe("insurer question suggestions (User Story 4)", () => {
       schemaVersion: "v1",
       factListVersion: "v1",
       documents: [
-        { documentId: "doc-1", filename: "patriot-travel.pdf", pageCount: 1 },
-        { documentId: "doc-2", filename: "patriot-exchange.pdf", pageCount: 1 },
-        { documentId: "doc-3", filename: "optima.pdf", pageCount: 1 },
+        { documentId: "doc-1", filename: "zenith-travel.pdf", pageCount: 1 },
+        { documentId: "doc-2", filename: "zenith-exchange.pdf", pageCount: 1 },
+        { documentId: "doc-3", filename: "orbit.pdf", pageCount: 1 },
       ],
       rows: [
         {

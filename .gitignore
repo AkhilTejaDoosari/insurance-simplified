@@ -24,5 +24,7 @@ llm-test-output*.json
 # licensed source PDFs and working diagnostics (never committed)
 nonstandard/
 SBCs/
+# real-document test data (quotes, labels, filenames); point REAL_FIXTURES_DIR here
+real-fixtures/
 .debug-journal.md
 

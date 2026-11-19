@@ -48,7 +48,7 @@ describe("R5 retrieval-fed prompt assembly", () => {
   it("tags each passage with its REAL page number, exactly once", () => {
     const deepDoc = {
       documentId: "doc-sbc",
-      filename: "studentsecure.pdf",
+      filename: "scholarshield.pdf",
       pageCount: 6,
       pages: ["cover", "benefits", "Deductible is $0.", "rules", "Prescription drugs covered.", "notes"],
     };
@@ -94,7 +94,7 @@ describe("R5 retrieval-fed prompt assembly", () => {
   });
 
   // Regression (todo 6): topK was raised 10 -> 16 so a full small-session
-  // chunk set fits the prompt (the Seven Corners "Deductible Options"
+  // chunk set fits the prompt (the North Point "Deductible Options"
   // passage ranks 12 of 16 for deductible-comparison questions; at topK=10
   // it was missing, so the $0 - $5,000 range never reached the model).
   // Realistic dense insurance chunks (~2400 chars per 512-token chunk) must

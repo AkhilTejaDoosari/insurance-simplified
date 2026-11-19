@@ -1,54 +1,20 @@
 // Enrollment-scoped prose statements read by the closed statement grammar,
 // through the production boundary (extractFallback → validateTable →
-// verifyComparisonTable). Uses the tracked FEP p1/p17 text fixtures.
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+// verifyComparisonTable). Page 1 is a synthetic FEHB-style enrollment page; the real-page cases
+// live in statement-facts-real.test.ts (REAL_FIXTURES_DIR).
 import { describe, expect, it } from "vitest";
 import { extractFallback } from "@/app/lib/extraction/extract";
 import { validateTable, type CellValue, type ComparisonTable } from "@/app/lib/extraction/types";
 import { verifyComparisonTable } from "@/app/lib/extraction/verify-table";
 import { statementClaims, verifyStatementAnchor } from "@/app/lib/extraction/statement-facts";
 
-const fixture = (name: string) => readFileSync(join(process.cwd(), "tests/fixtures/fep-pages", name), "utf8");
-const FEP_P1 = fixture("fep-blue-focus-p1.txt");
-const FEP_P17 = fixture("fep-blue-focus-p17.txt");
+import { SYNTHETIC_FEHB_P1 as FEHB_P1 } from "@/tests/unit/helpers/fehb-page";
 
-const fep = (...pages: string[]) => ({ documentId: "fep", filename: "fep.pdf", pageCount: pages.length, pages });
-const run = (doc: ReturnType<typeof fep>): ComparisonTable => verifyComparisonTable(validateTable(extractFallback([doc], {})), [doc]);
+const fehb = (...pages: string[]) => ({ documentId: "fehb", filename: "fehb.pdf", pageCount: pages.length, pages });
+const run = (doc: ReturnType<typeof fehb>): ComparisonTable => verifyComparisonTable(validateTable(extractFallback([doc], {})), [doc]);
 const statements = (t: ComparisonTable, fact: string) =>
   t.rows.find((r) => r.factName === fact)!.values.filter((v) => v.anchor?.kind === "statement");
-const claimsOn = (sentence: string) => statementClaims(fep(FEP_P1, sentence));
-
-describe("real FEP p17 statements", () => {
-  const t = run(fep(FEP_P1, ...Array.from({ length: 15 }, (_, i) => `Filler page ${i + 2}`), FEP_P17));
-  const planId = t.plans?.[0]?.planId;
-
-  it("attributes each enrollment-scoped deductible with its full declared scope", () => {
-    const d = statements(t, "annual-deductible");
-    expect(d.map((v) => [v.qualifiers.conditions, v.planId])).toEqual([
-      ["Self Only", planId],
-      ["Self Plus One, and Self and Family", planId],
-    ]);
-    expect(d[0].display).toBe("For Self Only contracts, the calendar year deductible is now $1,000.");
-    expect(d[1].display).toMatch(/^For Self Plus One, and Self and Family contracts, the deductible is now \$2,000/);
-  });
-
-  it("attributes the out-of-pocket maximums with enrollment AND network scope", () => {
-    const o = statements(t, "out-of-pocket-maximum");
-    expect(o.map((v) => [v.qualifiers.conditions, v.qualifiers.networkTier, v.planId])).toEqual([
-      ["Self Only", "Preferred Provider", planId],
-      ["Self Plus One and Self and Family", "Preferred Provider", planId],
-    ]);
-  });
-
-  it("cites the exact sentence on page 17, verified", () => {
-    for (const v of [...statements(t, "annual-deductible"), ...statements(t, "out-of-pocket-maximum")]) {
-      expect(v.evidence).toHaveLength(1);
-      expect(v.evidence[0].page).toBe(17);
-      expect(FEP_P17.replace(/\s+/g, " ")).toContain(v.evidence[0].quote.replace(/\s+/g, " "));
-    }
-  });
-});
+const claimsOn = (sentence: string) => statementClaims(fehb(FEHB_P1, sentence));
 
 describe("the grammar binds scope, concept and amount — or makes no claim", () => {
   it.each([
@@ -75,12 +41,12 @@ describe("the grammar binds scope, concept and amount — or makes no claim", ()
   });
 
   it("makes no claim when the document declares no enrollment record", () => {
-    expect(statementClaims(fep("Some other plan", "For Self Only contracts, the deductible is now $1,000."))).toEqual([]);
+    expect(statementClaims(fehb("Some other plan", "For Self Only contracts, the deductible is now $1,000."))).toEqual([]);
   });
 });
 
 describe("statement anchors cannot be forged", () => {
-  const doc = fep(FEP_P1, "• For Self Only contracts, the calendar year deductible is now $1,000.");
+  const doc = fehb(FEHB_P1, "• For Self Only contracts, the calendar year deductible is now $1,000.");
   const genuine = (): CellValue => statementClaims(doc)[0].value;
 
   it("a genuine anchor re-derives", () => {
@@ -118,11 +84,11 @@ describe("governing context: examples and disclaimers never become plan provisio
   });
 
   it("disclaimer at the bottom of the previous page governs a statement at the top of the next", () => {
-    expect(statementClaims(fep(FEP_P1, "The figures below are an illustration.", S))).toEqual([]);
+    expect(statementClaims(fehb(FEHB_P1, "The figures below are an illustration.", S))).toEqual([]);
   });
 
   it.each([
-    ["real FEP 'Changes' list", `Changes to our FEPBlue Focus\n• We will no longer provide 8 over-the-counter (OTC) COVID-19 tests per member.\n• ${S}`],
+    ["brochure 'Changes' list", `Changes to our Zenith Care\n• We will no longer provide 8 over-the-counter (OTC) COVID-19 tests per member.\n• ${S}`],
     ["plain statement", S],
     ["followed by another statement", `${S} For Self Plus One contracts, the deductible is $2,000.`],
   ])("%s → claim kept", (_l, text) => {
@@ -130,9 +96,9 @@ describe("governing context: examples and disclaimers never become plan provisio
   });
 
   it("the context rule is part of anchor verification (a context-blocked statement cannot be re-verified)", () => {
-    const doc = fep(FEP_P1, S);
+    const doc = fehb(FEHB_P1, S);
     const v = statementClaims(doc)[0].value;
-    const blocked = fep(FEP_P1, `The following example does not describe this plan.\n${S}`);
+    const blocked = fehb(FEHB_P1, `The following example does not describe this plan.\n${S}`);
     const shift = "The following example does not describe this plan.\n".length;
     const anchor = { ...v.anchor!, start: (v.anchor as { start: number }).start + shift, end: (v.anchor as { end: number }).end + shift } as CellValue["anchor"];
     expect(verifyStatementAnchor("annual-deductible", { ...v, anchor }, [blocked])).toBe(false);
@@ -145,7 +111,7 @@ describe("governing context: examples and disclaimers never become plan provisio
 describe("governing context is structural: section, item, neighbours, next page", () => {
   const S = "For Self Only contracts, the deductible is $1,000.";
   const filler = (n: number) => Array.from({ length: n }, (_, i) => `Line ${i} about benefits.`).join("\n");
-  const pages = (...p: string[]) => statementClaims(fep(FEP_P1, ...p));
+  const pages = (...p: string[]) => statementClaims(fehb(FEHB_P1, ...p));
 
   it.each([
     ["same-line hypothetical", `This is a hypothetical example. ${S}`],
@@ -169,7 +135,7 @@ describe("governing context is structural: section, item, neighbours, next page"
   it("restriction at the top of the next page governs a statement that ends its page", () => {
     expect(pages(S, "Only if you use Preferred providers.")).toEqual([]);
     // Running footer lines between the statement and the page break do not hide it.
-    expect(pages(`${S}\n2027 Blue Cross and Blue Shield Service Benefit Plan\nPage 15`, "Only if you use Preferred providers.")).toEqual([]);
+    expect(pages(`${S}\n2027 Harbor Mutual Service Benefit Plan\nPage 15`, "Only if you use Preferred providers.")).toEqual([]);
   });
 
   it("disclaimer on an earlier page of the same section governs", () => {
@@ -177,8 +143,8 @@ describe("governing context is structural: section, item, neighbours, next page"
   });
 
   it.each([
-    ["legitimate FEP deductible statement", `Changes to our FEPBlue Focus\n• ${S}`],
-    ["legitimate FEP out-of-pocket statement", "Changes to our FEPBlue Focus\n• For Self Only contracts, your Preferred Provider catastrophic out-of-pocket maximum is now $11,000."],
+    ["legitimate deductible statement", `Changes to our Zenith Care\n• ${S}`],
+    ["legitimate out-of-pocket statement", "Changes to our Zenith Care\n• For Self Only contracts, your Preferred Provider catastrophic out-of-pocket maximum is now $11,000."],
     ["unrelated restriction in a sibling provision", `• Your copayment is $3,000 only if you use a Preferred facility.\n• ${S}`],
     ["complete conditional provision before it", `If you use Preferred providers, the copay is $20. ${S}`],
     ["complete conditional provision after it in a sibling bullet", `• ${S}\n• If you use Non-preferred providers, the copay is $40.`],
@@ -193,15 +159,5 @@ describe("governing context is structural: section, item, neighbours, next page"
   it("a next page starting a new provision does not restrict a statement that ends its page", () => {
     expect(pages(S, "Section 5. Benefits\nOnly if you use Preferred providers.").length).toBe(1);
     expect(pages(S, "Your copay for office visits is $30.").length).toBe(1);
-  });
-
-  it("the real FEP p17 section keeps exactly its four statements", () => {
-    const t = run(fep(FEP_P1, ...Array.from({ length: 15 }, (_, i) => `Filler page ${i + 2}`), FEP_P17));
-    expect([...statements(t, "annual-deductible"), ...statements(t, "out-of-pocket-maximum")]).toHaveLength(4);
-  });
-
-  it("an earlier page disclaimer governs the real p17 statements when no major heading intervenes", () => {
-    const p17 = FEP_P17.replace("Section 2. Changes for 2027\n", "");
-    expect(statementClaims(fep(FEP_P1, "These are hypothetical figures for illustration.", p17))).toEqual([]);
   });
 });

@@ -6,7 +6,7 @@ import {
 
 describe("summarizeNetworkDisplay", () => {
   it("keeps an explicitly stated carrier + type identity", () => {
-    expect(summarizeNetworkDisplay("UnitedHealthcare PPO")).toBe("UnitedHealthcare PPO");
+    expect(summarizeNetworkDisplay("Harbor Health PPO")).toBe("Harbor Health PPO");
     expect(summarizeNetworkDisplay("Plan uses the Acme Preferred Provider Network.")).toBe(
       "Acme Preferred Provider Network",
     );

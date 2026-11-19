@@ -129,9 +129,9 @@ describe("care parent consolidation", () => {
 
 describe("fallback line displays are the source's own words", () => {
   it.each([
-    ["primary-care-visit", "When you receive overseas care, we also waive the $10 office visit copayments."],
-    ["dental-coverage", "All medical and dental benefits are subject to deductible and/or copay."],
-    ["preauthorization", "This is not an assurance, authorization, preauthorization, or verification of coverage."],
+    ["primary-care-visit", "For care received abroad, the $10 office visit copayments are also waived by us."],
+    ["dental-coverage", "Every medical and dental benefit is subject to deductible and/or copay."],
+    ["preauthorization", "Nothing here is a guarantee, authorization, preauthorization, or confirmation of coverage."],
   ])("%s keeps the cited sentence verbatim (no inverted paraphrase)", (fact, line) => {
     const table = extractFallback([{ documentId: "d", filename: "d.pdf", pageCount: 1, pages: [line] }], {});
     const values = table.rows.find((r) => r.factName === fact)?.values ?? [];

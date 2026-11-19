@@ -25,16 +25,16 @@ const originalEnv = { ...process.env };
 const RESULT_FINGERPRINT = "fp-export-pdf";
 
 const documents: SessionDocument[] = [
-  { documentId: "doc-1", filename: "worldtrips.pdf", pageCount: 8, pages: ["WorldTrips deductible section"] },
-  { documentId: "doc-2", filename: "sevencorners.pdf", pageCount: 4, pages: ["Seven Corners deductible options"] },
+  { documentId: "doc-1", filename: "acmetravel.pdf", pageCount: 8, pages: ["AcmeTravel deductible section"] },
+  { documentId: "doc-2", filename: "northpoint.pdf", pageCount: 4, pages: ["North Point deductible options"] },
 ];
 
 const payload: PersistedComparisonResultPayload = {
   schemaVersion: "v1",
   factListVersion: "v1",
   documents: [
-    { documentId: "doc-1", filename: "worldtrips.pdf", pageCount: 8 },
-    { documentId: "doc-2", filename: "sevencorners.pdf", pageCount: 4 },
+    { documentId: "doc-1", filename: "acmetravel.pdf", pageCount: 8 },
+    { documentId: "doc-2", filename: "northpoint.pdf", pageCount: 4 },
   ],
   presentationGroups: [{ title: "Deductible choices", factNames: ["annual-deductible"] }],
   rows: [
@@ -45,13 +45,13 @@ const payload: PersistedComparisonResultPayload = {
         {
           documentId: "doc-1",
           display: "$0",
-          qualifiers: { planTier: "Student Secure Basic" },
+          qualifiers: { planTier: "Scholar Shield Basic" },
           evidence: [{ documentId: "doc-1", page: 3, quote: "Basic deductible $0" }],
         },
         {
           documentId: "doc-1",
           display: "$100",
-          qualifiers: { planTier: "Student Secure Elite" },
+          qualifiers: { planTier: "Scholar Shield Elite" },
           evidence: [{ documentId: "doc-1", page: 3, quote: "Elite deductible $100" }],
         },
         {
@@ -130,13 +130,13 @@ describe("POST /api/export PDF contract", () => {
       { planId: "beta", name: "Beta", sources: [{ documentId: "doc-2", page: 1, quote: "Beta" }] },
     ], rows: (payload.rows as ComparisonTable["rows"]).map((r) => ({ ...r, values: r.values.map((v) => ({ ...v, planId: v.documentId === "doc-1" ? "alpha" : "beta" })) })) };
     await saveComparisonResult({ sessionId: own.session.sessionId, documentFingerprint: documentFingerprint(documents), payload: data });
-    const response = await POST(request(own.session.sessionId, own.capability, selectionWith({ viewMode: "compare", planIds: ["beta", "alpha"], tiers: { alpha: "Student Secure Basic" } })));
+    const response = await POST(request(own.session.sessionId, own.capability, selectionWith({ viewMode: "compare", planIds: ["beta", "alpha"], tiers: { alpha: "Scholar Shield Basic" } })));
     expect(response.status).toBe(200);
     const { text } = await pdfText(new Uint8Array(await response.arrayBuffer()));
-    expect(text.indexOf("sevencorners.pdf")).toBeLessThan(text.indexOf("worldtrips.pdf"));
+    expect(text.indexOf("northpoint.pdf")).toBeLessThan(text.indexOf("acmetravel.pdf"));
     expect(text.indexOf("$50")).toBeLessThan(text.indexOf("$0"));
     expect(text).not.toContain("$100");
-    expect(text).not.toContain("Student Secure Elite");
+    expect(text).not.toContain("Scholar Shield Elite");
   });
   it("exports only the active individual document with no synthetic plan assignment", async () => {
     const own = ownSession();
@@ -146,10 +146,10 @@ describe("POST /api/export PDF contract", () => {
     })));
     expect(response.status).toBe(200);
     const { text } = await pdfText(new Uint8Array(await response.arrayBuffer()));
-    expect(text).toContain("sevencorners.pdf");
+    expect(text).toContain("northpoint.pdf");
     expect(text).toContain("$50");
     expect(text).toContain("Unverified applicability");
-    expect(text).not.toContain("worldtrips.pdf");
+    expect(text).not.toContain("acmetravel.pdf");
     expect(text).not.toContain("$100");
     expect(text).not.toContain(own.capability);
   });
@@ -228,11 +228,11 @@ describe("POST /api/export PDF contract", () => {
     expect(text).toContain("Deductible choices");
     expect(text).toContain("Plan name unconfirmed (upload 1)");
     expect(text).toContain("Plan name unconfirmed (upload 2)");
-    expect(text).toContain("Student Secure Basic");
-    expect(text).toContain("Student Secure Elite");
+    expect(text).toContain("Scholar Shield Basic");
+    expect(text).toContain("Scholar Shield Elite");
     expect(text).toContain("Lone Star");
-    expect(text).toContain("worldtrips.pdf");
-    expect(text).toContain("sevencorners.pdf");
+    expect(text).toContain("acmetravel.pdf");
+    expect(text).toContain("northpoint.pdf");
     expect(text).toContain("page 3");
     expect(text).toContain("page 2");
     expect(text).toContain("F-1");
@@ -250,8 +250,8 @@ describe("POST /api/export PDF contract", () => {
     const response = await POST(
       request(own.session.sessionId, own.capability, selectionWith({
         planIds: ["doc-1"],
-        tiers: { "doc-1": "Student Secure Elite" },
-        legacyTiersByDocument: { "doc-1": "Student Secure Elite" },
+        tiers: { "doc-1": "Scholar Shield Elite" },
+        legacyTiersByDocument: { "doc-1": "Scholar Shield Elite" },
       })),
     );
     expect(response.status).toBe(200);
@@ -260,9 +260,9 @@ describe("POST /api/export PDF contract", () => {
     // The unselected second document and its tier never enter the report.
     expect(text).not.toContain("$50");
     expect(text).not.toContain("Lone Star");
-    expect(text).toContain("sevencorners.pdf"); // still cites the source file name list
-    expect(text).toContain("Student Secure Elite");
-    expect(text).not.toContain("Student Secure Basic");
+    expect(text).toContain("northpoint.pdf"); // still cites the source file name list
+    expect(text).toContain("Scholar Shield Elite");
+    expect(text).not.toContain("Scholar Shield Basic");
   });
 
   it("parameter-1 never lands at all tiers; eligible text stays verbatim", async () => {

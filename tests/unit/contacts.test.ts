@@ -148,9 +148,9 @@ describe("phone false positives from real documents", () => {
   });
 
   it("keeps strictly formatted numbers without explicit context", () => {
-    const hits = extractContacts(doc(["Aetna – (833) 577-2586 / www.aetna.com"]) );
+    const hits = extractContacts(doc(["Lakeside Health – (833) 555-0186 / www.lakeside-health.test"]) );
     expect(hits.filter((h) => h.kind === "phone").map((h) => h.value)).toEqual([
-      "(833) 577-2586",
+      "(833) 555-0186",
     ]);
   });
 

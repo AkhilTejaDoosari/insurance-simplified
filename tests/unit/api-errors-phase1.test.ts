@@ -91,7 +91,7 @@ describe("errorResponse backward compatibility", () => {
     const res = errorResponse("UNPROCESSABLE_DOCUMENTS", 422, {
       requestId: "test",
       extra: {
-        failures: [{ filename: "gmi-brochure.pdf", reason: "This document is too large." }],
+        failures: [{ filename: "sample-brochure.pdf", reason: "This document is too large." }],
       },
     });
     expect(res.status).toBe(422);
@@ -101,7 +101,7 @@ describe("errorResponse backward compatibility", () => {
     };
     expect(body.error.code).toBe("UNPROCESSABLE_DOCUMENTS");
     expect(body.failures).toEqual([
-      { filename: "gmi-brochure.pdf", reason: "This document is too large." },
+      { filename: "sample-brochure.pdf", reason: "This document is too large." },
     ]);
   });
 

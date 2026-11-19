@@ -7,7 +7,10 @@
 // never as both lost and new.
 import { readFileSync } from "node:fs";
 import type { InventoryClaim } from "./claim-inventory";
-import { CLAIM_LABELS } from "./claim-labels";
+import { realFixture } from "./real-fixtures";
+import type { ClaimLabelsModule } from "./fixture-types";
+
+const { CLAIM_LABELS } = realFixture<ClaimLabelsModule>("claim-labels");
 
 const [beforePath, afterPath] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 if (!beforePath || !afterPath) { console.error("usage: claim-diff.ts <before.json> <after.json> [--list]"); process.exit(1); }

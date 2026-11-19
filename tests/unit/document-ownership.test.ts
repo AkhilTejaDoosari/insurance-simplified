@@ -90,7 +90,7 @@ describe("attestation title-context hardening (phantom identity rejection)", () 
   });
 
   it("rejects a program title declared mid-document", () => {
-    const docs = [doc("d1", ["Introduction text", "Patriot Exchange ProgramSM\nCertificate of Insurance"])];
+    const docs = [doc("d1", ["Introduction text", "Zenith Exchange ProgramSM\nCertificate of Insurance"])];
     expect(attestPlans(docs)).toEqual([]);
   });
 
@@ -139,7 +139,7 @@ describe("ownership provision applicability (lexical abstention guards)", () => 
   });
 
   it("abstains on marketing summaries and shared provisions", () => {
-    expect(ownershipProvisionApplicable("abroad. StudentSecure offers a budget-friendly option designed to help meet these needs", ["abroad. StudentSecure offers a budget-friendly option designed to help meet these needs"])).toBe(false);
+    expect(ownershipProvisionApplicable("abroad. Zenith Student offers an affordable choice for students living and studying overseas", ["abroad. Zenith Student offers an affordable choice for students living and studying overseas"])).toBe(false);
     expect(ownershipProvisionApplicable("$900", ["Shared deductible: $900"])).toBe(false);
   });
 
@@ -148,9 +148,9 @@ describe("ownership provision applicability (lexical abstention guards)", () => 
   });
 
   it("abstains on long digitless narrative (marketing prose, definitions, boilerplate)", () => {
-    expect(ownershipProvisionApplicable("International medical insurance can help protect you if you get sick or hurt while traveling outside your home country.", [])).toBe(false);
-    expect(ownershipProvisionApplicable("and coinsurance. Unless otherwise stated, all benefits are per person, per period of coverage, and they are provided up to the amount shown.", [])).toBe(false);
-    expect(ownershipProvisionApplicable("You can find exclusions for this plan in the Travel Medical Basic and Travel Medical Choice plan document.", [])).toBe(false);
+    expect(ownershipProvisionApplicable("Travel medical cover can help if you become ill or injured during a trip away from home.", [])).toBe(false);
+    expect(ownershipProvisionApplicable("and copays. Unless stated otherwise, every benefit applies per insured person for each coverage period, up to the listed limit.", [])).toBe(false);
+    expect(ownershipProvisionApplicable("Exclusions for this plan are listed in the Zenith Basic and Zenith Choice plan documents.", [])).toBe(false);
   });
 
   it("keeps short digitless benefit labels (schedule structure, not narrative)", () => {
@@ -254,7 +254,7 @@ describe("row plan scope resolution (Stage E ownership)", () => {
       ["$900", "Example: a comparable plan's deductible is $900"],
       ["$500", "Competitor Gamma deductible is $500"],
       ["$900", "Shared deductible: $900"],
-      ["International medical insurance can help protect you if you get sick or hurt while traveling outside your home country.", "International medical insurance can help protect you if you get sick or hurt while traveling outside your home country."],
+      ["Travel medical cover can help if you become ill or injured during a trip away from home.", "Travel medical cover can help if you become ill or injured during a trip away from home."],
     ];
     for (const [display, quote] of cases) {
       const values = [value("d1", display, 1, quote)];

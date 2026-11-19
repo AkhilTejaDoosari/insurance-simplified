@@ -12,8 +12,6 @@
 //   * the block has no illustrative/sample context, and the title is not
 //     the sponsor or a legal-entity name;
 //   * the quote is a unique verifiable span containing the name.
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hasSameScopeContradiction } from "@/app/lib/extraction/contradictions";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
@@ -24,12 +22,6 @@ import {
 import { validateTable } from "@/app/lib/extraction/types";
 import type { CellValue, ProvenPlan } from "@/app/lib/extraction/types";
 
-const fixture = (name: string): string =>
-  readFileSync(join(process.cwd(), "tests/fixtures/fep-pages", name), "utf8");
-
-const FEP_P1 = fixture("fep-blue-focus-p1.txt");
-const FEMA_P1 = fixture("fema-nfip-p1.txt");
-const HEALTH_P1 = fixture("health-guide-p1.txt");
 
 const doc = (documentId: string, pages: string[]) => ({
   documentId,
@@ -57,44 +49,7 @@ const ZENITH_CODES = [
 ];
 const names = (page: string) => attestPlans([doc("d", [page])]).map((p) => p.name);
 
-describe("FEP Blue Focus — real extracted page 1 (positive)", () => {
-  it("attests exactly one plan with the exact source-attested name and quote", () => {
-    const plans = attestPlans([doc("fep", [FEP_P1])]);
-    expect(plans).toHaveLength(1);
-    expect(plans[0].name).toBe("FEP® Blue Focus");
-    expect(plans[0].sources).toEqual([{ documentId: "fep", page: 1, quote: "FEP® Blue Focus" }]);
-  });
-
-  it("never promotes the carrier line, an enrollment category, or a code line", () => {
-    const found = attestPlans([doc("fep", [FEP_P1])]).map((p) => p.name);
-    expect(found).toEqual(["FEP® Blue Focus"]);
-    expect(found.join("|")).not.toMatch(/Service Benefit Plan|Self Only|Self Plus One|Self and Family|Blue Cross/);
-  });
-
-  it("is deterministic and keeps the plan id stable across runs", () => {
-    expect(attestPlans([doc("fep", [FEP_P1])])[0].planId).toBe(attestPlans([doc("fep", [FEP_P1])])[0].planId);
-  });
-
-  it("produces a source that passes citation verification on page 1 and nowhere else", () => {
-    const pages = [FEP_P1, "Section 1. Facts about this Plan\nFEP Blue Focus is a fee-for-service plan."];
-    const [plan] = attestPlans([doc("fep", pages)]);
-    const docs = [{ documentId: "fep", pageCount: pages.length, pages }];
-    expect(verifyEvidenceCitation(docs, plan.sources[0])).toEqual({ ok: true, quote: "FEP® Blue Focus" });
-    expect(verifyEvidenceCitation(docs, { ...plan.sources[0], page: 2 })).toEqual({ ok: false });
-    expect(verifyEvidenceCitation(docs, { ...plan.sources[0], quote: "FEP® Blue Focus Plus" })).toEqual({ ok: false });
-  });
-});
-
 describe("negative documents", () => {
-  it("attests nothing for the FEMA NFIP program brochure", () => {
-    expect(attestPlans([doc("fema", [FEMA_P1])])).toEqual([]);
-  });
-  it("attests nothing for the Medicare/Medicaid patient education guide", () => {
-    expect(attestPlans([doc("health", [HEALTH_P1])])).toEqual([]);
-  });
-  it("recognizes only page 1 (a later-page declaration attests nothing)", () => {
-    expect(attestPlans([doc("fep", ["Cover page", FEP_P1])])).toEqual([]);
-  });
   it("does not attest from a declaration without a title line, or a title without a declaration", () => {
     expect(names([FEHB, ...ZENITH_CODES].join("\n"))).toEqual([]);
     expect(names(["Zenith Care", "www.zenith.example", FEHB].join("\n"))).toEqual([]);
@@ -150,7 +105,7 @@ describe("F1 — every enrollment block on page 1 is considered", () => {
     expect(names(fehbPage("Alpha", [HEADER, "131 Alpha+ - Self Only"]))).toEqual([]);
   });
 
-  it("still equates mark/space differences of ONE product (FEP real shape)", () => {
+  it("still equates mark/space differences of ONE product (real brochure shape)", () => {
     expect(names(fehbPage("Zenith® Care", [HEADER, "131 ZenithCare - Self Only"]))).toEqual(["Zenith® Care"]);
   });
 });
@@ -233,40 +188,22 @@ describe("F3 — title counting ignores the name inside enrollment-code lines", 
   });
 });
 
-describe("existing recognizers keep priority (regression)", () => {
-  it("still attests the three known title shapes, unchanged", () => {
-    const plans = attestPlans([
-      doc("wt", ["Get StudentSecure insurance from WorldTrips, a member of its insurer group."]),
-      doc("sc", ["Seven Corners Travel Medical Including the USA\nSeven Corners Assist provides support."]),
-      doc("img", ["Patriot Exchange ProgramSM\nCertificate of Insurance\nPolicy terms follow."]),
-    ]);
-    expect(plans.map((p) => p.name)).toEqual(["StudentSecure", "Travel Medical Including the USA", "Patriot Exchange ProgramSM"]);
-  });
-  it("does not run the fallback for a document an existing recognizer already attested", () => {
-    expect(names(`Policy name: Alpha\n${FEP_P1}`)).toEqual(["Alpha"]);
-  });
-  it("applies the fallback per document alongside an already-attested document", () => {
-    const plans = attestPlans([doc("a", ["Policy name: Alpha"]), doc("fep", [FEP_P1])]);
-    expect(plans.map((p) => p.name).sort()).toEqual(["Alpha", "FEP® Blue Focus"]);
-  });
-});
-
 describe("F4 — enrollment scope must be preserved, completely, per value", () => {
-  const fepDoc = doc("fep", [FEP_P1]);
-  const [plan] = attestPlans([fepDoc]) as [ProvenPlan];
+  const fehbDoc = doc("fehb", [fehbPage("Zenith Care", ZENITH_CODES)]);
+  const [plan] = attestPlans([fehbDoc]) as [ProvenPlan];
 
   const cell = (display: string, quote: string, conditions?: string): CellValue => ({
-    documentId: "fep",
+    documentId: "fehb",
     display,
     qualifiers: conditions ? { conditions } : {},
-    evidence: [{ documentId: "fep", page: 17, quote }],
+    evidence: [{ documentId: "fehb", page: 17, quote }],
   });
-  const resolve = (values: CellValue[]) => resolveRowPlanIds("annual-deductible", values, [plan], [fepDoc]);
+  const resolve = (values: CellValue[]) => resolveRowPlanIds("annual-deductible", values, [plan], [fehbDoc]);
   const validates = (values: CellValue[]) =>
     validateTable({
       schemaVersion: "v1",
       factListVersion: "v1",
-      documents: [{ documentId: "fep", filename: "fep.pdf", pageCount: 140 }],
+      documents: [{ documentId: "fehb", filename: "fehb.pdf", pageCount: 140 }],
       plans: [plan],
       rows: [{ factName: "annual-deductible", verdict: "SUPPORTED", values }],
     });
@@ -353,7 +290,7 @@ describe("F4 — enrollment scope must be preserved, completely, per value", () 
     const neutral = cell("$600", "Tier 3 specialty drugs: up to a maximum of $600 for a 30-day supply.");
     // No enrollment gate fires; the line value is still not attributed by
     // inference (policy 2026-11-14).
-    expect(resolveRowPlanIds("prescriptions", [{ ...neutral, evidence: [{ ...neutral.evidence[0], quote: "Tier 3 specialty prescription drugs: up to a maximum of $600 for a 30-day supply." }] }], [plan], [fepDoc])).toEqual([undefined]);
+    expect(resolveRowPlanIds("prescriptions", [{ ...neutral, evidence: [{ ...neutral.evidence[0], quote: "Tier 3 specialty prescription drugs: up to a maximum of $600 for a 30-day supply." }] }], [plan], [fehbDoc])).toEqual([undefined]);
   });
 });
 
@@ -390,9 +327,6 @@ describe("Invariant A — complete enrollment declaration parsing", () => {
     expect(names(marks)).toEqual(["Zenith Care"]); // a registered mark is not a different product
   });
 
-  it("keeps the real FEP page-1 text recognized", () => {
-    expect(attestPlans([doc("fep", [FEP_P1])]).map((p) => p.name)).toEqual(["FEP® Blue Focus"]);
-  });
 });
 
 describe("Invariant B — an actual plan identity, not an educational example", () => {
@@ -456,22 +390,22 @@ describe("Invariant B — an actual plan identity, not an educational example", 
 });
 
 describe("Invariant C — enrollment scope gates every attribution path (explicit planId)", () => {
-  const fepDoc = doc("fep", [FEP_P1]);
-  const [plan] = attestPlans([fepDoc]) as [ProvenPlan];
+  const fehbDoc = doc("fehb", [fehbPage("Zenith Care", ZENITH_CODES)]);
+  const [plan] = attestPlans([fehbDoc]) as [ProvenPlan];
   const SOURCE = "For Self Plus One, and Self and Family contracts, the deductible is now $2,000";
   const labelled = `Plan name: ${plan.name}; annual-deductible: $2,000`;
 
   const claimed = (conditions?: string, planId: string = plan.planId): CellValue => ({
-    documentId: "fep",
+    documentId: "fehb",
     planId,
     display: "$2,000",
     qualifiers: conditions ? { conditions } : {},
     evidence: [
-      { documentId: "fep", page: 2, quote: labelled },
-      { documentId: "fep", page: 2, quote: SOURCE },
+      { documentId: "fehb", page: 2, quote: labelled },
+      { documentId: "fehb", page: 2, quote: SOURCE },
     ],
   });
-  const resolve = (v: CellValue) => resolveRowPlanIds("annual-deductible", [v], [plan], [fepDoc]);
+  const resolve = (v: CellValue) => resolveRowPlanIds("annual-deductible", [v], [plan], [fehbDoc]);
 
   it("abstains for a labelled explicit-planId value with MISSING category conditions", () => {
     expect(resolve(claimed())).toEqual([undefined]);
@@ -495,8 +429,8 @@ describe("Invariant C — enrollment scope gates every attribution path (explici
   it("does not infer a category from a neighbouring value", () => {
     const scoped = claimed("Self Plus One, and Self and Family");
     const bare = claimed();
-    expect(resolveRowPlanIds("annual-deductible", [scoped, bare], [plan], [fepDoc])).toEqual([plan.planId, undefined]);
-    expect(resolveRowPlanIds("annual-deductible", [bare, scoped], [plan], [fepDoc])).toEqual([undefined, plan.planId]);
+    expect(resolveRowPlanIds("annual-deductible", [scoped, bare], [plan], [fehbDoc])).toEqual([plan.planId, undefined]);
+    expect(resolveRowPlanIds("annual-deductible", [bare, scoped], [plan], [fehbDoc])).toEqual([undefined, plan.planId]);
   });
 });
 

@@ -8,7 +8,10 @@ import { extractFallback } from "@/app/lib/extraction/extract";
 import { validateTable, type RegisteredComparisonTable } from "@/app/lib/extraction/types";
 import { verifyComparisonTable } from "@/app/lib/extraction/verify-table";
 import { indexFacts } from "@/app/lib/presentation/adaptive";
-import { CORPUS } from "./ground-truth-real";
+import { realFixture } from "./real-fixtures";
+import type { GroundTruthRealModule } from "./fixture-types";
+
+const { CORPUS } = realFixture<GroundTruthRealModule>("ground-truth-real");
 (async () => {
   const realDir = process.env.REAL_PDFS_DIR ?? "";
   const tally: Record<string, number> = {};

@@ -25,14 +25,14 @@ as SKIPPED, never as a pass. Test assertions are never weakened to get green.
 
 | Layer | Location | Command | Needs |
 | --- | --- | --- | --- |
-| Unit | `tests/unit/` | `npm test` (Vitest, all layers below except e2e) | — |
+| Unit | `tests/unit/` | `npm test` (Vitest, all layers below except e2e) | Real-document suites skip without `REAL_FIXTURES_DIR` |
 | Contract | `tests/contract/` (comparison schema, chat API, verdict enum) | `npm test` | — |
 | Integration | `tests/integration/` | `npm test` | Some suites skip without Supabase credentials or `REAL_PDFS_DIR` |
 | E2E | `tests/e2e/` (Playwright) | `npm run test:e2e` | Browsers installed |
 | Types / build | — | `npx tsc --noEmit`, `npm run build` | — |
 | Retrieval eval | `evals/` (`golden-*`, frozen `v2-*` 36/12/12, `realbench`) | `npm run eval` | Embedding endpoint for semantic legs |
-| Real-PDF extraction eval | `scripts/p2-experiment/` | `REAL_PDFS_DIR=<local corpus> npm run eval:extraction` | Local licensed PDFs (never committed) |
-| Live acceptance | `scripts/acceptance-chat-live.ts`, `scripts/acceptance-pdf-export.ts` | `npx tsx <script>` | Paid LLM — owner approval each run |
+| Real-PDF extraction eval | `scripts/p2-experiment/` | `REAL_PDFS_DIR=<local corpus> REAL_FIXTURES_DIR=<labels> npm run eval:extraction` | Local licensed PDFs and labels (never committed) |
+| Live acceptance | `scripts/acceptance-chat-live.ts`, `scripts/acceptance-pdf-export.ts` | `REAL_FIXTURES_DIR=<labels> npx tsx <script>` | Paid LLM — owner approval each run |
 | Container | `Dockerfile` | `docker build .` | Docker |
 
 **Default gate for any change:** focused tests → `npm test` →
@@ -46,8 +46,11 @@ E2E last recorded 56 passing (2026-11-14).
 **Fixtures.** `tests/fixtures/plan-a.pdf` and `plan-b.pdf` are synthetic and
 generated (`npm run gen-fixtures`; truth table in `tests/fixtures/README.md`).
 Real insurance PDFs are licensed material and live only outside the repository
-(`SBCs/`, `nonstandard/`, `data/` are git-ignored; the preserved corpus is a
-local directory passed via `REAL_PDFS_DIR`). Never commit PDFs, page text or
+(the local corpus folders and `data/` are git-ignored; the preserved corpus is
+a local directory passed via `REAL_PDFS_DIR`). Real-document test data —
+quotes, adjudicated labels, real file names — lives in the git-ignored
+`real-fixtures/` folder passed via `REAL_FIXTURES_DIR`; suites that need it
+report SKIPPED without it. Never commit PDFs, page text or
 document-derived JSON from real documents.
 
 **Real-PDF extraction evaluation contract.** `claim-inventory.ts` records the

@@ -82,7 +82,7 @@ const SECTION_KEYWORDS: { word: string; kind: SectionKind }[] = [
  *  followed by at most a short tail (title/heading). Trailing prose after a
  *  lettered keyword ("Q. EXCLUSIONS: Except as expressly...") is accepted;
  *  after an unlettered keyword only a short tail ("Benefits and Limits of
- *  StudentSecure®") is, so a prose sentence beginning "Eligibility for and
+ *  ScholarShield®") is, so a prose sentence beginning "Eligibility for and
  *  payment of..." is never a header. */
 function classifyHeaderLine(line: string): SectionState | null {
   const t = line.trim();
@@ -317,7 +317,7 @@ function createFlowParser(tiers: () => string[] | null, docId: string, sectionNa
       else return [];
     }
 
-    // "Per Illness or Injury limit Refer to the Declaration of Insurance" —
+    // A "<benefit> limit — refer to the declaration page" line —
     // a labelled value that lives in another document (the Declaration).
     // Checked before isLabelish: the line carries no value tokens, so it
     // would otherwise be buffered as a label.

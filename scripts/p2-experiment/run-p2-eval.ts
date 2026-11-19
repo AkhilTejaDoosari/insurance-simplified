@@ -28,7 +28,10 @@ import {
 } from "@/app/lib/extraction/plan-identity";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
 import { verifyComparisonTable } from "@/app/lib/extraction/verify-table";
-import { DOCS, GROUND_TRUTH, type DocId, type GroundTruthItem } from "./ground-truth";
+import { realFixture } from "./real-fixtures";
+import type { DocId, GroundTruthItem, GroundTruthModule } from "./fixture-types";
+
+const { DOCS, GROUND_TRUTH } = realFixture<GroundTruthModule>("ground-truth");
 import { discoverCandidates, type CandidateFact } from "./discovery";
 
 type SourceDoc = { documentId: string; filename: string; pageCount: number; pages: string[]; tables?: LayoutTable[] };

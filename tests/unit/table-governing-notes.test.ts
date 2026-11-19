@@ -1,136 +1,13 @@
 // Governing table notes: a table claim carries every footnote / preamble that
 // governs it (verbatim, cited) or is not made.
 //
-// Real-PDF cases use Seven Corners p2–p3 (licensed, git-ignored; SKIPPED when
-// absent, never PASS). Their gold provisions below were written by hand from
-// the source PDF text, not from the parser's output.
-import { existsSync, readFileSync } from "node:fs";
-import { basename } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
-import { extractPages } from "@/app/lib/pdf/extract-pages";
-import { extractFallback } from "@/app/lib/extraction/extract";
-import { validateTable, type CellValue, type ComparisonTable } from "@/app/lib/extraction/types";
-import { verifyComparisonTable } from "@/app/lib/extraction/verify-table";
-import { tableClaims, verifyTableAnchor } from "@/app/lib/extraction/table-facts";
+// Real-PDF cases live in table-governing-notes-real.test.ts (REAL_FIXTURES_DIR;
+// SKIPPED when absent, never PASS).
+import { describe, expect, it } from "vitest";
+import { tableClaims } from "@/app/lib/extraction/table-facts";
 import { governingNotes, markersAccounted, namedProvisions } from "@/app/lib/extraction/table-notes";
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import { tableDocument, type TablePageSpec } from "./helpers/table-doc";
-
-// ------------------------------------------------------------------ gold
-const ASSIST_NOTE =
-  "*Arrangement of the above benefits are not insurance and are handled by Seven Corners Assist. If you do not contact " +
-  "Seven Corners Assist, the benefit will be limited to the amount we would have paid if Seven Corners Assist was utilized. " +
-  "This requirement to use Seven Corners Assist does not apply to Return of Mortal Remains or Local Burial/Cremation.";
-const URC_NOTE =
-  "*URC means Usual, Reasonable, and Customary. It is the maximum amount we will pay for covered expenses based on several " +
-  "factors. See the definition in the plan document for more details.";
-const SCHEDULE_NOTE =
-  "SCHEDULE OF BENEFITS All benefits shown below are in United States dollar amounts. All medical and dental benefits are " +
-  "subject to deductible and/or copay and coinsurance. Unless otherwise stated, all benefits are per person, per period of " +
-  "coverage, and they are provided up to the amount shown. You have 180 days to receive treatment from the date of an injury " +
-  "or illness, and your initial treatment must occur within 30 days of the date of injury or illness.";
-const BASIC = "Travel Medical Basic Reliable Coverage";
-const CHOICE = "Travel Medical Choice Most popular";
-const SECTION_ROWS = [
-  ["Emergency Medical Evacuation & Repatriation", "$250,000 (separate from medical maximum)", "$500,000 (separate from medical maximum)"],
-  ["Emergency Medical Reunion", "$2,000", "$2,000"],
-  ["Return of Child(ren)", "$25,000", "$50,000"],
-  ["Return of Mortal Remains or Local Burial/Cremation", "$25,000", "$50,000"],
-  ["Natural Disaster Evacuation & Repatriation", "$25,000", "$25,000"],
-] as const;
-const UNMARKED_P3 = ["Trip Interruption", "Loss of Checked Baggage", "Teladoc Virtual Medical Care", "Personal Liability", "Adventure Activities"];
-
-const FILE = "nonstandard/04_seven_corners_travel_medical_usa.pdf";
-const available = existsSync(FILE);
-const squash = (s: string) => s.replace(/\s+/g, " ").trim();
-
-describe.skipIf(!available)("Seven Corners p3: EMERGENCY SERVICES AND ASSISTANCE* governs its section", () => {
-  let doc: Awaited<ReturnType<typeof extractPages>> & { documentId: string; filename: string };
-  let table: ComparisonTable;
-  beforeAll(async () => {
-    doc = { documentId: "doc-3", filename: basename(FILE), ...(await extractPages(new Uint8Array(readFileSync(FILE)), basename(FILE))) };
-    table = verifyComparisonTable(validateTable(extractFallback([doc], {})), [doc]);
-  }, 60_000);
-  const attributed = (fact: string) => table.rows.find((r) => r.factName === fact)?.values.filter((v) => v.planId) ?? [];
-  const all = () => table.rows.flatMap((r) => r.values.filter((v) => v.planId));
-  const byLabel = (label: string) => all().filter((v) => v.display.startsWith(`${label} (`));
-
-  it.each([
-    ["emergency-evacuation", BASIC, "Basic", "$250,000 (separate from medical maximum)"],
-    ["emergency-evacuation", CHOICE, "Choice", "$500,000 (separate from medical maximum)"],
-    ["repatriation", BASIC, "Basic", "$250,000 (separate from medical maximum)"],
-    ["repatriation", CHOICE, "Choice", "$500,000 (separate from medical maximum)"],
-  ])("Emergency Medical Evacuation & Repatriation — %s, %s: value, tier, contact-Assist restriction, schedule note, evidence", (fact, heading, tier, cell) => {
-    const v = attributed(fact).filter((x) => x.display.startsWith("Emergency Medical Evacuation & Repatriation") && x.qualifiers.planTier === tier);
-    expect(v).toHaveLength(1);
-    const [head, ...notes] = v[0].display.split("\n");
-    expect(head).toBe(`Emergency Medical Evacuation & Repatriation (${heading}): ${cell}`);
-    expect(notes.map(squash)).toEqual(["EMERGENCY SERVICES AND ASSISTANCE*", ASSIST_NOTE, SCHEDULE_NOTE]);
-    const cited = v[0].evidence.map((e) => squash(e.quote));
-    expect(cited).toContain(ASSIST_NOTE);
-    expect(cited).toContain(SCHEDULE_NOTE);
-    expect(v[0].evidence.every((e) => e.page === 3)).toBe(true);
-  });
-
-  it("every row of the section that yields a claim carries the restriction, in both tiers", () => {
-    // Emergency Medical Reunion and Return of Child(ren) map to no fact in
-    // the fact list: no claim is made for them at all.
-    expect(byLabel("Emergency Medical Reunion")).toEqual([]);
-    expect(byLabel("Return of Child(ren)")).toEqual([]);
-    for (const [label, basic, choice] of SECTION_ROWS.filter(([l]) => !/Reunion|Child/.test(l))) {
-      const v = byLabel(label);
-      expect(v.length, label).toBeGreaterThanOrEqual(2);
-      for (const x of v) expect(x.display.split("\n").map(squash), label).toContain(ASSIST_NOTE);
-      expect(v.map((x) => x.display.split("\n")[0])).toEqual(expect.arrayContaining([`${label} (${BASIC}): ${basic}`, `${label} (${CHOICE}): ${choice}`]));
-    }
-  });
-
-  it("Return of Mortal Remains / Local Burial is the named exception: marked exempt, note shown with its exemption", () => {
-    const t = doc.tables!.findIndex((x) => x.page === 3);
-    const r = doc.tables![t].rows.findIndex((row) => row.label.text === "Return of Mortal Remains or Local Burial/Cremation");
-    const evac = doc.tables![t].rows.findIndex((row) => row.label.text.startsWith("Emergency Medical Evacuation"));
-    const notesFor = (row: number) => governingNotes(doc.tables!, t, row, 0, doc.pages[2])!;
-    expect(notesFor(r).find((n) => n.marker === "*")?.exempt).toBe(true);
-    expect(notesFor(evac).find((n) => n.marker === "*")?.exempt).toBeUndefined();
-    // The exemption sentence is part of what the exempt row shows: the
-    // contact requirement is never presented as applying to it unqualified.
-    for (const v of byLabel("Return of Mortal Remains or Local Burial/Cremation")) {
-      expect(v.display).toMatch(/This requirement to use Seven Corners Assist does not apply to Return of Mortal Remains or Local Burial\/Cremation\./);
-    }
-  });
-
-  it("unmarked rows in later sections do not get the restriction", () => {
-    for (const label of UNMARKED_P3) for (const v of byLabel(label)) expect(v.display, label).not.toMatch(/Seven Corners Assist/);
-    // nor do p2 rows (a different page's "*" is a different footnote)
-    for (const v of all().filter((x) => x.evidence[0].page === 2)) expect(v.display).not.toMatch(/Seven Corners Assist/);
-  });
-
-  it("a cell marker (URC*) carries its own footnote; the unmarked cell beside it does not", () => {
-    const rx = attributed("hospitalization").filter((v) => v.display.startsWith("Hospital Room and Board"));
-    const basic = rx.find((v) => v.qualifiers.planTier === "Basic")!;
-    const choice = rx.find((v) => v.qualifiers.planTier === "Choice")!;
-    expect(basic.display.split("\n").map(squash)).toEqual([`Hospital Room and Board, Inpatient & Outpatient Medical Expenses, Prescription Drugs (${BASIC}): URC* to medical maximum`, "PROTECT YOUR HEALTH", URC_NOTE, SCHEDULE_NOTE]);
-    expect(choice.display.split("\n").map(squash)).toEqual([`Hospital Room and Board, Inpatient & Outpatient Medical Expenses, Prescription Drugs (${CHOICE}): URC to medical maximum`, "PROTECT YOUR HEALTH", SCHEDULE_NOTE]);
-  });
-
-  it("no attributed Seven Corners claim shows a marker without its footnote", () => {
-    for (const v of all()) {
-      const [head, ...notes] = v.display.split("\n");
-      for (const m of head.match(/\*+/g) ?? []) expect(notes.some((n) => n.startsWith(m) && !n.startsWith(m + "*")), head).toBe(true);
-    }
-  });
-
-  it("the '**' pre-existing footnote is interleaved with other text (incomplete): nothing it governs is attributed", () => {
-    expect(all().some((v) => /Pre-Existing Conditions\*\*/.test(v.display))).toBe(false);
-  });
-
-  it("a claim stripped of its note does not re-verify", () => {
-    const v = attributed("emergency-evacuation")[0];
-    const stripped: CellValue = { ...v, display: v.display.split("\n")[0], evidence: v.evidence.slice(0, 2) };
-    expect(verifyTableAnchor("emergency-evacuation", v, [doc])).toBe(true);
-    expect(verifyTableAnchor("emergency-evacuation", stripped, [doc])).toBe(false);
-  });
-});
 
 // ---------------------------------------------------------------- synthetic
 const NOTE = "*If you do not call the assistance line first, the benefit is limited to $500.";
@@ -217,12 +94,12 @@ describe("governing notes (synthetic layout through the production reader)", () 
 
 describe("named provisions: exact benefit-name cross-references only", () => {
   const pages = [
-    "Pre-certification\n• Interfacility Ambulance Transfer: No coverage if Pre-certification\nrequirements are not met.\n• All other Treatments & supplies: 50% reduction.",
+    "Pre-certification\n• Interfacility Ambulance Transfer: Not covered unless Pre-certification\nis obtained in advance.\n• All other Treatments & supplies: 50% reduction.",
     "Ambulance: covered in full.\n• Ambulance Transfer: see page 9.",
   ];
   it("matches the exact name, case/spacing-insensitive, following wrapped lines to the sentence end", () => {
     expect(namedProvisions(pages, "interfacility  ambulance transfer")).toEqual([
-      { page: 1, quote: "• Interfacility Ambulance Transfer: No coverage if Pre-certification\nrequirements are not met." },
+      { page: 1, quote: "• Interfacility Ambulance Transfer: Not covered unless Pre-certification\nis obtained in advance." },
     ]);
   });
   it.each(["Ambulance", "Interfacility Ambulance", "Transfer", "Treatments & supplies"])("does not match a partial or different name: %s", (head) => {

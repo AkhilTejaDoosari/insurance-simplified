@@ -1,5 +1,7 @@
 // Offline replay of the exact saved compact response. Makes no provider calls.
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
 import { attestPlans } from "@/app/lib/extraction/plan-identity";
 import {
@@ -7,9 +9,15 @@ import {
   recognizeExperimentalPlanTitle,
 } from "./compact-adapter";
 
-const savedPath =
-  "nonstandard/p2-compact-spike/live-proof-2026-10-28/provider-response.raw.json";
-const sourcePath = "nonstandard/fep-sonnet-replay-run/source-pages.json";
+// The saved response and the source pages are real-document data, kept in
+// REAL_FIXTURES_DIR/p2-proof/ (never committed). SKIP without them.
+const proofDir = process.env.REAL_FIXTURES_DIR ? join(resolve(process.env.REAL_FIXTURES_DIR), "p2-proof") : "";
+const savedPath = join(proofDir, "provider-response.raw.json");
+const sourcePath = join(proofDir, "source-pages.json");
+if (!proofDir || !existsSync(savedPath) || !existsSync(sourcePath)) {
+  console.log("SKIP: p2 local adapter safety proof needs REAL_FIXTURES_DIR/p2-proof");
+  process.exit(0);
+}
 async function main() {
   const envelope = JSON.parse(await readFile(savedPath, "utf8"));
   if (envelope.choices?.[0]?.finish_reason !== "stop")

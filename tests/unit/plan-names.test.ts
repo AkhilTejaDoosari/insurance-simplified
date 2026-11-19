@@ -14,12 +14,12 @@ describe("official plan titles (Phase B)", () => {
     const table = {
       schemaVersion: "v1",
       factListVersion: "v1",
-      documents: [{ documentId: "doc-1", filename: "patriot-america-plus.pdf", pageCount: 2 }],
-      plans: [{ planId: "plan-p", name: "Patriot America Plus", sources: [source("doc-1", "Patriot America Plus")] }],
+      documents: [{ documentId: "doc-1", filename: "zenith-america-plus.pdf", pageCount: 2 }],
+      plans: [{ planId: "plan-p", name: "Zenith America Plus", sources: [source("doc-1", "Zenith America Plus")] }],
       rows: [],
     } satisfies Table;
     expect(documentPlanTitle(table, "doc-1")).toEqual({
-      name: "Patriot America Plus",
+      name: "Zenith America Plus",
       source: "verified",
     });
   });

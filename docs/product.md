@@ -173,7 +173,7 @@ Each criterion is observable behaviour. Status lives in `roadmap.md`.
   how do the plans differ; what must I confirm — without material false
   assumptions. Recorded as human evidence, never as an automated pass.
 
-**Real-document acceptance case (IMG Patriot America Plus):** age 25, F-1 STEM
+**Real-document acceptance case (Doc A, a student travel-medical plan; identity in `REAL_FIXTURES_DIR`):** age 25, F-1 STEM
 OPT, US residence, Cleveland OH, 2026-10-23 → 2026-10-31. Expected: residence
 conflict prominent; no final eligibility claim; deductibles shown as
 selectable; age and network qualifiers kept; missing premium unknown; specific

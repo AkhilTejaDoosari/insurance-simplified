@@ -358,24 +358,33 @@ function runSelfTest() {
 }
 
 // ------------------------------------------------- real-doc benchmark
-// R0 real-document benchmark (todo 52): SECOND optional benchmark over the
-// three local PDFs (patriot-exchange-brochure.pdf,
-// patriot-travel-brochure-2026-dynamic.pdf, OPTima_26_27_A.pdf). Scores ONLY
-// when REAL_PDFS_DIR contains all three files, else prints SKIP (never fake
-// zeros, never fails). PDFs are never committed; only questions/metadata in
-// evals/realbench/ are tracked. Retrieval mirror (tokens/retrieveCorpus) is
+// R0 real-document benchmark (todo 52): SECOND optional benchmark over three
+// local PDFs. Their file names, questions and verbatim anchors are licensed
+// source text and live outside git in REAL_FIXTURES_DIR/realbench/
+// (files.json, questions.json, expected.json). Scores ONLY when that folder
+// exists and REAL_PDFS_DIR contains every listed file, else prints SKIP
+// (never fake zeros, never fails). Nothing of the corpus is committed. Retrieval mirror (tokens/retrieveCorpus) is
 // shared with the fixture path above; matching is normalized containment of
 // the verified anchor inside a retrieved line (anchors are verbatim
 // single-line substrings of extractPages() output).
 
-const REAL_FILES = [
-  "patriot-exchange-brochure.pdf",
-  "patriot-travel-brochure-2026-dynamic.pdf",
-  "OPTima_26_27_A.pdf",
-];
+/** Local real-document fixtures folder for the benchmark, or "" when absent. */
+function realbenchDir() {
+  const root = process.env.REAL_FIXTURES_DIR;
+  if (!root) return "";
+  const dir = join(root, "realbench");
+  try {
+    readFileSync(join(dir, "files.json"));
+    return dir;
+  } catch {
+    return "";
+  }
+}
+
+let REAL_FILES = [];
 
 function loadRealbench(name) {
-  const file = join(DIR, "realbench", name);
+  const file = join(realbenchDir(), name);
   let raw;
   try {
     raw = readFileSync(file, "utf8");
@@ -461,6 +470,11 @@ function printRealbench(r) {
 }
 
 async function runRealBench() {
+  if (!realbenchDir()) {
+    console.log("realbench: SKIP (REAL_FIXTURES_DIR/realbench unset; real-document questions are not in git)");
+    return;
+  }
+  REAL_FILES = loadRealbench("files.json");
   const dir = process.env.REAL_PDFS_DIR;
   if (!dir) {
     console.log("realbench: SKIP (REAL_PDFS_DIR unset; supply a dir containing all three PDFs to score)");

@@ -5,8 +5,9 @@
 // parallel framework: it reuses runBaselineFunnel (the production /api/extract
 // deterministic funnel, imported read-only), valuesOverlappingSpan and
 // adjudicateBaseline over the existing brochure ground truth
-// (./ground-truth.ts), and adds value-level gold targets for FEP Blue Focus,
-// FEMA NFIP and the health-education guide (./ground-truth-real.ts).
+// (REAL_FIXTURES_DIR/p2-experiment/ground-truth.ts), and adds value-level gold
+// targets for a federal-employee plan brochure, a flood-program brochure and a
+// health-education guide (REAL_FIXTURES_DIR/p2-experiment/ground-truth-real.ts).
 //
 // Offline and read-only: no LLM, no network, no DB, no storage, no env-based
 // provider path. Missing PDFs are reported as SKIPPED, never as PASS.
@@ -26,7 +27,6 @@ import { extractFallback } from "@/app/lib/extraction/extract";
 import { validateTable, type CellValue } from "@/app/lib/extraction/types";
 import { attestPlans } from "@/app/lib/extraction/plan-identity";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
-import { GROUND_TRUTH } from "./ground-truth";
 import {
   adjudicateBaseline,
   CONCEPT_TO_INVENTORY_ROWS,
@@ -35,15 +35,19 @@ import {
   spansOverlap,
   valuesOverlappingSpan,
 } from "./run-p2-eval";
-import { CLAIM_LABELS } from "./claim-labels";
+import { realFixture } from "./real-fixtures";
 import {
-  CORPUS,
   NOISE_HEURISTICS,
-  NOISE_TARGETS,
-  VALUE_TARGETS,
+  type ClaimLabelsModule,
   type CorpusDoc,
+  type GroundTruthModule,
+  type GroundTruthRealModule,
   type ValueTarget,
-} from "./ground-truth-real";
+} from "./fixture-types";
+
+const { GROUND_TRUTH } = realFixture<GroundTruthModule>("ground-truth");
+const { CLAIM_LABELS } = realFixture<ClaimLabelsModule>("claim-labels");
+const { CORPUS, NOISE_TARGETS, VALUE_TARGETS } = realFixture<GroundTruthRealModule>("ground-truth-real");
 
 type SourceDoc = { documentId: string; filename: string; pageCount: number; pages: string[]; tables?: LayoutTable[] };
 type FinalValue = CellValue & { planId?: string };

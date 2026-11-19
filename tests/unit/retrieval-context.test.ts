@@ -16,11 +16,11 @@ const normForClaim = (text: string): string =>
 
 const WORLD: RagDocument = {
   documentId: "wt",
-  filename: "03_worldtrips_studentsecure.pdf",
+  filename: "03_acmetravel_scholarshield.pdf",
   pageCount: 1,
   pages: [
     [
-      "Get StudentSecure insurance from WorldTrips, a member of the Tokio Marine HCC group of companies.",
+      "Get ScholarShield insurance from AcmeTravel, a member of the Harbor Mutual Holdings group of companies.",
       "About Us",
       "Service and Support",
       "24/7 Assistance Line",
@@ -36,11 +36,11 @@ const WORLD: RagDocument = {
 
 const SEVEN: RagDocument = {
   documentId: "sc",
-  filename: "04_seven_corners_travel_medical_usa.pdf",
+  filename: "04_north_point_travel_medical_usa.pdf",
   pageCount: 1,
   pages: [
     [
-      "Seven Corners Travel Medical Including the USA",
+      "North Point Travel Medical Including the USA",
       "About the insurer",
       "Service and Support",
       "24/7 Assistance Line",
@@ -56,11 +56,11 @@ const SEVEN: RagDocument = {
 
 const TIERS: RagDocument = {
   documentId: "wt-tiers",
-  filename: "03_worldtrips_studentsecure.pdf",
+  filename: "03_acmetravel_scholarshield.pdf",
   pageCount: 1,
   pages: [
     [
-      "StudentSecure Plan Comparison for international students.",
+      "ScholarShield Plan Comparison for international students.",
       "BENEFIT          ELITE       SELECT      BUDGET      SMART",
       "Overall Maximum Limit $5,000,000 $1,000,000",
       "Medical Expense Benefit",
@@ -85,11 +85,11 @@ describe("retrieval context (P2 false-refusal regression)", () => {
   it("supplies a name-bearing passage for every document the question names", () => {
     const hits = retrieve(
       [WORLD, SEVEN],
-      "What deductible does WorldTrips StudentSecure offer compared to Seven Corners?"
+      "What deductible does AcmeTravel ScholarShield offer compared to North Point?"
     );
 
-    expect(hits.some((h) => h.documentId === "wt" && h.quote.includes("WorldTrips"))).toBe(true);
-    expect(hits.some((h) => h.documentId === "sc" && h.quote.includes("Seven Corners"))).toBe(true);
+    expect(hits.some((h) => h.documentId === "wt" && h.quote.includes("AcmeTravel"))).toBe(true);
+    expect(hits.some((h) => h.documentId === "sc" && h.quote.includes("North Point"))).toBe(true);
     expect(hits.filter((h) => h.quote.includes("Deductible"))).toHaveLength(2);
     for (const h of hits) {
       const page = (h.documentId === "wt" ? WORLD : SEVEN).pages[h.page - 1];
@@ -102,12 +102,12 @@ describe("retrieval context (P2 false-refusal regression)", () => {
 
     expect(hits).toHaveLength(2);
     expect(
-      hits.every((h) => !h.quote.includes("WorldTrips") && !h.quote.includes("Seven Corners"))
+      hits.every((h) => !h.quote.includes("AcmeTravel") && !h.quote.includes("North Point"))
     ).toBe(true);
   });
 
   it("keeps zero-overlap questions refusing (identity never fabricates evidence)", () => {
-    const question = "Does Seven Corners cover Martian telemedicine?";
+    const question = "Does North Point cover Martian telemedicine?";
 
     expect(retrieve([WORLD, SEVEN], question)).toHaveLength(0);
     expect(answerQuestion([WORLD, SEVEN], question)).toEqual({

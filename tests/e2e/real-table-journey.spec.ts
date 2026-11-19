@@ -1,13 +1,23 @@
 // Real-document journey: upload an actual tiered brochure → the results show
 // column-scoped table claims for the verified plan → each value opens the
 // original PDF at its cited page with a unique evidence highlight.
-// The brochure is licensed and git-ignored: skipped (never passed) if absent.
-import { existsSync } from "node:fs";
+// The brochure and its expected labels are licensed and live outside git:
+// REAL_FIXTURES_DIR/e2e/real-table-journey.json names the PDF (path relative
+// to the repo root) and what to expect. Skipped (never passed) if absent.
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
-const PDF = "nonstandard/03_worldtrips_studentsecure.pdf";
+interface JourneyFixture { pdf: string; factHeading: string; rowLabel: string; citedPage: number; pageCount: number }
+const fixtureFile = process.env.REAL_FIXTURES_DIR
+  ? join(resolve(process.env.REAL_FIXTURES_DIR), "e2e", "real-table-journey.json")
+  : "";
+const J: JourneyFixture | undefined = fixtureFile && existsSync(fixtureFile)
+  ? JSON.parse(readFileSync(fixtureFile, "utf8"))
+  : undefined;
+const PDF = J?.pdf ?? "";
 
-test.skip(!existsSync(PDF), "licensed brochure not present in this checkout");
+test.skip(!J || !existsSync(PDF), "real-document fixtures not present (set REAL_FIXTURES_DIR)");
 
 test("tiered brochure: table claims are plan-verified and open their evidence", async ({ page }) => {
   test.setTimeout(120_000);
@@ -21,21 +31,22 @@ test("tiered brochure: table claims are plan-verified and open their evidence", 
   await expect(brief.locator("article").first()).toBeVisible({ timeout: 30_000 });
   await expect(brief.locator("article").first()).not.toContainText("Unverified applicability");
   await page.getByRole("button", { name: /Read all \d+ details/ }).click({ timeout: 30_000 });
-  const maternity = page
+  const j = J!;
+  const fact = page
     .locator(".adaptiveResults article")
-    .filter({ has: page.getByRole("heading", { name: "Maternity", exact: true }) })
+    .filter({ has: page.getByRole("heading", { name: j.factHeading, exact: true }) })
     .first();
-  await expect(maternity).toBeVisible({ timeout: 30_000 });
+  await expect(fact).toBeVisible({ timeout: 30_000 });
   // A table claim for the verified plan: column-scoped, verbatim, not flagged.
-  await expect(maternity).toContainText("Maternity Care for a Covered Pregnancy");
-  await expect(maternity).not.toContainText("Unverified applicability");
+  await expect(fact).toContainText(j.rowLabel);
+  await expect(fact).not.toContainText("Unverified applicability");
   // Distinct table rows of one tier are distinct provisions, not a conflict.
-  await expect(maternity).not.toContainText("Conflicting evidence");
+  await expect(fact).not.toContainText("Conflicting evidence");
 
-  const value = maternity.locator(".cell-value").first();
-  await expect(value).toHaveAttribute("href", /\/view\/sess-[^/]+\/doc-1\/[^?]+\?page=4&evidence=ev-[0-9a-f]{16}$/);
+  const value = fact.locator(".cell-value").first();
+  await expect(value).toHaveAttribute("href", new RegExp(`/view/sess-[^/]+/doc-1/[^?]+\\?page=${j.citedPage}&evidence=ev-[0-9a-f]{16}$`));
   const [viewer] = await Promise.all([page.waitForEvent("popup"), value.click()]);
-  await expect(viewer.getByText("Page 4 of 8")).toBeVisible({ timeout: 30_000 });
+  await expect(viewer.getByText(`Page ${j.citedPage} of ${j.pageCount}`)).toBeVisible({ timeout: 30_000 });
   await viewer.waitForFunction(
     () => document.querySelector('[data-testid="pdf-evidence-viewer"][data-evidence-state="unique"]') !== null,
     undefined,
