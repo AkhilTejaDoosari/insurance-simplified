@@ -4,8 +4,8 @@
 //
 // A table cell rarely states its whole provision. A marker on the cell, its
 // row label, its column heading or its section heading ("EMERGENCY SERVICES
-// AND ASSISTANCE*") points to a footnote that restricts it ("If you do not
-// contact Seven Corners Assist, the benefit will be limited …"). A claim
+// AND ASSISTANCE*") points to a footnote that restricts it (e.g. "if you do
+// not call the assistance line first, the benefit is limited …"). A claim
 // therefore either carries every note that governs it (verbatim, cited) or is
 // not made. Rules:
 //
@@ -125,9 +125,9 @@ export function governingNotes(
   const sectionRows = allRows.filter((r) => sameSection(table.rows[r].section, row.section));
   // A preamble that declares the whole table ("All benefits shown below")
   // governs every row; one that only states restrictions is the heading of
-  // the rows before the first in-body section (IMG: "Subject to Deductible
-  // unless otherwise noted"), superseded by a later section's own heading
-  // ("NOT Subject to Deductible unless otherwise noted").
+  // the rows before the first in-body section (e.g. a deductible-applies
+  // note), superseded by a later section's own heading (e.g. a
+  // deductible-does-not-apply note).
   const preamble = table.preamble;
   const tableWide = !!preamble && GOVERNS_TABLE.test(preamble.text);
   const prev = continued(table, tables);
@@ -174,8 +174,8 @@ const NAMED = /^[ \t]*[•·][ \t]*([^:\n]{3,80}?):[ \t]+\S/gm;
  * Bulleted provisions anywhere in the document of the form
  * "• <Benefit name>: <rule>" whose name equals the row's benefit name
  * (`head`, the label's concept part) exactly, ignoring case and spacing —
- * e.g. IMG p3 "• Interfacility Ambulance Transfer: No coverage if
- * Pre-certification requirements are not met." governs that p6 row. A name
+ * e.g. a p3 bullet "• Interfacility Ambulance Transfer: <restriction>" governs
+ * the p6 row labelled "Interfacility Ambulance Transfer". A name
  * match is the only link: no proximity, no partial names. The provision
  * runs to its first sentence end that is followed by a new bullet, a line
  * end or the page end (wrapped lines are followed).

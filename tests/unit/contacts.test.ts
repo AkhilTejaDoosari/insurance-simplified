@@ -140,10 +140,10 @@ describe("phone false positives from real documents", () => {
 
   it("keeps explicit dialing context with strict formatting", () => {
     const hits = extractContacts(
-      doc(["Contact IMG at +1.317.655.4500 or precertification@imglobal.com."]),
+      doc(["Contact Acme Global at +1.555.010.4500 or precertification@acme-global.test."]),
     );
     expect(hits.filter((h) => h.kind === "phone").map((h) => h.value)).toEqual([
-      "+1.317.655.4500",
+      "+1.555.010.4500",
     ]);
   });
 

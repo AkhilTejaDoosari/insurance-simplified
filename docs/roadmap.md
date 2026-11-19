@@ -139,7 +139,7 @@ deployment; no state-ownership or session-auth change.
 ### M11 — Release (limited pilot → general release)
 
 - **Objective:** a deployed, measured, honestly scoped health-insurance V1.
-- **Responsibilities:** direct signed upload (A-033); Cloudflare embeddings adapter (D-012) with dimension check; observability per `operations.md` §6; deletion and log-scan tests; Cloud Run deploy after the cost gate (owner approval); production smoke (A-040); held-out run against `quality.md` §6; comprehension test (UX-25); IMG acceptance case if the PDF is available.
+- **Responsibilities:** direct signed upload (A-033); Cloudflare embeddings adapter (D-012) with dimension check; observability per `operations.md` §6; deletion and log-scan tests; Cloud Run deploy after the cost gate (owner approval); production smoke (A-040); held-out run against `quality.md` §6; comprehension test (UX-25); Doc A acceptance case if the PDF is available.
 - **Depends on:** M5–M10.
 - **Acceptance:** limited-pilot gates met → pilot labelled as limited; general release only after the ≥60-document held-out gate.
 - **Completion evidence:** held-out evaluation report, smoke timings, deployed revision id.
@@ -160,5 +160,5 @@ by design; no plugin system is built before a second domain is approved.
 | C-2 | D-013 semantic-only retrieval | Keep until RET-1; exact per-session fix proceeds now | M5 |
 | C-4 | Budget for paid LLM evaluation, hosted OCR, annotation (D-020) | Owner approval required; spending rule in `operations.md` §4 | M6, M10, live acceptance scripts |
 | C-5 | Keep D-016 (no queue/worker) | Keep unless measured p95 exceeds the request budget | M11 |
-| ADJ-1 | IMG pre-certification note (83 pending claims) | Owner adjudication | M7 scoring |
+| ADJ-1 | Doc A pre-certification note (83 pending claims) | Owner adjudication | M7 scoring |
 | D-027…D-031 | Accept or amend the proposed decisions | Owner review | Nothing in M4 |

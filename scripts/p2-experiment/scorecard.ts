@@ -47,7 +47,7 @@ import {
 
 const { GROUND_TRUTH } = realFixture<GroundTruthModule>("ground-truth");
 const { CLAIM_LABELS } = realFixture<ClaimLabelsModule>("claim-labels");
-const { CORPUS, NOISE_TARGETS, VALUE_TARGETS } = realFixture<GroundTruthRealModule>("ground-truth-real");
+const { CORPUS, NOISE_TARGETS, VALUE_TARGETS, ROW_PRECISION_DOC } = realFixture<GroundTruthRealModule>("ground-truth-real");
 
 type SourceDoc = { documentId: string; filename: string; pageCount: number; pages: string[]; tables?: LayoutTable[] };
 type FinalValue = CellValue & { planId?: string };
@@ -297,20 +297,23 @@ async function main() {
   const valueChecked = display.filter((i) => i.valueCorrect !== null);
   const found = allTargets.filter((t) => t.conceptMatch);
   const planTargets = allTargets.filter((t) => VALUE_TARGETS.find((v) => v.id === t.id)!.attribution === "plan");
-  const fepDocs = perDoc.find((d) => d.key === "fep");
+  // The corpus key whose gold set is exhaustive for these rows is chosen by the
+  // local label file (ROW_PRECISION_DOC).
+  const exhaustiveKey = ROW_PRECISION_DOC;
+  const exhaustiveDocs = exhaustiveKey ? perDoc.find((d) => d.key === exhaustiveKey) : undefined;
 
-  // Row-scoped precision where the gold set is exhaustive: FEP annual-deductible
+  // Row-scoped precision where the gold set is exhaustive: annual-deductible
   // and out-of-pocket-maximum. Every source statement of those amounts is in
   // VALUE_TARGETS, so any emitted value in those rows without a gold figure is
   // a false positive for that concept.
   const rowPrecision: Record<string, unknown> = {};
-  if (fepDocs && loaded.has("fep")) {
-    const rf = await runBaselineFunnel([loaded.get("fep")!.doc]);
+  if (exhaustiveKey && exhaustiveDocs && loaded.has(exhaustiveKey)) {
+    const rf = await runBaselineFunnel([loaded.get(exhaustiveKey)!.doc]);
     for (const row of ["annual-deductible", "out-of-pocket-maximum"]) {
-      const goldFigures = VALUE_TARGETS.filter((t) => t.doc === "fep" && t.rows.includes(row)).flatMap((t) => t.figures);
+      const goldFigures = VALUE_TARGETS.filter((t) => t.doc === exhaustiveKey && t.rows.includes(row)).flatMap((t) => t.figures);
       const vals = rf.find((r) => r.factName === row)?.values ?? [];
       const tp = vals.filter((v) => goldFigures.some((f) => figureIn(v.display, f))).length;
-      rowPrecision[`fep:${row}`] = { ...ratio(tp, vals.length), goldFigures };
+      rowPrecision[`${exhaustiveKey}:${row}`] = { ...ratio(tp, vals.length), goldFigures };
     }
   }
 
@@ -333,7 +336,7 @@ async function main() {
         criticalValueTargets: ratio(found.filter((t) => t.importance === "critical").length, allTargets.filter((t) => t.importance === "critical").length),
       },
       factConceptPrecision: {
-        corpusWide: NOT_CALCULABLE("emitted values are not exhaustively labeled (e.g. FEP emits >1,500 values)"),
+        corpusWide: NOT_CALCULABLE("emitted values are not exhaustively labeled (e.g. one brochure emits >1,500 values)"),
         rowScopedExhaustive: rowPrecision,
         labeledWithholdSpansCorrectlyHandled: ratio(withhold.filter((i) => i.correct).length, withhold.length),
         noiseTargetsSuppressed: ratio(noiseResults.filter((n) => !n.emitted).length, noiseResults.length),

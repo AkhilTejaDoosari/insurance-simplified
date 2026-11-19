@@ -647,21 +647,9 @@ export async function answerViaLlm(
     const pages = [...new Set(passages.map((p) => p.page))].sort(
       (a, b) => a - b,
     );
-    const hay = passages.map((p) => p.quote.toLowerCase()).join("\n");
-    const probe = [
-      "elite",
-      "select",
-      "budget",
-      "smart",
-      "worldtrips",
-      "seven corners",
-      "deductible",
-      "5,000",
-      "opt",
-    ];
-    const present = probe.filter((t) => hay.includes(t));
+    // Counts and page numbers only: document text never reaches the log.
     console.warn(
-      `[chat-retrieval] leg=${leg}${legReason ? ` reason=${legReason}` : ""} passages=${passages.length} pages=${pages.join(",")} present=${present.join("|") || "none"}`,
+      `[chat-retrieval] leg=${leg}${legReason ? ` reason=${legReason}` : ""} passages=${passages.length} pages=${pages.join(",")}`,
     );
   }
   // Build prompt from top-K retrieved chunks with budget enforcement

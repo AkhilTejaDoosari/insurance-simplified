@@ -132,9 +132,10 @@ in the app until an application test fails.
 | Partly scanned PDFs may lose pages silently | Quality gate checks total characters only | M10 |
 | Fixed 48-fact vocabulary drives rows and absence | `extraction/fact-list.ts` | M8 |
 | Row verdicts shared across documents | An unstructured line in one PDF can mark another PDF's claims needs-verification (conservative) | M8 |
+| Insurer-specific plan-title rule | `extraction/plan-identity.ts` attests a plan from one named insurer's title line (`namedInsurerTitle`); no general rule covers "<carrier> <product>" titles, and generalizing it risks attesting carrier or competitor mentions. Its test lives in `REAL_FIXTURES_DIR` (`plan-identity-insurer-title`). | M8 |
 
-Open owner adjudications (from the 2026-11-14 recovery): IMG p3
-"All other Treatments & supplies: 50 % reduction … if Pre-certification
-requirements are not met" (83 IMG claims flagged `pending`); FEP Section 2
-statements kept although the section says it is "not an official statement of
-benefits"; document-level disclaimers are not yet attached to row claims.
+Open owner adjudications (from the 2026-11-14 recovery; documents named in
+`REAL_FIXTURES_DIR`): Doc A p3 general pre-certification penalty note (83
+Doc A claims flagged `pending`); Doc D "changes" section statements kept
+although that section disclaims being an official statement of benefits;
+document-level disclaimers are not yet attached to row claims.

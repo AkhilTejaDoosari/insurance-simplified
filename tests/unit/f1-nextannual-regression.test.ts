@@ -2,7 +2,7 @@
 // derived `period: "annual"` from the collapsed-line token "nextAnnual"
 // (source: "next" + line break + "Annual Coordinated Election"), and
 // validateTable then threw because the cited quote contains no word-bounded
-// "annual" token — aborting the entire FEP document. See
+// "annual" token — aborting an entire federal-employee brochure. See
 // docs/archive/reports/UNSEEN_DOCUMENT_GENERALIZATION.md recommendation 1.
 import { describe, expect, it } from "vitest";
 import { extractFallback } from "@/app/lib/extraction/extract";
@@ -26,8 +26,8 @@ describe("F1: qualifier derivation must not invent a period from a collapsed tok
 
   it("fallback output for the nextAnnual shape passes validateTable", () => {
     const doc = {
-      documentId: "doc-fep-shape",
-      filename: "fep-shape.pdf",
+      documentId: "doc-fehb-shape",
+      filename: "fehb-shape.pdf",
       pageCount: 1,
       pages: [COLLAPSED],
     };

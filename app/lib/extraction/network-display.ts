@@ -1,5 +1,5 @@
 // Concise provider-network cell text. The primary comparison cell shows a
-// short identity ("UnitedHealthcare PPO"); the full source line stays in
+// short identity (e.g. "Acme Health PPO"); the full source line stays in
 // evidence. A name is only shown when the source explicitly states one.
 
 /** Explicit network-name shapes: capitalized name + plan/network suffix. */

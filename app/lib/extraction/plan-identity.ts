@@ -27,8 +27,8 @@ type SourceDocument = { documentId: string; filename: string; pages: string[]; t
 type PlanSource = { planId: string; page: number; name: string };
 
 /** Comparison key for a product name: registered/trademark marks and
- *  whitespace are dropped (PDF extraction often loses the space — the FEP
- *  title "FEP® Blue Focus" appears as "FEPBlue Focus" in its code lines), but
+ *  whitespace are dropped (PDF extraction often loses the space — a title
+ *  "Acme® Care" can appear as "AcmeCare" in its enrollment-code lines), but
  *  punctuation and symbols are KEPT, so "Alpha+" and "Alpha", or "Plan A-1"
  *  and "Plan A1", remain different products. Used only to corroborate a
  *  title; the attested name is always the literal title line. */
@@ -270,8 +270,8 @@ export function attestPlans(documents: readonly SourceDocument[]): ProvenPlan[] 
         // Requiring an explicit label avoids treating a mention, a filename or
         // a list of competitors as proof of a plan offered by this document.
         const declaration = /^\s*(?:Policy|Plan) name:\s*([\w][\w &'().,-]{0,99}?)(?:\s*;\s*Policy ID:\s*([A-Za-z0-9][A-Za-z0-9-]{0,63}))?(?:\s*;\s*Issuer:\s*([\w][\w &'().,-]{0,99}))?\s*$/i.exec(line);
-        const studentSecureTitle = /^\s*Get\s+([A-Z][\w®-]*)\s+insurance\s+from\s+[A-Z][\w &'().,-]+\s*$/i.exec(line);
-        const sevenCornersTitle = /^\s*Seven Corners (Travel Medical(?: Including the USA)?)\s*$/i.exec(line);
+        const getInsuranceFromTitle = /^\s*Get\s+([A-Z][\w®-]*)\s+insurance\s+from\s+[A-Z][\w &'().,-]+\s*$/i.exec(line);
+        const namedInsurerTitle = /^\s*Seven Corners (Travel Medical(?: Including the USA)?)\s*$/i.exec(line);
         const programTitleMatch = lineIndex === 0
           ? /^\s*([\w][\w &'().,-]{2,90}?\s+Program(?:SM|℠)?)\s*$/i.exec(line)
           : null;
@@ -279,7 +279,7 @@ export function attestPlans(documents: readonly SourceDocument[]): ProvenPlan[] 
           /^\s*Certificate of Insurance\s*$/i.test(lines[1] ?? "")
           ? programTitleMatch[1].trim()
           : undefined;
-        const name = declaration?.[1].trim() ?? studentSecureTitle?.[1] ?? sevenCornersTitle?.[1] ?? programTitle;
+        const name = declaration?.[1].trim() ?? getInsuranceFromTitle?.[1] ?? namedInsurerTitle?.[1] ?? programTitle;
         if (!name) continue;
         const policyIdentifier = declaration?.[2]?.trim();
         const issuer = declaration?.[3]?.trim();

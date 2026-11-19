@@ -88,6 +88,8 @@ export interface GroundTruthRealModule {
   CORPUS: CorpusDoc[];
   VALUE_TARGETS: ValueTarget[];
   NOISE_TARGETS: NoiseTarget[];
+  /** Corpus key whose deductible/OOP gold set is exhaustive (row precision). */
+  ROW_PRECISION_DOC?: CorpusKey;
 }
 
 /** Heuristic noise detectors applied to EVERY emitted value's cited quotes.
