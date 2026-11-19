@@ -33,6 +33,7 @@ export default defineConfig({
     env: {
       LLM_BASE_URL: "",
       LLM_API_KEY: "",
+      LLM_MODEL: "",
       // Embeddings are a paid provider call on upload (durable chunks) and in
       // chat retrieval: always blank in e2e (lexical retrieval, null vectors).
       EMBEDDING_BASE_URL: "",
