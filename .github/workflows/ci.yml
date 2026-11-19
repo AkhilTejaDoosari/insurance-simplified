@@ -19,10 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Private-data guard (no real PDFs or real-document data)
         run: bash scripts/check-private-data.sh
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20 # matches the Dockerfile base image
           cache: npm
@@ -36,8 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -46,7 +46,7 @@ jobs:
       # Local Supabase stack (Docker on the runner) so durable uploads work;
       # never a hosted project. Exports SUPABASE_URL / SUPABASE_SECRET_KEY /
       # SUPABASE_STORAGE_BUCKET (masked) for the Playwright run.
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.122.0
       - name: Start local Supabase, apply db/migrations, create bucket
