@@ -43,6 +43,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      # Local Supabase stack (Docker on the runner) so durable uploads work;
+      # never a hosted project. Exports SUPABASE_URL / SUPABASE_SECRET_KEY /
+      # SUPABASE_STORAGE_BUCKET (masked) for the Playwright run.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.0
+      - name: Start local Supabase, apply db/migrations, create bucket
+        run: bash scripts/e2e-local-supabase.sh
       - run: npm run test:e2e
       - if: failure()
         uses: actions/upload-artifact@v4

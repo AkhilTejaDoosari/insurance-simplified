@@ -3,6 +3,13 @@ import { defineConfig, devices } from "@playwright/test";
 const E2E_PORT = Number(process.env.E2E_PORT ?? "3333");
 const E2E_BASE_URL = `http://127.0.0.1:${E2E_PORT}`;
 
+// Uploads require durable storage (upload route guard). e2e may only use a
+// LOCAL Supabase stack (scripts/e2e-local-supabase.sh): its env is passed
+// through solely when SUPABASE_URL points at this machine, so a hosted
+// project's credentials can never reach the e2e server.
+const LOCAL_SUPABASE = /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(process.env.SUPABASE_URL ?? "");
+const localSupabase = (name: string): string => (LOCAL_SUPABASE ? process.env[name] ?? "" : "");
+
 export default defineConfig({
   testDir: "tests/e2e",
   fullyParallel: true,
@@ -20,17 +27,16 @@ export default defineConfig({
     command: `npx next dev -p ${E2E_PORT}`,
     // e2e assertions are written against the deterministic engine; blank
     // credentials here win over .env.local so /api/extract never auto-picks
-    // the LLM in CI or locally. Supabase is blanked for the same reason so
-    // uploads exercise the local temp path deterministically and never
-    // touch live storage/database; live persistence is proven by the
-    // integration suite instead.
+    // the LLM in CI or locally. Supabase is blank (so .env.local never leaks
+    // a hosted project in) unless a LOCAL stack is configured above; live
+    // persistence is proven by the integration suite instead.
     env: {
       LLM_BASE_URL: "",
       LLM_API_KEY: "",
-      SUPABASE_URL: "",
-      SUPABASE_SECRET_KEY: "",
+      SUPABASE_URL: localSupabase("SUPABASE_URL"),
+      SUPABASE_SECRET_KEY: localSupabase("SUPABASE_SECRET_KEY"),
       SUPABASE_SERVICE_KEY: "",
-      SUPABASE_STORAGE_BUCKET: "",
+      SUPABASE_STORAGE_BUCKET: localSupabase("SUPABASE_STORAGE_BUCKET"),
       E2E_DIST_DIR: ".next-e2e",
     },
     url: E2E_BASE_URL,
