@@ -34,6 +34,31 @@ function ExclusionOutcomes({ response }: { response: unknown }) {
   );
 }
 
+/** Exclusion lists that may be incomplete for the plans an answer names
+ *  (server re-derived). Shown next to the exclusion check, never as a verdict. */
+function ExclusionCoverage({ response }: { response: unknown }) {
+  const list = (response as { exclusionCoverage?: unknown }).exclusionCoverage;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const items = list.filter(
+    (n): n is { coverage: string; text: string } =>
+      !!n && typeof n === "object" && typeof (n as { text?: unknown }).text === "string" &&
+      typeof (n as { coverage?: unknown }).coverage === "string",
+  );
+  if (!items.length) return null;
+  return (
+    <div className="chat__resolutions" role="note">
+      <p className="text-muted">Exclusions read for this plan</p>
+      <ul className="list">
+        {items.map((n, i) => (
+          <li key={i} data-coverage={n.coverage}>
+            {n.text}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function AnswerResolutions({ response }: { response: unknown }) {
   const list = (response as { resolutions?: unknown }).resolutions;
   if (!Array.isArray(list) || list.length === 0) return null;
@@ -341,6 +366,7 @@ export default function ChatPanel({
                       </ul>
                       <AnswerResolutions response={t.response} />
                       <ExclusionOutcomes response={t.response} />
+                      <ExclusionCoverage response={t.response} />
                     </div>
                   ) : (
                     <p className="chat__refusal">{t.response.refusalText}</p>

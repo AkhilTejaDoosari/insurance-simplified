@@ -6,6 +6,7 @@ import { MissingContextPrompt } from "@/app/components/ComparisonTable";
 import ConditionalValue from "@/app/components/ConditionalValue";
 import VerifyContact from "@/app/components/VerifyContact";
 import VerdictBadge from "@/app/components/VerdictBadge";
+import EvidenceSurfaces from "@/app/components/EvidenceSurfaces";
 import {
   absenceNotices,
   buildPresentation,
@@ -14,6 +15,7 @@ import {
   projectView,
   readingCoverage,
   readingCoverageText,
+  surfacesOf,
   viewDocumentIds,
   withheldNotices,
   type ActiveView,
@@ -541,6 +543,7 @@ export default function AdaptiveResults(props: Props) {
           </React.Fragment>
         );
       })}
+      <EvidenceSurfaces table={table} surfaces={surfacesOf(table)} sessionId={sessionId} documentIds={viewDocumentIds(table, view)} />
       <TrustNotices table={table} sessionId={sessionId} viewDocumentIds={viewDocumentIds(table, view)} />
     </div>
   );

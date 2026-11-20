@@ -33,6 +33,7 @@ import {
 } from "@/app/lib/extraction/selection-request";
 import { buildReportPdf } from "@/app/lib/report/pdf";
 import { confirmStoredResult } from "@/app/lib/evidence/read-back";
+import { surfacesForReadBack } from "@/app/lib/evidence/surfaces-consumer/read-back";
 
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -155,10 +156,19 @@ export async function POST(request: NextRequest) {
   // AT-PERSIST: the stored result carries no authority. Re-derive it from the
   // session's stored page text under this request's authority; rows that do
   // not re-derive identically render as "cannot be confirmed" (TB-3).
-  const { table } = confirmStoredResult({
+  const confirmed = confirmStoredResult({
     sessionId,
     documents: session.documents,
     record,
+  });
+  const { table } = confirmed;
+  // Exclusion inventories and authority views: re-derived for this request,
+  // never read from the stored payload (surfaces-consumer/read-back.ts).
+  const surfaces = surfacesForReadBack({
+    sessionId,
+    documents: session.documents,
+    record,
+    confirmed,
   });
   const scopes = overviewScopes(
     table,
@@ -171,6 +181,7 @@ export async function POST(request: NextRequest) {
     userContext: record.payload.userContext,
     selection,
     contacts: record.payload.contacts,
+    surfaces,
   });
   const overview = selection.viewMode
     ? undefined
