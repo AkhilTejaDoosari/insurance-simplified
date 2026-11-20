@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { evidenceIdFor, type EvidenceRecord } from "@/app/lib/evidence-ids";
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
+import type { PageReadability } from "@/app/lib/pdf/page-readability";
 
 export interface SessionDocument {
   documentId: string;
@@ -22,6 +23,11 @@ export interface SessionDocument {
   /** Header-anchored tables computed at upload from the same text items as
    *  `pages`. Absent on legacy sessions (the line engine then reads alone). */
   tables?: LayoutTable[];
+  /** Per-page readability from extraction (pdf/page-readability.ts): which
+   *  pages were read, empty, image-only or partly read. Absent on legacy
+   *  sessions; extraction then derives it from `pages` (text-less pages are
+   *  reported as not read; image presence stays unknown). */
+  readability?: PageReadability[];
   /** P3-A durable-object metadata (nullable: unknown stays unknown for
    *  pre-P3-A sessions). sha256 = hex of the ORIGINAL bytes; objectKey =
    *  stable session/document-scoped content-addressed key (objects.ts sessionObjectKeyFor).

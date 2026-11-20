@@ -18,7 +18,7 @@
 import { FACTS } from "@/app/lib/extraction/fact-list";
 import { ELIGIBILITY_FEEDERS, ELIGIBILITY_ROW_NAME } from "@/app/lib/extraction/eligibility";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
-import type { CellValue, EvidenceCitation, Qualifiers, TableAnchor } from "@/app/lib/extraction/types";
+import type { CellValue, EvidenceCitation, Qualifiers, TableAnchor, WithheldReason } from "@/app/lib/extraction/types";
 import { coveringSpan, type LayoutTable, type Span } from "@/app/lib/pdf/layout-tables";
 import { governingNotes, namedProvisions } from "@/app/lib/extraction/table-notes";
 
@@ -64,12 +64,32 @@ export function factsForLabel(label: string): string[] {
 const TIER_NAME = /\b(elite|select|budget|smart|lite|plus|platinum|gold|silver|bronze|basic|enhanced|premium|standard|choice|reliable|ultimate|supreme|premier)\b/gi;
 const NETWORK = /\b(?:in[-\s]network|out[-\s]of[-\s]network|non[-\s]network|(?:in|out of)\s+PPO\s+network|non[-\s]?preferred|preferred|non[-\s]?participating|participating)\b/i;
 
+/** A tier word used as the name of a cost ("Monthly Premium", "Premium
+ *  Rate") names what the column holds, not a plan tier. */
+const COST_NOUN_USE = /\b(?:monthly|annual|annually|yearly|quarterly|semi[-\s]?annual|weekly|daily|total|base|student|employee|dependent|family|individual|member|spouse|child(?:ren)?)\s+premiums?\b|\bpremiums?\s+(?:rates?|amounts?|costs?|per\b|payments?|due)\b|^\s*premiums?\s*$/i;
+
+/** The single tier word a heading's top line names, or undefined. */
+function tierWordOf(firstLine: string): string | undefined {
+  const text = firstLine.replace(/\s+/g, " ").trim();
+  if (COST_NOUN_USE.test(text)) return undefined;
+  const tiers = [...new Set([...text.matchAll(TIER_NAME)].map((m) => m[0]))];
+  return tiers.length === 1 ? tiers[0] : undefined;
+}
+
 /** Scope stated by a column heading, verbatim. A network heading becomes
  *  `networkTier` (any remaining words, e.g. "United States", `conditions`);
  *  a heading naming exactly one known tier word becomes that `planTier`;
  *  any other heading is kept whole as `conditions` so the column's identity
- *  is never dropped. */
-export function columnQualifiers(heading: string, firstLine = heading): Qualifiers {
+ *  is never dropped.
+ *
+ *  `siblings` (the top heading line of every column of the same table) makes
+ *  the tier a structural fact (EC-3/EC-4): the tier list holds common words
+ *  (premium, standard, basic, choice, plus, select …), so one heading naming
+ *  one of them proves nothing. A heading is a tier only when at least two
+ *  columns of its table each name exactly one tier word, those words are all
+ *  different (parallel tier columns), and this column is one of them. A tier
+ *  word used as a cost name ("Monthly Premium") is never a tier. */
+export function columnQualifiers(heading: string, firstLine = heading, siblings?: readonly string[]): Qualifiers {
   const text = heading.replace(/\s+/g, " ").trim();
   const network = text.match(NETWORK);
   if (network) {
@@ -78,9 +98,15 @@ export function columnQualifiers(heading: string, firstLine = heading): Qualifie
   }
   // The tier is named by the top heading line; a stacked tagline ("Reliable
   // Coverage", "Most popular") does not rename it.
-  const tiers = [...new Set([...firstLine.matchAll(TIER_NAME)].map((m) => m[0]))];
-  if (tiers.length === 1) return { planTier: tiers[0] };
-  return { conditions: text };
+  const tier = tierWordOf(firstLine);
+  if (!tier) return { conditions: text };
+  if (siblings) {
+    const words = siblings.map((line) => tierWordOf(line)?.toLowerCase());
+    const named = words.filter((w): w is string => !!w);
+    const parallel = named.length >= 2 && new Set(named).size === named.length;
+    if (!parallel) return { conditions: text };
+  }
+  return { planTier: tier };
 }
 
 const slice = (page: string, span: Span) => page.slice(span.start, span.end);
@@ -103,47 +129,82 @@ export function tableClaims(doc: TableDocument): TableClaim[] {
 }
 
 function claimsAt(doc: TableDocument, tableIndex: number, rowIndex: number): TableClaim[] {
+  return diagnoseRow(doc, tableIndex, rowIndex).claims;
+}
+
+/** A (fact, row) the table states but for which some cell's claim was not
+ *  made, with the reason and the row's verbatim page text. */
+export interface TableDrop {
+  factName: string;
+  page: number;
+  quote: string;
+  reason: WithheldReason;
+}
+
+interface RowDiagnosis {
+  /** Facts named by the row's label head. */
+  facts: string[];
+  claims: TableClaim[];
+  drops: TableDrop[];
+}
+
+/** The row's verbatim page text for a withheld record: the whole row when it
+ *  verifies, else its label. Always an exact slice of the page. */
+function rowSourceQuote(doc: TableDocument, table: LayoutTable, rowIndex: number, page: string): string {
+  const row = table.rows[rowIndex];
+  const whole = coveringSpan([...row.label.spans, ...row.cells.flatMap((c) => c.spans)]);
+  if (whole.end - whole.start <= MAX_ROW_QUOTE) {
+    const quote = cite(doc, table.page, slice(page, whole));
+    if (quote) return quote.quote;
+  }
+  const label = coveringSpan(row.label.spans);
+  return cite(doc, table.page, slice(page, label))?.quote ?? slice(page, label);
+}
+
+function diagnoseRow(doc: TableDocument, tableIndex: number, rowIndex: number): RowDiagnosis {
   const table = doc.tables?.[tableIndex];
   const row = table?.rows[rowIndex];
   const page = table ? doc.pages[table.page - 1] : undefined;
-  if (!table || !row || typeof page !== "string") return [];
+  if (!table || !row || typeof page !== "string") return { facts: [], claims: [], drops: [] };
   const facts = factsForLabel(row.label.text);
-  if (facts.length === 0) return [];
+  if (facts.length === 0) return { facts, claims: [], drops: [] };
+  const reasons: WithheldReason[] = [];
   const header = cite(doc, table.page, slice(page, table.header));
-  if (!header) return [];
   const out: TableClaim[] = [];
-  for (const cell of row.cells) {
+  if (!header) reasons.push("header-unverifiable");
+  else for (const cell of row.cells) {
     const span = coveringSpan([...row.label.spans, ...cell.spans]);
-    if (span.end - span.start > MAX_ROW_QUOTE) continue;
+    if (span.end - span.start > MAX_ROW_QUOTE) { reasons.push("row-quote-too-long"); continue; }
     const rowQuote = cite(doc, table.page, slice(page, span));
-    if (!rowQuote) continue;
+    if (!rowQuote) { reasons.push("row-quote-unverifiable"); continue; }
     for (const column of cell.columns) {
       const heading = table.columns[column]?.text;
       if (!heading) continue;
       const firstLine = table.columns[column].lines?.[0] ?? heading;
       // Every footnote / preamble governing this cell, or no claim at all.
       const notes = governingNotes(doc.tables ?? [], tableIndex, rowIndex, column, page);
-      if (!notes) continue;
+      if (!notes) { reasons.push("governing-context-unreadable"); continue; }
       // Provisions elsewhere in the document that name this benefit exactly.
       const named = namedProvisions(doc.pages, labelHead(row.label.text), { page: table.page, spans: [...row.label.spans, ...row.cells.flatMap((c) => c.spans)] });
       const noteQuotes = [
         ...notes.map((n) => cite(doc, table.page, slice(page, coveringSpan(n.spans)))),
         ...named.map((n) => cite(doc, n.page, n.quote)),
       ];
-      if (noteQuotes.some((q) => !q)) continue;
+      if (noteQuotes.some((q) => !q)) { reasons.push("governing-note-unverifiable"); continue; }
       const noteTexts = [...notes.map((n) => n.text), ...named.map((n) => n.quote.replace(/\s+/g, " "))];
       // The claim reads complete on its own: row, column, cell — all verbatim
       // — then each governing note verbatim on its own line. A bare "90%"
       // means nothing without "In-Network Plan Pays".
       const display = `${row.label.text} (${heading}): ${cell.text}${noteTexts.map((t) => `\n${t}`).join("")}`;
       const anchor: TableAnchor = { kind: "table-cell", page: table.page, table: tableIndex, row: rowIndex, column, label: row.label.text };
+      const siblings = table.columns.map((c) => c.lines?.[0] ?? c.text);
       for (const factName of facts) {
         out.push({
           factName,
           value: {
             documentId: doc.documentId,
             display,
-            qualifiers: columnQualifiers(heading, firstLine),
+            qualifiers: columnQualifiers(heading, firstLine, siblings),
             evidence: [rowQuote, header, ...(noteQuotes as EvidenceCitation[])],
             anchor,
           },
@@ -151,6 +212,45 @@ function claimsAt(doc: TableDocument, tableIndex: number, rowIndex: number): Tab
       }
     }
   }
+  const unique = [...new Set(reasons)];
+  const drops: TableDrop[] = unique.length === 0 ? [] : (() => {
+    const quote = rowSourceQuote(doc, table, rowIndex, page);
+    return facts.flatMap((factName) => unique.map((reason) => ({ factName, page: table.page, quote, reason })));
+  })();
+  return { facts, claims: out, drops };
+}
+
+/** Every table cell the document states for a known fact whose claim was not
+ *  made (header/row citation, row length, governing context, notes). The
+ *  line engine skips these table-owned lines, so a drop must be reported, or
+ *  the fact would read NOT STATED although the page states it (finding #2). */
+export function tableDrops(doc: TableDocument): TableDrop[] {
+  const out: TableDrop[] = [];
+  (doc.tables ?? []).forEach((table, tableIndex) => {
+    table.rows.forEach((_, rowIndex) => out.push(...diagnoseRow(doc, tableIndex, rowIndex).drops));
+  });
+  return out;
+}
+
+/** A line-engine hit for `factName` on table-owned text whose table row has a
+ *  label naming no known fact: the table makes no claim for it, so the line
+ *  is reported as withheld rather than lost. Rows whose label names another
+ *  fact own their line for that fact (a sub-note mention is not a statement
+ *  of this fact) and return nothing. */
+export function unrecognizedLabelDrops(doc: TableDocument, factName: string, page: number, quote: string): TableDrop[] {
+  const text = doc.pages[page - 1] ?? "";
+  const at: { start: number; end: number }[] = [];
+  for (let from = text.indexOf(quote); from >= 0; from = text.indexOf(quote, from + 1)) at.push({ start: from, end: from + quote.length });
+  const out: TableDrop[] = [];
+  (doc.tables ?? []).forEach((table) => {
+    if (table.page !== page) return;
+    table.rows.forEach((row) => {
+      const spans = [...row.label.spans, ...row.cells.flatMap((c) => c.spans)];
+      if (!spans.some((s) => at.some((a) => s.start < a.end && s.end > a.start))) return;
+      if (factsForLabel(row.label.text).length > 0) return;
+      out.push({ factName, page, quote, reason: "label-unrecognized" });
+    });
+  });
   return out;
 }
 

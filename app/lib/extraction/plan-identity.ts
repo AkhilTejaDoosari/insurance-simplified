@@ -603,7 +603,10 @@ function hasPartialEnrollmentCategory(text: string, categories: readonly string[
  *  A. Table cell (value.anchor): the value's document has exactly one
  *     verified plan; the anchor re-derives exactly from the document layout
  *     (verifyTableAnchor); no abstention language in the provision; no other
- *     verified plan named; the document declares no other plan; no same-scope
+ *     verified plan named; the document declares no other plan. If another
+ *     proven structural claim of the same plan, scope and fact states a
+ *     different value, both stay attributed (the plan's own same-scope
+ *     contradiction, shown as CONFLICTED); otherwise no same-scope
  *     contradiction with a non-table reading of the fact.
  *  B. Line value: only the labelled plan/fact/value line (hasPlanValueProof).
  *  Everything else abstains (planId undefined → unattributed document data). */
@@ -630,6 +633,33 @@ export function resolveRowPlanIds(
     }
     return ownerByDocument.get(value.documentId);
   });
+  const enrollmentGatesPass = (value: CellValue): boolean => {
+    const categories = declaredEnrollmentCategories(pagesByDocument.get(value.documentId)?.[0]);
+    const statement = value.anchor?.kind === "statement";
+    if (!statement && lacksEnrollmentScope(value, categories)) return false;
+    return statement || categories.length === 0 || !hasPartialEnrollmentCategory(
+      `${value.display} ${value.evidence.map((e) => e.quote).join(" ")}`,
+      categories,
+    );
+  };
+  function structuralGuardsPass(index: number): boolean {
+    const value = values[index];
+    const planId = uniform[index];
+    if (planId === undefined || !value.anchor) return false;
+    const plan = plans.find((p) => p.planId === planId)!;
+    const text = `${value.display} ${value.evidence.map((e) => e.quote).join(" ")}`;
+    return enrollmentGatesPass(value) &&
+      verifyClaimAnchor(factName, value, documents) &&
+      !OWNERSHIP_ABSTENTION_PATTERN.test(value.display) &&
+      !mentionsOtherVerifiedPlan(plan, text, plans) &&
+      !documentDeclaresOtherPlan(plan, value.documentId, pagesByDocument);
+  }
+  // Structural claims that pass every guard of their own (enrollment gates,
+  // anchor re-derivation, abstention language, rival plan, other
+  // declaration). Only these are proven peers for the structural
+  // contradiction check below.
+  const structuralProven = values.map((value, index) =>
+    value.anchor !== undefined && structuralGuardsPass(index));
   return values.map((value, index) => {
     const planId = uniform[index];
     if (planId === undefined) return undefined;
@@ -659,14 +689,21 @@ export function resolveRowPlanIds(
     // by the closed statement grammar. Lexical binding heuristics do not apply; the
     // applicability guards that concern the provision itself still do.
     if (value.anchor) {
-      if (!verifyClaimAnchor(factName, value, documents)) return undefined;
-      if (OWNERSHIP_ABSTENTION_PATTERN.test(value.display)) return undefined;
-      if (mentionsOtherVerifiedPlan(plan, text, plans)) return undefined;
-      if (documentDeclaresOtherPlan(plan, value.documentId, pagesByDocument)) return undefined;
-      // Distinct structural claims are distinct provisions. A contradiction is
-      // a same-scope disagreement between THIS claim and an unstructured
-      // reading of the same fact — disagreements among other readings are
-      // theirs, not this claim's.
+      if (!structuralProven[index]) return undefined;
+      // Structural claims of the same plan, scope and fact (same row label;
+      // distinct labels are distinct provisions — see contradictions.ts) that
+      // state different values are a same-scope contradiction of the plan's
+      // own evidence (evidence-core.md §3, CONFLICTED). Both stay attributed
+      // so every surface shows the conflict; an unstructured reading must
+      // never withdraw one side and leave the other as the plan's only value.
+      const structurallyContradicted = values.some((peer, peerIndex) =>
+        peerIndex !== index && structuralProven[peerIndex] &&
+        peer.documentId === value.documentId && uniform[peerIndex] === planId &&
+        hasSameScopeContradiction([{ ...value, planId }, { ...peer, planId }]));
+      if (structurallyContradicted) return planId;
+      // Otherwise a contradiction is a same-scope disagreement between THIS
+      // claim and an unstructured reading of the same fact — disagreements
+      // among other readings are theirs, not this claim's.
       const contradicted = values.some((peer, peerIndex) =>
         peer !== value && !peer.anchor && peer.documentId === value.documentId &&
         uniform[peerIndex] === planId && hasSameScopeContradiction([value, peer]));

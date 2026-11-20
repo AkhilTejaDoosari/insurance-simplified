@@ -2,8 +2,14 @@
 // Page numbers are the citation unit, so extraction MUST preserve the
 // 1-based page alignment of the source document.
 
-import { getDocumentProxy } from "unpdf";
+import { getDocumentProxy, getResolvedPDFJS } from "unpdf";
 import { detectTables, positionItems, type LayoutTable, type RawTextItem } from "@/app/lib/pdf/layout-tables";
+import {
+  PARTLY_READ_MAX_CHARS,
+  classifyPage,
+  textCharCount,
+  type PageReadability,
+} from "@/app/lib/pdf/page-readability";
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_PAGES = 200;
@@ -22,6 +28,33 @@ export interface ExtractedPdf {
   pages: string[];
   /** Header-anchored benefit tables, spans into `pages` (layout-tables.ts). */
   tables: LayoutTable[];
+  /** Per-page readability (page-readability.ts): which pages were read,
+   *  empty, image-only or only partly read. One entry per page. */
+  readability: PageReadability[];
+}
+
+type PdfPage = Awaited<ReturnType<Awaited<ReturnType<typeof getDocumentProxy>>["getPage"]>>;
+
+/** True when the page paints at least one image; undefined when the
+ *  operator list cannot be read (image presence then stays unknown). */
+async function pagePaintsImages(page: PdfPage, imageOps: ReadonlySet<number>): Promise<boolean | undefined> {
+  try {
+    const ops = await page.getOperatorList();
+    return ops.fnArray.some((fn: number) => imageOps.has(fn));
+  } catch {
+    return undefined;
+  }
+}
+
+async function imageOperators(): Promise<ReadonlySet<number>> {
+  try {
+    const { OPS } = await getResolvedPDFJS();
+    return new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject,
+      OPS.paintImageXObjectRepeat, OPS.paintImageMaskXObjectRepeat, OPS.paintImageMaskXObjectGroup,
+      OPS.paintInlineImageXObjectGroup, OPS.paintSolidColorImageMask].filter((op) => typeof op === "number"));
+  } catch {
+    return new Set();
+  }
 }
 
 /** Very small heuristic: reject buffers with no extractable Latin text. */
@@ -71,10 +104,21 @@ export async function extractPages(
   // unchanged; the positioned items additionally feed table detection.
   const pages: string[] = [];
   const tables: LayoutTable[] = [];
+  const readability: PageReadability[] = [];
+  let imageOps: ReadonlySet<number> | undefined;
   for (let p = 1; p <= pdf.numPages; p++) {
-    const content = await (await pdf.getPage(p)).getTextContent();
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
     const { text, items } = positionItems(content.items as unknown as RawTextItem[]);
     pages.push(text);
+    // Only sparse pages need the (costlier) operator list: a text-rich page
+    // is "read" whether or not it also paints images.
+    let hasImages: boolean | undefined;
+    if (textCharCount(text) < PARTLY_READ_MAX_CHARS) {
+      imageOps ??= await imageOperators();
+      hasImages = imageOps.size > 0 ? await pagePaintsImages(page, imageOps) : undefined;
+    }
+    readability.push(classifyPage(p, text, hasImages));
     try {
       tables.push(...detectTables(text, items, p));
     } catch {
@@ -97,5 +141,5 @@ export async function extractPages(
     );
   }
 
-  return { pageCount: pages.length, pages, tables };
+  return { pageCount: pages.length, pages, tables, readability };
 }

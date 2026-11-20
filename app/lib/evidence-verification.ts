@@ -239,28 +239,163 @@ export function materialDisplayTokens(display: string, factName: string): string
   return out;
 }
 
+// --- Field grammars beyond digits (M7, defect "Claim checks digits only") --
+// A display can invert a claim without changing a single figure: "covered"
+// for "not covered", "in-network" for "out-of-network", or dropping
+// "except …" / "does not apply". These closed marker grammars are checked
+// deterministically on both sides; no synonyms, no fuzzy matching.
+
+type MarkerKind = "negation" | "exception" | "network";
+
+interface Marker {
+  id: string;
+  kind: MarkerKind;
+  re: RegExp;
+}
+
+/** Markers over grammar-normalized text (lowercase, hyphens as spaces). */
+const MARKERS: readonly Marker[] = [
+  { id: "not covered", kind: "negation", re: /\b(?:not|never)\s+(?:be\s+)?covered\b|\bno\s+coverage\b/g },
+  { id: "excluded", kind: "negation", re: /\bexclu(?:ded|sions?)\b/g },
+  { id: "does not apply", kind: "negation", re: /\b(?:does|do|will|shall)\s+not\s+apply\b|\bnot\s+applicable\b/g },
+  { id: "not eligible", kind: "negation", re: /\bnot\s+eligible\b|\bineligible\b/g },
+  { id: "not included", kind: "negation", re: /\bnot\s+included\b/g },
+  { id: "no benefit", kind: "negation", re: /\bno\s+benefits?\b/g },
+  { id: "not subject to", kind: "negation", re: /\bnot\s+subject\s+to\b/g },
+  { id: "except", kind: "exception", re: /\bexcept(?:ing)?\b/g },
+  { id: "excluding", kind: "exception", re: /\bexcluding\b/g },
+  { id: "unless", kind: "exception", re: /\bunless\b/g },
+  { id: "other than", kind: "exception", re: /\bother\s+than\b/g },
+  { id: "out-of-network", kind: "network", re: /\bout\s+of\s+network\b/g },
+  { id: "non-network", kind: "network", re: /\bnon\s*network\b/g },
+  { id: "in-network", kind: "network", re: /\bin\s+network\b/g },
+  { id: "non-preferred", kind: "network", re: /\bnon\s*preferred\b/g },
+  { id: "preferred", kind: "network", re: /(?<!\bnon\s*)\bpreferred\b/g },
+  { id: "non-participating", kind: "network", re: /\bnon\s*participating\b/g },
+  { id: "participating", kind: "network", re: /(?<!\bnon\s*)\bparticipating\b/g },
+];
+
+/** Affirmative words whose meaning flips under a negation marker: a display
+ *  may say "covered" only if a citation says it un-negated. */
+const AFFIRMATIVES: readonly { id: string; re: RegExp }[] = [
+  { id: "covered", re: /\bcovered\b/ },
+  { id: "eligible", re: /\beligible\b/ },
+  { id: "included", re: /\bincluded\b/ },
+  { id: "applies", re: /\bappl(?:y|ies)\b/ },
+];
+
+function grammarText(s: string): string {
+  return normalizeForMatch(s).toLowerCase().replace(/[-\u2010-\u2015]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function markersIn(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of MARKERS) if (new RegExp(m.re.source).test(text)) out.add(m.id);
+  return out;
+}
+
+function withoutNegations(text: string): string {
+  let out = text;
+  for (const m of MARKERS) if (m.kind === "negation") out = out.replace(new RegExp(m.re.source, "g"), " ");
+  return out;
+}
+
+/** Sentence-level clauses (decimal points are not boundaries). */
+function clausesOf(text: string): string[] {
+  return text.split(/(?<!\d)\.(?!\d)|[;!?\n]+/).map((c) => c.trim()).filter(Boolean);
+}
+
+export interface GrammarOptions {
+  /** Qualifier values carried with the display (a scope recorded there, e.g.
+   *  networkTier "Out-of-Network", is not dropped). */
+  qualifiers?: Readonly<Record<string, unknown>>;
+  /** The display is a structurally re-derived claim (verified table cell or
+   *  statement anchor), verbatim by construction: only the "no flipped or
+   *  invented marker" rule applies, not the clause-drop rule. */
+  structural?: boolean;
+}
+
+/** Marker violations of a display against its verified citations:
+ *  1. every negation / exception / network marker the display states must be
+ *     stated by a citation (no invented or flipped scope);
+ *  2. an affirmative word ("covered", "eligible", "included", "applies") in a
+ *     display with no negation must occur un-negated in a citation;
+ *  3. (non-structural) a negation or exception marker in a citation clause
+ *     that states every figure of the display must be kept in the display or
+ *     its qualifiers (no dropped "not covered", "except …"). A network scope
+ *     omitted from a display is NOT flagged here: that case is pinned as
+ *     SUPPORTED by extract-verify-boundary test 20 and governed by EC-4
+ *     qualifier rules; an invented or flipped network marker is (rule 1).
+ *  Returns human-readable violation ids (empty when grounded). */
+export function displayGrammarViolations(
+  display: string,
+  canonicalQuotes: readonly string[],
+  options: GrammarOptions = {},
+): string[] {
+  const shown = grammarText(display);
+  const union = grammarText(canonicalQuotes.join("\n"));
+  const violations: string[] = [];
+  const shownMarkers = markersIn(shown);
+  const citedMarkers = markersIn(union);
+  for (const id of shownMarkers) if (!citedMarkers.has(id)) violations.push(`marker "${id}" not in citations`);
+  const shownNegated = MARKERS.some((m) => m.kind === "negation" && shownMarkers.has(m.id));
+  if (!shownNegated) {
+    const positiveUnion = withoutNegations(union);
+    for (const a of AFFIRMATIVES) {
+      if (a.re.test(shown) && !a.re.test(positiveUnion)) violations.push(`"${a.id}" is only stated negated in citations`);
+    }
+  }
+  if (!options.structural) {
+    const figures = materialDisplayTokens(display, "");
+    if (figures.length > 0) {
+      const kept = new Set([...shownMarkers, ...markersIn(grammarText(Object.values(options.qualifiers ?? {})
+        .filter((v): v is string => typeof v === "string").join(" ")))]);
+      for (const quote of canonicalQuotes) {
+        for (const clause of clausesOf(quote)) {
+          if (!figures.every((f) => normalizeForCoverage(clause).includes(f))) continue;
+          for (const id of markersIn(grammarText(clause))) {
+            if (MARKERS.find((m) => m.id === id)?.kind === "network") continue;
+            if (!kept.has(id)) violations.push(`marker "${id}" dropped from display`);
+          }
+        }
+      }
+    }
+  }
+  return [...new Set(violations)];
+}
+
 /** Locked display material-token rule: every material token of display must
  *  appear in the UNION of the value's verified canonical citations (same
  *  coverage normalization on both sides). Deterministic substring check —
- *  no semantic, embedding, fuzzy, or LLM repair. Returns the concise
+ *  no semantic, embedding, fuzzy, or LLM repair. Field grammars
+ *  (displayGrammarViolations) additionally keep negation, exceptions and
+ *  network scope from being dropped or flipped. Returns the concise
  *  NEEDS VERIFICATION rationale when unsupported, else null. */
 export function checkDisplayGrounding(
   display: string,
   factName: string,
-  canonicalQuotes: string[]
+  canonicalQuotes: string[],
+  options: GrammarOptions = {},
 ): DisplayGrounding {
   const tokens = materialDisplayTokens(display, factName);
-  if (tokens.length === 0) return { supported: true, unsupportedTokens: [], rationale: null };
   const union = canonicalQuotes.map(normalizeForCoverage).join("\n");
   const unsupported = [...new Set(tokens.filter((t) => !union.includes(t)))];
-  if (unsupported.length === 0) {
+  const grammar = displayGrammarViolations(display, canonicalQuotes, options);
+  if (unsupported.length === 0 && grammar.length === 0) {
     return { supported: true, unsupportedTokens: [], rationale: null };
   }
-  const listed = unsupported.map((t) => `"${t}"`).join(", ");
+  const parts: string[] = [];
+  if (unsupported.length > 0) {
+    const listed = unsupported.map((t) => `"${t}"`).join(", ");
+    parts.push(`Display material token(s) ${listed} not supported by verified citations for fact "${factName}".`);
+  }
+  if (grammar.length > 0) {
+    parts.push(`Display qualifier/negation wording not faithful to verified citations for fact "${factName}": ${grammar.join("; ")}.`);
+  }
   return {
     supported: false,
-    unsupportedTokens: unsupported,
-    rationale: `Display material token(s) ${listed} not supported by verified citations for fact "${factName}".`,
+    unsupportedTokens: [...unsupported, ...grammar.map((g) => `grammar:${g}`)],
+    rationale: parts.join(" "),
   };
 }
 
