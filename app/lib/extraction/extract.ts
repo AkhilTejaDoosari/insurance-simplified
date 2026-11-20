@@ -25,6 +25,8 @@ import {
 } from "@/app/lib/extraction/fact-list";
 import { wrapDocuments } from "@/app/lib/llm/safe-prompt";
 import { completeJson } from "@/app/lib/llm/client";
+import { stripNullProperties } from "@/app/lib/llm/json-schema";
+import { COMPARISON_TABLE_SCHEMA } from "@/app/lib/extraction/llm-schema";
 import { withEligibilityRow, contextFieldRulesOut } from "@/app/lib/extraction/eligibility";
 import { interpretCoinsuranceShare } from "@/app/lib/extraction/coinsurance";
 import { summarizeCareDisplay } from "@/app/lib/extraction/care-display";
@@ -1076,7 +1078,11 @@ export async function extractViaLlm(
     `${EXTRACTION_INSTRUCTIONS}\nUser context (apply a field ONLY when documents reference it): ${JSON.stringify(userContext)}`,
     documents.map(({ documentId, pages }) => ({ documentId, pages }))
   );
-  const raw = stripServerOnlyFields(await completeJson([{ role: "user", content: prompt }]));
+  // Strict structured output: the client requests COMPARISON_TABLE_SCHEMA and
+  // rejects any off-schema response before it reaches this pipeline.
+  const raw = stripServerOnlyFields(stripNullProperties(
+    await completeJson([{ role: "user", content: prompt }], undefined, { schema: COMPARISON_TABLE_SCHEMA }),
+  ));
   const prepared = prepareLlmOutput(raw, documents);
   if (prepared.rejectionCodes.length) {
     console.warn(`[extractViaLlm] quarantined model output: ${[...new Set(prepared.rejectionCodes)].join(",")}`);

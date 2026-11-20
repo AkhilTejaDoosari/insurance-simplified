@@ -2,6 +2,11 @@ import type { TableRow } from "@/app/lib/extraction/types";
 import { NON_DISPLAY_FEEDERS } from "@/app/lib/extraction/eligibility";
 import { SECTIONS, type SectionGroup } from "@/app/lib/extraction/sections";
 import { completeJson, type LlmMessage } from "@/app/lib/llm/client";
+import { PRESENTATION_GROUPS_SCHEMA } from "@/app/lib/extraction/llm-schema";
+
+/** Default model call: strict structured output, schema-checked at runtime. */
+const completeGroups = (messages: LlmMessage[]) =>
+  completeJson(messages, undefined, { schema: PRESENTATION_GROUPS_SCHEMA });
 
 export interface PresentationGroup {
   readonly title: string;
@@ -68,7 +73,7 @@ export async function proposeGroups(
     readonly filenames: readonly string[];
     readonly userContext: Readonly<Record<string, string>>;
   },
-  complete: (messages: LlmMessage[]) => Promise<unknown> = completeJson,
+  complete: (messages: LlmMessage[]) => Promise<unknown> = completeGroups,
 ): Promise<PresentationGroup[]> {
   const facts = input.rows
     .filter((row) => row.values.length > 0)
