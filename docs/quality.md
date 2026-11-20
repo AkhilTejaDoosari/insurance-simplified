@@ -116,6 +116,82 @@ Current real-document evidence (not sufficient for any gate): six-document
 scored corpus with 22 gold provisions, 15-PDF layout corpus, 3-PDF
 `evals/realbench` with 8 questions, retrieval eval over 2 synthetic PDFs.
 
+### 5.1 Manifest and splits
+
+The corpus is registered in a tracked manifest, `evals/manifests/corpus-v1.json`.
+For each document it holds only a neutral id (`doc-001`…), sha256, byte size, page count, a
+generic family (closed list in `scripts/corpus/corpus.ts`: `sbc`, `nonstandard`,
+`certificate`, `brochure`, `rider`, `rate-sheet`, `scanned`, `adversarial`) and
+its split. The id → filename mapping is private, at
+`REAL_FIXTURES_DIR/corpus/corpus-v1.mapping.json`.
+
+```bash
+# register / re-verify (new documents go to --split; changed bytes are an error)
+REAL_PDFS_DIR=<root> REAL_FIXTURES_DIR=<private dir> npx tsx scripts/corpus/build-manifest.ts \
+  --source SBCs=sbc --source nonstandard=nonstandard [--split dev]
+npx tsx scripts/corpus/split.ts assign <split> <doc-id>...   # whole documents only
+npx tsx scripts/corpus/split.ts freeze <split>               # makes the split immutable
+npx tsx scripts/corpus/split.ts check
+```
+
+The tools enforce these rules: a document belongs to exactly one split (never split
+by page); identical bytes (sha256) may not appear twice; a frozen split cannot
+gain, lose or change a document; changed bytes for a registered file are an
+error, never an overwrite. Labels and questions refer to documents by id only.
+
+### 5.2 Labelling guide
+
+**A label** is one record per (document, concept, scope). It records:
+
+| Field | Content | In git? |
+| --- | --- | --- |
+| `doc` | Manifest id (`doc-007`) | yes |
+| `page` | 1-based page of the original PDF (a list for cross-page spans and footnotes) | yes |
+| `span` | Verbatim text supporting the label, copied exactly from the page (no paraphrase, no normalising) | **no**, kept outside git |
+| `spanSha256` | sha256 of the verbatim span, so committed results can be checked against it | yes |
+| `concept` | Priority concept id (deductible, out-of-pocket maximum, specialist visit, …) | yes |
+| `scope` | What the value applies to: network tier, individual/family, plan variant, member group | yes |
+| `value` | The value or coverage conclusion the span states, with its conditions (prior authorisation, limits, waiting periods) | quoted text **no**; its category (copay, coinsurance, covered, not covered) yes |
+| `handling` | Expected product behaviour. `display`: verifiable, shown with its citation. `withhold`: present, but must not be shown as the plan's value (a coverage example, a hypothetical, "see certificate"). `needs-verification`: ambiguous, conditional or cross-document, so it is shown with a prompt to confirm | yes |
+| `readability` | Per page: `readable`, `partly-readable` or `unreadable` (scanned without text, garbled) | yes |
+
+**Absence.** If the pages that were read do not state a concept, label it
+`not-found-in-read-pages` and list the pages read and their readability.
+Never label absence as `no`, `not covered` or `$0`. A silent document is NOT
+STATED, not NO (`product.md` DOM-3). A label says "not covered" only when the
+document states it explicitly, with its span. Different values in different
+plans are separate labels per scope, not a conflict.
+
+**Exclusions.** Label every exclusion as its own record with `doc`, `page`,
+`span` (outside git), `kind: exclusion`, the services or concepts it reaches,
+its scope (whole plan, one benefit, one member group), and whether it is
+general (applies everywhere) or local (one table row or footnote). When an
+exclusion reaches a labelled benefit, link it to that benefit's label. The
+benefit's expected handling must reflect the restriction.
+
+**Questions** (~150, written after the labels; ≥40 need a restriction or
+exclusion passage). Each question has:
+
+- `id`;
+- `doc`, or a set of ids for a multi-document question;
+- the question text, written fresh and never pasted from the document;
+- `expected`: either `answer` with gold passage(s) as (doc, page,
+  spanSha256), or `refuse` / `ask-for-context` for an unanswerable or
+  under-specified question;
+- the labels it depends on.
+
+A question belongs to the split of its document(s). A question may not span
+documents in two splits.
+
+**What may be committed:** manifest ids, sha256 values (of files and spans),
+byte sizes, page numbers, generic families, concept and scope ids, handling
+categories, question ids, aggregate metrics and run summaries (`evals/runs/`).
+
+**What stays outside git** (`REAL_FIXTURES_DIR`): document text, verbatim
+spans and the values quoted from them, question texts that quote a document,
+real filenames, insurer and product names, and the id → filename mapping.
+When in doubt, keep it outside git.
+
 ## 6. Release gates (V1, health insurance)
 
 **S1 error:** a wrong value, wrong coverage, or a missed applying exclusion
