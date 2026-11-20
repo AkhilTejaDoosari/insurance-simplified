@@ -45,6 +45,10 @@ const LABEL_ANCHORS: Readonly<Record<string, RegExp>> = {
 const compiled = FACTS.map((f) => ({
   name: f.name,
   patterns: [...f.patterns.map((p) => new RegExp(p, "i")), ...(LABEL_ANCHORS[f.name] ? [LABEL_ANCHORS[f.name]] : [])],
+  excludes: (f.excludePatterns ?? []).map((p) => new RegExp(p, "i")),
+  requires: (f.requiredPatterns ?? []).map((p) => new RegExp(p, "i")),
+  matchFullLabel: f.matchFullLabel === true,
+  labelHead: f.labelHeadPattern ? new RegExp(f.labelHeadPattern, "i") : undefined,
 }));
 
 /** The concept part of a row label: before any bullet sub-note, without
@@ -58,7 +62,16 @@ export function labelHead(label: string): string {
 export function factsForLabel(label: string): string[] {
   const head = labelHead(label);
   if (!head) return [];
-  return compiled.filter((f) => f.patterns.some((re) => re.test(head))).map((f) => f.name);
+  // P0-03: the basis of a fact can live in the label's sub-note or
+  // parenthetical ("Deductible • Per Illness or Injury", "Deductible (per
+  // injury)"), so semantic guards read the FULL label, and facts defined by
+  // that basis match against it.
+  return compiled
+    .filter((f) => f.patterns.some((re) => re.test(f.matchFullLabel ? label : head)))
+    .filter((f) => !f.labelHead || f.labelHead.test(head))
+    .filter((f) => !f.excludes.some((re) => re.test(label)))
+    .filter((f) => f.requires.length === 0 || f.requires.some((re) => re.test(label)))
+    .map((f) => f.name);
 }
 
 const TIER_NAME = /\b(elite|select|budget|smart|lite|plus|platinum|gold|silver|bronze|basic|enhanced|premium|standard|choice|reliable|ultimate|supreme|premier)\b/gi;

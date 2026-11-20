@@ -14,7 +14,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | --- | --- |
 | Worktree | `insurance-simplified-wt/p0` (separate from `int`, where an OpenCode session and `next dev :3333` were running) |
 | Branch | `p0/acceptance-remediation`, branched from `integration/m5-m7` @ `de4efe4` |
-| Checkpoints | `04fd36d` Phase 1 (accepted by owner 2026-11-20 as engineering checkpoint; product acceptance BLOCKED) |
+| Checkpoints | `04fd36d` Phase 1 (accepted by owner 2026-11-20 as engineering checkpoint; product acceptance BLOCKED) · `d184c71` identity generalization + legacy read-back · Phase 2 commit (see `git log`) |
 | Push / PR | none (not authorized) |
 | Recovery refs | `backup/*`, `refs/wip/*`, tag `recovery-pre-ui-2026-09-21` — untouched |
 | Real PDFs | `REAL_PDFS_DIR` (PDF corpus) — **unset**; `REAL_FIXTURES_DIR` (private labels/ground truth) — **unset**. Both are existing contracts (`docs/quality.md` §2); no new variable. |
@@ -170,3 +170,48 @@ all real suites pass except `real-pdf-evidence.test.ts`, which needs two
 other brochures (named in that test) not present on this
 machine (fails identically at `04fd36d`; fixture gap, not a regression).
 Doc 03's local file name differs from the uploaded name (identity with upload unconfirmed).
+
+## Phase 2 — semantic correctness (Tasks 3–6)
+
+Mechanism (no new component): `FactDefinition` gained optional, data-driven
+guards applied by the existing line engine (`findAllMatchesWithHeaders`) and
+table-label matcher (`factsForLabel`): `excludePatterns` (states a different
+concept), `requiredPatterns` (e.g. a restriction marker), `governedPatterns`
+(bullet value valid only under a matching governing heading; the evidence
+quote spans heading → line), `matchFullLabel` + `labelHeadPattern` (basis read
+from the full table label). A line ending on a dangling basis ("… for each")
+is guarded together with the next line. `FACT_LIST_VERSION` v1 → v2. New facts
+`per-illness-deductible` (My Costs, cost_share) and `claims-filing-deadline`
+(Limits & Risks, requirement). Period qualifier now records per-illness/
+per-injury/per-accident and per-certificate-period bases.
+
+Regression suite: `tests/unit/p0-semantic-classification.test.ts` (51 cases,
+synthetic text; 30 fail on the pre-Phase-2 code, the other 21 are controls and
+negatives that guard against over-correction).
+
+Real-document effect (local probe, five owner PDFs; counts only):
+
+| Fact | Before | After | Note |
+| --- | --- | --- | --- |
+| eligibility | 13 values, 3 were claim/legal-action clauses | 10, none claim-related | remaining include termination/void-if-ineligible clauses (eligibility-related, kept) |
+| claims-filing-deadline | — | 3 (docs 01, 02, 05) | the stated proof-of-claim submission deadline |
+| annual-deductible | 14 | 9 | per-illness table cells, a per-visit ER deductible and a property-damage deductible removed |
+| per-illness-deductible | — | 2 (doc 01, In-/Out-of-Network kept separate) | a benefit's own per-occurrence deductible is not taken |
+| age-limits | 4 (2 were age-banded coverage maximums) | 3, all real age conditions | |
+| policy-limit | 6 | 13 | overall maximum (doc 01) and age-banded maximum options (docs 02, 05, selectable, heading cited) added; sub-benefit "Maximum Limit" bullets rejected |
+| geographic-restrictions | 83 (mostly mentions/definitions) | 8 | area-of-coverage restriction and home-country charges exclusion kept |
+| international-coverage | 70 | 0 (NOT STATED) | no line stated a restriction; absence is honest |
+
+Known residuals (not introduced here): policy-limit still holds two sub-benefit
+maximum sentences in docs 01, 02 and 05 (AD&D, reunion) via the
+pre-existing "maximum benefit/coverage" aliases; one geographic line is a
+benefit-specific "applies only to … flight" condition; one annual-deductible
+value in doc 01 is a sentence fragment. Docs 03/04 have no geographic
+restriction captured (recall gap; honest absence).
+
+Checks (Phase 2): `npm test` 1615 passed / 22 skipped / 0 failed; with
+`REAL_PDFS_DIR`/`REAL_FIXTURES_DIR` 1737 passed / 1 failed (pre-existing
+fixture gap, see above) / 42 skipped; `npx tsc --noEmit` clean; `npm run build`
+green; `npm run test:e2e` 57 passed / 1 skipped. `npm run eval:extraction`:
+SKIPPED in effect — its labelled brochures are not on this machine (all
+metrics 0/0).

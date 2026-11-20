@@ -380,12 +380,45 @@ function hasOwnLabel(line: string): boolean {
 }
 
 /** Find all matching lines per fact per document, using pre-computed tier headers. */
+/** P0-03 semantic guards for one fact (see FactDefinition). */
+export interface FactGuards {
+  excludePatterns?: string[];
+  requiredPatterns?: string[];
+  governedPatterns?: { heading: string; line: string }[];
+}
+
+/** Sibling bullets skipped while looking up for a governing heading. */
+const GOVERNED_MAX_BULLETS = 4;
+const BULLET_LINE = /^\s*[•·▪\-–]/;
+
+/** Index of the governing heading for a bullet line: the nearest non-bullet
+ *  line above it, skipping at most GOVERNED_MAX_BULLETS sibling bullets. */
+function governingHeadingIndex(lines: readonly string[], lineIdx: number): number | undefined {
+  for (let i = lineIdx - 1, skipped = 0; i >= 0; i--) {
+    if (!BULLET_LINE.test(lines[i])) return i;
+    if (++skipped > GOVERNED_MAX_BULLETS) return undefined;
+  }
+  return undefined;
+}
+
 export function findAllMatchesWithHeaders(
   factPatterns: string[],
   pages: string[],
-  tierHeadersByPage: Map<number, TierHeader[]>
+  tierHeadersByPage: Map<number, TierHeader[]>,
+  guards: FactGuards = {},
 ): { page: number; quote: string; display?: string; qualifiers: Record<string, string> }[] {
   const regexes = factPatterns.map((p) => new RegExp(p, "i"));
+  const excludes = (guards.excludePatterns ?? []).map((p) => new RegExp(p, "i"));
+  const requires = (guards.requiredPatterns ?? []).map((p) => new RegExp(p, "i"));
+  const governed = (guards.governedPatterns ?? []).map((g) => ({ heading: new RegExp(g.heading, "i"), line: new RegExp(g.line, "i") }));
+  // A line that names this fact's keyword but states a different concept is
+  // never this fact; absence is honest, a neighbouring fact is not (P0-03).
+  // When a line ends on a dangling basis ("… Deductible for each"), the
+  // basis continues on the next line and must be read for the exclusion.
+  const admissible = (line: string, next = "") => {
+    const context = /\b(?:for each|per|each)\s*$/i.test(line) ? `${line} ${next}` : line;
+    return !excludes.some((re) => re.test(context)) && (requires.length === 0 || requires.some((re) => re.test(line)));
+  };
   const results: { page: number; quote: string; display?: string; qualifiers: Record<string, string> }[] = [];
 
   for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
@@ -395,7 +428,18 @@ export function findAllMatchesWithHeaders(
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const line = lines[lineIdx];
-      if (regexes.some((re) => re.test(line))) {
+      const next = lines[lineIdx + 1] ?? "";
+      if (!regexes.some((re) => re.test(line)) || !admissible(line, next)) {
+        // A bullet value whose own words do not name the fact belongs to it
+        // only under a matching governing heading, which is cited with it.
+        const rule = admissible(line, next) ? governed.find((g) => g.line.test(line)) : undefined;
+        const headingIdx = rule ? governingHeadingIndex(lines, lineIdx) : undefined;
+        if (rule && headingIdx !== undefined && rule.heading.test(lines[headingIdx]) && !excludes.some((re) => re.test(lines[headingIdx]))) {
+          results.push({ page: pageNum, quote: lines.slice(headingIdx, lineIdx + 1).join("\n"), display: line, qualifiers: extractQualifiers(line) });
+        }
+        continue;
+      }
+      {
         const relevantHeader = headers.find(h => h.lineIndex < lineIdx && lineIdx - h.lineIndex <= 10);
 
         if (relevantHeader) {
@@ -477,7 +521,7 @@ export function extractFallback(
 
     for (const doc of documents) {
       for (const drop of dropsByDoc.get(doc.documentId) ?? []) if (drop.factName === fact.name) withhold(doc, drop);
-      const matches = findAllMatchesWithHeaders(fact.patterns, doc.pages, tierHeadersByDoc.get(doc.documentId)!);
+      const matches = findAllMatchesWithHeaders(fact.patterns, doc.pages, tierHeadersByDoc.get(doc.documentId)!, fact);
 
       for (const match of matches) {
         const verified = verifyEvidenceCitation([doc], {

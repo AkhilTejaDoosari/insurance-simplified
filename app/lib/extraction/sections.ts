@@ -35,6 +35,7 @@ export const SECTIONS: Section[] = [
       "What you might pay: premium, deductible, copay, coinsurance, out-of-pocket maximum, policy limit and conditional costs.",
     factNames: [
       "annual-deductible",
+      "per-illness-deductible",
       "out-of-pocket-maximum",
       "premium",
       "coinsurance",
@@ -88,6 +89,7 @@ export const SECTIONS: Section[] = [
       "referral-requirement",
       "material-exclusions",
       "waiting-period",
+      "claims-filing-deadline",
       "coverage-duration",
       "age-limits",
       "geographic-restrictions",

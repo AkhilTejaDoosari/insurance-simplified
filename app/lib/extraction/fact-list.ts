@@ -10,20 +10,58 @@ export interface FactDefinition {
   patterns: string[];
   /** User-context field that can rule this fact out (FR-003). */
   contextField?: "age" | "countryOrResidency" | "visaOrStatus" | "location" | "coverageDates";
+  /** P0-03 semantic guards. A line (or table label) that matches any of
+   *  these states a different concept and is never this fact. */
+  excludePatterns?: string[];
+  /** P0-03: the line must ALSO match one of these (e.g. a geographic
+   *  mention is a restriction only with a restriction marker). */
+  requiredPatterns?: string[];
+  /** P0-03: a bullet value line is this fact only when its governing
+   *  heading — the nearest non-bullet line above, skipping at most
+   *  GOVERNED_MAX_BULLETS sibling bullets — matches `heading`. The evidence
+   *  quote spans heading → line so the governing context is cited. */
+  governedPatterns?: { heading: string; line: string }[];
+  /** P0-03: match table labels against the full label (sub-notes and
+   *  parentheticals included), because the fact's basis lives there. */
+  matchFullLabel?: boolean;
+  /** With matchFullLabel: the label's concept head must match this, so a
+   *  benefit row that merely has its own deductible is not this fact. */
+  labelHeadPattern?: string;
 }
 
-export const FACT_LIST_VERSION = "v1";
+/** v2 (P0-03): claims-filing-deadline and per-illness-deductible added;
+ *  eligibility, annual deductible, age limits, policy limit, geographic and
+ *  international facts gained semantic guards. */
+export const FACT_LIST_VERSION = "v2";
+
+/** Deductible basis other than the plan period: per illness, injury, … */
+const PER_INCIDENT =
+  "\\b(?:per|for each|each)\\s+(?:covered\\s+)?(?:illness|injury|injuries|condition|accident|admission|incident|occurrence|disability|damage)\\b";
+/** Any per-event basis (per visit, for each admission, …): never annual. */
+const PER_EVENT =
+  "\\b(?:per|for each)\\s+(?:[\\w-]+\\s+){0,3}(?:visits?|admissions?|trips?|occurrences?|confinements?|stays?)\\b";
+/** Claim-procedure language (notice/proof of claim, filing, legal action). */
+const CLAIM_PROCEDURE =
+  "\\b(?:proof|notice) of (?:claim|loss)\\b|\\bclaims? (?:must|shall|should) be (?:filed|submitted|received|presented)\\b|\\b(?:action|proceeding|suit)s?\\b.*\\bbrought\\b";
+/** A stated geographic restriction, not a mention or an extension.
+ *  "outside" alone locates a benefit; it does not restrict one. */
+const GEO_RESTRICTION =
+  "\\bexclud(?:ing|es|ed)\\b|\\bonly\\b|\\blimited to\\b|\\bnot covered\\b|\\bno (?:coverage|benefits?)\\b|\\bnot (?:be )?(?:payable|eligible|available|provided)\\b|\\bdoes not apply\\b|\\bexcept\\b|\\brestricted\\b|\\bmust (?:reside|remain)\\b";
+/** Definitions name a term; they do not restrict anything. */
+const DEFINITION =
+  "\\bmeans\\b|\\brefers to\\b|\\bis defined as\\b|^\\s*[A-Z][A-Za-z’' ]{2,40}:\\s+(?:All|The|Any|An?|Each)\\b";
 
 export const FACTS: FactDefinition[] = [
   { name: "premium", label: "Premium / price", patterns: ["premium(?=.*(?:\\$|\\b\\d))", "\\bprice\\b(?=.*(?:\\$|\\b\\d))"] },
-  { name: "annual-deductible", label: "Annual deductible", patterns: ["^(?!.*\\brecommend(?:s|ed)?\\b)(?:.*\\bannual deductible\\b|.*\\bdeductible options\\b|.*\\bdeductible\\s*[:$]|.*\\$\\s?[\\d,]+\\s+deductible|.*\\bcalendar[- ]year deductibles?(?:\\s+is)?(?:\\s+now)?\\s*:?\\s*\\$\\s?[\\d,]+)"] },
+  { name: "annual-deductible", label: "Annual deductible", excludePatterns: [PER_INCIDENT, PER_EVENT], patterns: ["^(?!.*\\brecommend(?:s|ed)?\\b)(?:.*\\bannual deductible\\b|.*\\bdeductible options\\b|.*\\bdeductible\\s*[:$]|.*\\$\\s?[\\d,]+\\s+deductible|.*\\bcalendar[- ]year deductibles?(?:\\s+is)?(?:\\s+now)?\\s*:?\\s*\\$\\s?[\\d,]+)"] },
+  { name: "per-illness-deductible", label: "Deductible per illness, injury or condition", matchFullLabel: true, labelHeadPattern: "^\\s*deductibles?\\b", excludePatterns: ["\\bper damage\\b|\\bdamage deductible\\b"], patterns: ["\\bdeductibles?\\b.*" + PER_INCIDENT, PER_INCIDENT + ".*\\bdeductibles?\\b"] },
   { name: "out-of-pocket-maximum", label: "Out-of-pocket maximum", patterns: ["out-of-pocket maximum", "out of pocket max"] },
   { name: "emergency-care", label: "Emergency room", patterns: ["emergency (room|department|services?|care|coverage)", "emergency[^.\\n]*copay", "copay[^.\\n]*emergency", "emergency[^.\\n]*deductible"] },
   { name: "prescriptions", label: "Prescription drugs", patterns: ["prescription"] },
   { name: "coinsurance", label: "Coinsurance / your share", patterns: ["coinsurance", "cost sharing", "cost-share", "you pay \\d+\\s*%"] },
-  { name: "policy-limit", label: "Maximum coverage / policy limit", patterns: ["policy limit", "maximum coverage", "lifetime maximum", "benefit maximum", "maximum benefit"] },
+  { name: "policy-limit", label: "Maximum coverage / policy limit", patterns: ["policy limit", "maximum coverage", "coverage maximum(?=.*\\$\\s?\\d)", "lifetime maximum", "benefit maximum", "maximum benefit", "^\\s*(?:(?:certificate|policy|overall|plan)\\s+)?maximum limit\\b\\s*:?\\s*\\$\\s?\\d"], governedPatterns: [{ heading: "\\b(?:limit|maximum)\\b", line: "^\\s*[•·▪\\-–]\\s*(?:through|up to|ages?|under|over|\\d)[^:$]*:\\s*\\$\\s?\\d" }] },
   { name: "pre-existing-conditions", label: "Pre-existing-condition rule", patterns: ["pre-existing"] },
-  { name: "eligibility", label: "Eligibility", patterns: ["\\b(?:eligibility\\s*:\\s*\\w+|eligible to (?:buy|purchase|enroll)|eligibility requirements)\\b", "must be (?:under age|at least|a non-?u\\.?s\\.? resident|residing|enrolled|a full-time student)", "required to be", "\\b\\d+ days? of age or older\\b"] },
+  { name: "eligibility", label: "Eligibility", patterns: ["\\b(?:eligibility\\s*:\\s*\\w+|eligible to (?:buy|purchase|enroll)|eligibility requirements)\\b", "must be (?:under age|at least|a non-?u\\.?s\\.? resident|residing|enrolled|a full-time student)", "\\b\\d+ days? of age or older\\b"], excludePatterns: [CLAIM_PROCEDURE] },
   { name: "student-eligibility", label: "Student / visa eligibility", patterns: ["F-1|J-1|student eligibility|student status|full-time student", "must be (?:under age|a full-time student)"], contextField: "visaOrStatus" },
   { name: "network", label: "Provider network", patterns: ["provider network", "(?<!out of )PPO network", "network of (?:U\\.?S\\.? )?providers"] },
   { name: "primary-care-visit", label: "Primary / physician visits", patterns: ["primary care", "office visit", "physician visit"] },
@@ -38,14 +76,15 @@ export const FACTS: FactDefinition[] = [
   { name: "urgent-care", label: "Urgent / walk-in care", patterns: ["urgent care", "walk-in", "walk in clinic"] },
   { name: "lab-and-imaging", label: "Labs & imaging", patterns: ["\\blab\\b|laborator|radiolog|x-?ray|imaging|MRI|CT scan|diagnostic imaging"] },
   { name: "ambulance", label: "Ambulance", patterns: ["ambulance"] },
-  { name: "international-coverage", label: "International restrictions", patterns: ["outside the (country|U\\.S\\.)|abroad|international|travel coverage"], contextField: "countryOrResidency" },
+  { name: "international-coverage", label: "International restrictions", patterns: ["outside the (country|U\\.S\\.)|abroad|international|travel coverage"], requiredPatterns: [GEO_RESTRICTION], excludePatterns: [DEFINITION], contextField: "countryOrResidency" },
   { name: "network-rules", label: "Network / out-of-network rules", patterns: ["out-of-network", "out of network", "network use required", "must use (a )?network"] },
   { name: "preauthorization", label: "Preauthorization", patterns: ["pre-?authorization", "prior authorization", "pre-certification", "precertification", "approved in advance"] },
   { name: "material-exclusions", label: "Material exclusions", patterns: ["exclusion", "excluded from coverage", "not covered", "limitations and exclusions"] },
   { name: "waiting-period", label: "Waiting periods", patterns: ["waiting period"] },
-  { name: "geographic-restrictions", label: "Geographic restrictions", patterns: ["service area", "home country", "coverage area", "state of residence", "destination country"] },
+  { name: "claims-filing-deadline", label: "Claims filing deadline", patterns: ["\\b(?:proof|notice) of (?:claim|loss)\\b.*\\bwithin\\b.*(?:\\(\\d+\\)|\\b\\d+\\s*(?:days?|months?|years?)\\b)", "\\bclaims?\\b.*\\b(?:must|shall|should)\\s+be\\s+(?:filed|submitted|received|presented)\\b.*\\b(?:within|no later than|not later than)\\b.*\\d"], excludePatterns: ["\\b(?:action|proceeding|suit)s?\\b.*\\bbrought\\b"] },
+  { name: "geographic-restrictions", label: "Geographic restrictions", patterns: ["service area", "home country", "coverage area", "area of coverage", "territor(?:y|ial)", "state of residence", "country of residence", "destination country", "\\b(?:the )?(?:United States|U\\.S\\.A?\\.?|USA)\\b"], requiredPatterns: [GEO_RESTRICTION], excludePatterns: [DEFINITION] },
   { name: "coverage-duration", label: "Coverage-duration limits", patterns: ["maximum trip", "minimum \\d+\\s*(day|week|month|year)", "maximum \\d+\\s*(day|week|month|year)", "renewable", "up to \\d+\\s*months? of coverage"] },
-  { name: "age-limits", label: "Age limits", patterns: ["\\bage \\d+|under \\d+|over \\d+"], contextField: "age" },
+  { name: "age-limits", label: "Age limits", patterns: ["\\bage limits?\\b", "\\b(?:under|over|below|above|at least|younger than|older than)\\s+(?:the\\s+)?age\\s+(?:of\\s+)?\\d+", "\\bage\\s+\\d+", "\\b\\d+\\s+(?:years?\\s+(?:of\\s+age|old)|days?\\s+of\\s+age)", "\\b(?:maximum|minimum)\\s+(?:issue\\s+|entry\\s+|enrol?lment\\s+)?age\\b", "\\b(?:dependents?|child(?:ren)?|members?|persons?|people|applicants?|insureds?|students?|travell?ers?|individuals?|adults?|spouses?)\\s+(?:who are\\s+|aged?\\s+)?(?:under|over|below|above)\\s+\\d+"], excludePatterns: ["\\$\\s?\\d"], contextField: "age" },
   { name: "referral-requirement", label: "Referrals", patterns: ["referral"] },
   { name: "coverage-dates", label: "Coverage dates / term", patterns: ["coverage (period|dates|term|begins|ends)|effective date"], contextField: "coverageDates" },
   // Plan Highlights candidates — unusual/plan-specific benefits
@@ -80,7 +119,7 @@ export function extractQualifiers(line: string) {
   const qualifiers: Record<string, string> = {};
   const net = line.match(/in-network[^.,;]*|out-of-network[^.,;]*/gi);
   if (net) qualifiers.networkTier = net.join(" / ").trim();
-  const period = line.match(/\bper (year|month|visit|day)\b|\bannual(?:ly)?\b|\blifetime\b/gi);
+  const period = line.match(/\bper (year|month|visit|day)\b|\bannual(?:ly)?\b|\blifetime\b|\b(?:per|for each)\s+(?:covered\s+)?(?:illness|injury|condition|accident|admission|incident|occurrence)(?:\s+or\s+(?:illness|injury|condition|accident))?\b|\bper certificate period\b/gi);
   if (period) qualifiers.period = [...new Set(period.map((p) => p.toLowerCase()))].join(", ");
   const age = line.match(/\bage\s*\d+(?:\s*(?:years? old|\+))?(?:\s+and\s+(?:over|under))?|\b(?:under|over)\s+(?:age\s*)?\d+\b|\b\d+\s+(?:days?|years?)\s+of age(?: or older)?\b/i);
   if (age) qualifiers.ageBand = age[0].trim();

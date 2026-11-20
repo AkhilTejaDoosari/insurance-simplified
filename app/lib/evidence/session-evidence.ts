@@ -30,6 +30,7 @@ const FACT_PROVISION_KIND: Readonly<Record<string, ProvisionKind>> = {
   "material-exclusions": "exclusion",
   "pre-existing-conditions": "exclusion",
   "annual-deductible": "cost_share",
+  "per-illness-deductible": "cost_share",
   "coinsurance": "cost_share",
   "out-of-pocket-maximum": "limit",
   "policy-limit": "limit",
@@ -39,6 +40,7 @@ const FACT_PROVISION_KIND: Readonly<Record<string, ProvisionKind>> = {
   "preauthorization": "requirement",
   "referral-requirement": "requirement",
   "waiting-period": "requirement",
+  "claims-filing-deadline": "requirement",
 };
 
 export function provisionKindForFact(factName: string): ProvisionKind {
