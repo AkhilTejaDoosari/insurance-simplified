@@ -6,6 +6,11 @@ import type {
   Qualifiers,
 } from "@/app/lib/extraction/types";
 import { FACTS } from "@/app/lib/extraction/fact-list";
+import {
+  CANNOT_BE_CONFIRMED_RATIONALE,
+  isCannotBeConfirmedRow,
+} from "@/app/lib/evidence/row-resolution";
+import { CANNOT_BE_CONFIRMED } from "@/app/lib/evidence/issued";
 import { sanitizeGroups } from "@/app/lib/extraction/presentation-groups";
 import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
 import { hasSameScopeContradiction } from "@/app/lib/extraction/contradictions";
@@ -556,4 +561,117 @@ export function buildPresentation(
     (proposal ? validatePresentation(proposal, table, view, context) : null) ??
     deterministic(table, view, context)
   );
+}
+
+// ---- Trust notices (M7): issued-resolution failures and honest absence ----
+
+
+export interface CannotBeConfirmedNotice {
+  concept: string;
+  label: string;
+  /** Always the exact phrase "cannot be confirmed". */
+  status: typeof CANNOT_BE_CONFIRMED;
+  text: string;
+}
+
+const labelOf = (concept: string) => FACTS.find((f) => f.name === concept)?.label ?? concept;
+
+/** Rows the render gate replaced because they could not be confirmed. Never
+ *  shown with a value, and never as "No" / "Not covered". */
+export function cannotBeConfirmedFacts(table: Pick<Table, "rows">): CannotBeConfirmedNotice[] {
+  return table.rows
+    .filter((row) => isCannotBeConfirmedRow(row))
+    .map((row) => ({
+      concept: row.factName,
+      label: labelOf(row.factName),
+      status: CANNOT_BE_CONFIRMED,
+      text: CANNOT_BE_CONFIRMED_RATIONALE,
+    }));
+}
+
+/** Optional server-derived reading coverage (EC-10). Read structurally so
+ *  results without it (legacy, or before the reader lands) render as before. */
+interface CoverageShape {
+  documents?: { documentId?: unknown; pagesRead?: unknown; pagesNotRead?: unknown; pagesPartlyRead?: unknown }[];
+  absences?: { factName?: unknown; reason?: unknown }[];
+}
+const pageList = (v: unknown): number[] =>
+  Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n) && n > 0) : [];
+
+export interface ReadingCoverageNote {
+  documentId: string;
+  filename: string;
+  pagesRead: number[];
+  pagesNotRead: number[];
+  pagesPartlyRead: number[];
+}
+
+export function readingCoverage(table: Pick<Table, "documents">): ReadingCoverageNote[] {
+  const coverage = (table as { coverage?: CoverageShape }).coverage;
+  if (!coverage || !Array.isArray(coverage.documents)) return [];
+  return coverage.documents.flatMap((d) => {
+    const doc = table.documents.find((x) => x.documentId === d?.documentId);
+    if (!doc) return [];
+    return [{
+      documentId: doc.documentId,
+      filename: doc.filename,
+      pagesRead: pageList(d.pagesRead),
+      pagesNotRead: pageList(d.pagesNotRead),
+      pagesPartlyRead: pageList(d.pagesPartlyRead),
+    }];
+  });
+}
+
+/** One sentence per document; never says "not covered". */
+export function readingCoverageText(note: ReadingCoverageNote): string {
+  const parts = [`${note.filename}: read ${note.pagesRead.length} page${note.pagesRead.length === 1 ? "" : "s"}`];
+  if (note.pagesPartlyRead.length) parts.push(`partly read page${note.pagesPartlyRead.length === 1 ? "" : "s"} ${note.pagesPartlyRead.join(", ")}`);
+  if (note.pagesNotRead.length) parts.push(`could not read page${note.pagesNotRead.length === 1 ? "" : "s"} ${note.pagesNotRead.join(", ")}`);
+  return `${parts.join("; ")}.`;
+}
+
+export interface AbsenceNotice {
+  concept: string;
+  label: string;
+  text: string;
+}
+
+/** Why each NOT STATED row has no value, from the optional coverage record.
+ *  A miss is "not found in the pages read", never "not covered". */
+export function absenceNotices(table: Pick<Table, "rows">): AbsenceNotice[] {
+  const coverage = (table as { coverage?: CoverageShape }).coverage;
+  if (!coverage || !Array.isArray(coverage.absences)) return [];
+  return coverage.absences.flatMap((a) => {
+    if (typeof a?.factName !== "string") return [];
+    const row = table.rows.find((r) => r.factName === a.factName && r.verdict === "NOT STATED");
+    if (!row) return [];
+    const text = a.reason === "candidates-withheld"
+      ? "Possible source passages were found but could not be verified, so no value is shown."
+      : a.reason === "not-found-in-pages-read"
+        ? "Not found in the pages read."
+        : null;
+    return text ? [{ concept: a.factName, label: labelOf(a.factName), text }] : [];
+  });
+}
+
+export interface WithheldNotice {
+  concept: string;
+  label: string;
+  documentId: string;
+  page: number;
+  quote: string;
+}
+
+/** Source lines that state a fact but were withheld (shown verbatim so the
+ *  drop is visible; never as a value). */
+export function withheldNotices(table: Pick<Table, "rows">): WithheldNotice[] {
+  return table.rows.flatMap((row) => {
+    const withheld = (row as { withheld?: unknown }).withheld;
+    if (!Array.isArray(withheld)) return [];
+    return withheld.flatMap((w: { documentId?: unknown; page?: unknown; quote?: unknown }) =>
+      typeof w?.documentId === "string" && Number.isInteger(w.page) && typeof w.quote === "string" && w.quote.trim()
+        ? [{ concept: row.factName, label: labelOf(row.factName), documentId: w.documentId, page: w.page as number, quote: w.quote }]
+        : [],
+    );
+  });
 }

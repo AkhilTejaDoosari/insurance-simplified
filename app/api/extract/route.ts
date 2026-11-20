@@ -8,7 +8,6 @@
 // Session ID alone is insufficient for authorization.
 
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "node:crypto";
 import { getSession, registerEvidence, updateSessionContext } from "@/app/lib/session";
 import { loadSession } from "@/app/lib/session-store";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
@@ -27,8 +26,11 @@ import { timeAsync, timeSync } from "@/app/lib/observability/timing";
 import { proposeGroups, sanitizeGroups } from "@/app/lib/extraction/presentation-groups";
 import {
   documentFingerprint,
+  resultFingerprintFor,
   saveComparisonResult,
 } from "@/app/lib/comparison-result-db";
+import { sealVerifiedTable } from "@/app/lib/evidence/session-evidence";
+import { issueRows, renderIssuedRows } from "@/app/lib/evidence/row-resolution";
 
 export async function POST(request: NextRequest) {
   const requestId = newRequestId();
@@ -102,11 +104,26 @@ export async function POST(request: NextRequest) {
     // source verification, citation canonicalization, table-anchor
     // re-derivation, display grounding, Stage E attribution, noise filter.
     const verified: ComparisonTable = verifyComparisonTable(table, session.documents);
-    const resultFingerprint = createHash("sha256").update(JSON.stringify({
-      documents: documentFingerprint(session.documents),
+    // Evidence core (evidence-core.md §4): register the session's documents,
+    // seal every provable verified value into a request-scoped
+    // ProvisionStore, and issue each row as a resolution. Rows reach the
+    // response only through the issued-resolution render gate (TB-3).
+    const coverage = (verified as { coverage?: unknown }).coverage;
+    const sessionEvidence = timeSync("extract.sealProvisions", () =>
+      sealVerifiedTable(session.sessionId, session.documents, verified)
+    );
+    const issuedRows = issueRows(
+      sessionEvidence.authority,
+      session.sessionId,
+      verified.rows,
+      sessionEvidence.provisionIdsByRow,
+    );
+    const rendered = renderIssuedRows(sessionEvidence.authority, session.sessionId, issuedRows);
+    const resultFingerprint = resultFingerprintFor({
+      documentFingerprint: documentFingerprint(session.documents),
       table: verified,
       context: session.userContext,
-    })).digest("hex");
+    });
     const contacts = timeSync("extract.extractContacts", () =>
       extractContacts(
         session.documents.map((d) => ({
@@ -149,6 +166,7 @@ export async function POST(request: NextRequest) {
             factListVersion: verified.factListVersion,
             documents: verified.documents,
             ...(verified.plans ? { plans: verified.plans } : {}),
+            ...(coverage !== undefined ? { coverage } : {}),
             rows: verified.rows,
             presentationGroups,
             contacts,
@@ -165,7 +183,7 @@ export async function POST(request: NextRequest) {
       resultFingerprint,
       ...(verified.plans ? { plans: verified.plans.map((plan) => ({ ...plan, sources: plan.sources.map(withEvidenceId) })) } : {}),
       presentationGroups,
-      rows: verified.rows.map((row) => ({
+      rows: rendered.rows.map((row) => ({
         ...row,
         values: row.values.map((value) => ({
           ...value,

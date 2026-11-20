@@ -32,6 +32,7 @@ import {
   validateSelectionScope,
 } from "@/app/lib/extraction/selection-request";
 import { buildReportPdf } from "@/app/lib/report/pdf";
+import { confirmStoredResult } from "@/app/lib/evidence/read-back";
 
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -126,8 +127,8 @@ export async function POST(request: NextRequest) {
         "Selection is stale: a newer comparison result exists. Re-run the comparison.",
     });
   }
-  const table = comparisonTableFromPayload(record);
-  const scopeError = validateSelectionScope(selection, table);
+  // The selection names a scope of the stored result (ids and tiers only).
+  const scopeError = validateSelectionScope(selection, comparisonTableFromPayload(record));
   if (scopeError) {
     if (scopeError === "foreign-plan" || scopeError === "too-many-plans") {
       return errorResponse("BAD_INPUT", 400, {
@@ -151,6 +152,14 @@ export async function POST(request: NextRequest) {
   // context and the validated selection. Overview derivation and the report
   // builder both read this snapshot — no interleaved state can change it
   // mid-build, and nothing here re-extracts or persists UI state.
+  // AT-PERSIST: the stored result carries no authority. Re-derive it from the
+  // session's stored page text under this request's authority; rows that do
+  // not re-derive identically render as "cannot be confirmed" (TB-3).
+  const { table } = confirmStoredResult({
+    sessionId,
+    documents: session.documents,
+    record,
+  });
   const scopes = overviewScopes(
     table,
     selection.planIds,
