@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     // seal every provable verified value into a request-scoped
     // ProvisionStore, and issue each row as a resolution. Rows reach the
     // response only through the issued-resolution render gate (TB-3).
-    const coverage = (verified as { coverage?: unknown }).coverage;
+    const coverage = verified.coverage;
     const sessionEvidence = timeSync("extract.sealProvisions", () =>
       sealVerifiedTable(session.sessionId, session.documents, verified)
     );
@@ -143,6 +143,10 @@ export async function POST(request: NextRequest) {
         quote: c.quote,
       })),
       ...(verified.plans?.flatMap((plan) => plan.sources) ?? []),
+      // Withheld source lines are shown verbatim with a page link.
+      ...verified.rows.flatMap((row) =>
+        (row.withheld ?? []).map(({ documentId, page, quote }) => ({ documentId, page, quote }))
+      ),
     ]);
     let presentationGroups = sanitizeGroups(null, verified.rows);
     if (useLlm) {
@@ -183,12 +187,14 @@ export async function POST(request: NextRequest) {
       resultFingerprint,
       ...(verified.plans ? { plans: verified.plans.map((plan) => ({ ...plan, sources: plan.sources.map(withEvidenceId) })) } : {}),
       presentationGroups,
+      ...(coverage ? { coverage } : {}),
       rows: rendered.rows.map((row) => ({
         ...row,
         values: row.values.map((value) => ({
           ...value,
           evidence: value.evidence.map(withEvidenceId),
         })),
+        ...(row.withheld ? { withheld: row.withheld.map(withEvidenceId) } : {}),
       })),
       contacts,
     });

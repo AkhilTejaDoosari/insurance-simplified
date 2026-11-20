@@ -5,6 +5,7 @@ import type ComparisonTable from "@/app/components/ComparisonTable";
 import { MissingContextPrompt } from "@/app/components/ComparisonTable";
 import ConditionalValue from "@/app/components/ConditionalValue";
 import VerifyContact from "@/app/components/VerifyContact";
+import VerdictBadge from "@/app/components/VerdictBadge";
 import {
   absenceNotices,
   buildPresentation,
@@ -540,7 +541,7 @@ export default function AdaptiveResults(props: Props) {
           </React.Fragment>
         );
       })}
-      <TrustNotices table={table} viewDocumentIds={viewDocumentIds(table, view)} />
+      <TrustNotices table={table} sessionId={sessionId} viewDocumentIds={viewDocumentIds(table, view)} />
     </div>
   );
 }
@@ -549,15 +550,17 @@ export default function AdaptiveResults(props: Props) {
  *  when present; a missing value is never shown as "No" or "Not covered". */
 function TrustNotices({
   table,
+  sessionId,
   viewDocumentIds: documentIds,
 }: {
   table: Props["table"];
+  sessionId: string;
   viewDocumentIds: string[];
 }) {
   const unconfirmed = cannotBeConfirmedFacts(table);
   const inView = new Set(documentIds);
   const coverage = readingCoverage(table).filter((c) => inView.has(c.documentId));
-  const absences = absenceNotices(table);
+  const absences = absenceNotices(table, documentIds);
   const withheld = withheldNotices(table).filter((w) => inView.has(w.documentId));
   if (!unconfirmed.length && !coverage.length && !absences.length && !withheld.length) return null;
   return (
@@ -592,7 +595,22 @@ function TrustNotices({
           <ul>
             {withheld.map((w, i) => (
               <li key={`${w.concept}-${i}`}>
-                <strong>{w.label}</strong> (page {w.page}): <q>{w.quote}</q>
+                <VerdictBadge verdict="NEEDS VERIFICATION" />{" "}
+                <strong>{w.label}</strong>:{" "}
+                <a
+                  href={documentUrl(
+                    sessionId,
+                    w.documentId,
+                    table.documents.find((d) => d.documentId === w.documentId)?.filename ?? "Source document",
+                    w.page,
+                    w.evidenceId,
+                  )}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  page {w.page}
+                </a>{" "}
+                <q>{w.quote}</q>
               </li>
             ))}
           </ul>

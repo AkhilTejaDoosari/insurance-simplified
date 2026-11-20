@@ -40,6 +40,7 @@ import {
   indexFacts,
   readingCoverage,
   readingCoverageText,
+  withheldNotices,
   viewDocumentIds,
   type ActiveView,
 } from "@/app/lib/presentation/adaptive";
@@ -357,11 +358,21 @@ export async function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
   }
   const inScope = (documentId: string) => !activeDocuments || activeDocuments.has(documentId);
   const coverageNotes = readingCoverage(input.table).filter((c) => inScope(c.documentId));
-  const absences = absenceNotices(input.table);
+  const absences = absenceNotices(input.table, activeDocuments ? [...activeDocuments] : undefined);
   if (coverageNotes.length > 0 || absences.length > 0) {
     write("Pages read", { font: bold, size: 12 });
     for (const note of coverageNotes) write(readingCoverageText(note), { size: 9 });
     for (const a of absences) write(`${a.label}: ${a.text}`, { size: 9, color: MUTED });
+    y -= 8;
+  }
+  const withheld = withheldNotices(input.table).filter((w) => inScope(w.documentId));
+  if (withheld.length > 0) {
+    write("Source lines found but not verified", { font: bold, size: 12 });
+    for (const w of withheld) {
+      const filename = input.table.documents.find((d) => d.documentId === w.documentId)?.filename ?? "Source document";
+      write(`${w.label}: NEEDS VERIFICATION`, { font: bold, size: 9.5 });
+      write(`"${w.quote}" (${filename}, page ${w.page})`, { size: 9, color: MUTED });
+    }
     y -= 8;
   }
 

@@ -12,6 +12,28 @@ interface AnswerResolution {
   verdict: string;
 }
 
+function ExclusionOutcomes({ response }: { response: unknown }) {
+  const list = (response as { exclusionOutcomes?: unknown }).exclusionOutcomes;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const items = list.filter(
+    (o): o is { service?: string; status: string; verdict: string } =>
+      !!o && typeof o === "object" && typeof (o as { status?: unknown }).status === "string",
+  );
+  if (!items.length) return null;
+  return (
+    <div className="chat__resolutions">
+      <p className="text-muted">Exclusion check</p>
+      <ul className="list">
+        {items.map((o, i) => (
+          <li key={i} data-status={o.status}>
+            {o.service ?? "service"}: {o.status === "confirmed" ? o.verdict : "cannot be confirmed"}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function AnswerResolutions({ response }: { response: unknown }) {
   const list = (response as { resolutions?: unknown }).resolutions;
   if (!Array.isArray(list) || list.length === 0) return null;
@@ -318,6 +340,7 @@ export default function ChatPanel({
                         ))}
                       </ul>
                       <AnswerResolutions response={t.response} />
+                      <ExclusionOutcomes response={t.response} />
                     </div>
                   ) : (
                     <p className="chat__refusal">{t.response.refusalText}</p>

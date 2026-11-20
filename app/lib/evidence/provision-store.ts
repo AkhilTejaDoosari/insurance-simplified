@@ -158,6 +158,13 @@ export class ProvisionStore {
     return admissionCheck(this.#authority, this.sessionId, this.#registry, provision).ok;
   }
 
+  /** True only for the exact authority this store seals and admits under.
+   *  A resolver checks it before issuing, so no resolution (including one
+   *  over an empty inventory) is issued under a foreign authority. */
+  issuesUnder(authority: EvidenceAuthority): boolean {
+    return authority === this.#authority;
+  }
+
   get registry(): SessionDocumentRegistry {
     return this.#registry;
   }

@@ -6,6 +6,7 @@ import type {
   Qualifiers,
 } from "@/app/lib/extraction/types";
 import { FACTS } from "@/app/lib/extraction/fact-list";
+import { absenceFor } from "@/app/lib/extraction/absence";
 import {
   CANNOT_BE_CONFIRMED_RATIONALE,
   isCannotBeConfirmedRow,
@@ -589,15 +590,6 @@ export function cannotBeConfirmedFacts(table: Pick<Table, "rows">): CannotBeConf
     }));
 }
 
-/** Optional server-derived reading coverage (EC-10). Read structurally so
- *  results without it (legacy, or before the reader lands) render as before. */
-interface CoverageShape {
-  documents?: { documentId?: unknown; pagesRead?: unknown; pagesNotRead?: unknown; pagesPartlyRead?: unknown }[];
-  absences?: { factName?: unknown; reason?: unknown }[];
-}
-const pageList = (v: unknown): number[] =>
-  Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n) && n > 0) : [];
-
 export interface ReadingCoverageNote {
   documentId: string;
   filename: string;
@@ -606,28 +598,48 @@ export interface ReadingCoverageNote {
   pagesPartlyRead: number[];
 }
 
-export function readingCoverage(table: Pick<Table, "documents">): ReadingCoverageNote[] {
-  const coverage = (table as { coverage?: CoverageShape }).coverage;
-  if (!coverage || !Array.isArray(coverage.documents)) return [];
-  return coverage.documents.flatMap((d) => {
-    const doc = table.documents.find((x) => x.documentId === d?.documentId);
-    if (!doc) return [];
-    return [{
-      documentId: doc.documentId,
-      filename: doc.filename,
-      pagesRead: pageList(d.pagesRead),
-      pagesNotRead: pageList(d.pagesNotRead),
-      pagesPartlyRead: pageList(d.pagesPartlyRead),
-    }];
+/** Server-derived reading coverage per document (EC-10); empty on legacy
+ *  results that carry none. */
+export function readingCoverage(table: Pick<Table, "documents" | "coverage">): ReadingCoverageNote[] {
+  return (table.coverage?.documents ?? []).flatMap((d) => {
+    const doc = table.documents.find((x) => x.documentId === d.documentId);
+    return doc ? [{ documentId: doc.documentId, filename: doc.filename, pagesRead: d.pagesRead, pagesNotRead: d.pagesNotRead, pagesPartlyRead: d.pagesPartlyRead }] : [];
   });
 }
+
+const pagesPhrase = (pages: readonly number[]) => `page${pages.length === 1 ? "" : "s"} ${pages.join(", ")}`;
 
 /** One sentence per document; never says "not covered". */
 export function readingCoverageText(note: ReadingCoverageNote): string {
   const parts = [`${note.filename}: read ${note.pagesRead.length} page${note.pagesRead.length === 1 ? "" : "s"}`];
-  if (note.pagesPartlyRead.length) parts.push(`partly read page${note.pagesPartlyRead.length === 1 ? "" : "s"} ${note.pagesPartlyRead.join(", ")}`);
-  if (note.pagesNotRead.length) parts.push(`could not read page${note.pagesNotRead.length === 1 ? "" : "s"} ${note.pagesNotRead.join(", ")}`);
+  if (note.pagesPartlyRead.length) parts.push(`partly read ${pagesPhrase(note.pagesPartlyRead)}`);
+  if (note.pagesNotRead.length) parts.push(`could not read ${pagesPhrase(note.pagesNotRead)}`);
   return `${parts.join("; ")}.`;
+}
+
+export const NOT_FOUND_IN_PAGES_READ = "Not found in the pages read";
+
+/** What a NOT STATED row says (EC-10, via `absenceFor`): "Not found in the
+ *  pages read", naming pages that could not be read or were only partly
+ *  read; or, when candidates were withheld, that a candidate could not be
+ *  verified. Never "No" / "Not covered". Undefined on legacy results. */
+export function absenceText(
+  table: Pick<Table, "coverage" | "rows" | "documents">,
+  factName: string,
+  documentIds?: readonly string[],
+): string | undefined {
+  const absence = absenceFor(table, factName);
+  if (!absence) return undefined;
+  if (absence.reason === "candidates-withheld") {
+    return "A possible source passage was found but could not be verified, so the value is not shown. Check the original document.";
+  }
+  const inScope = absence.documents.filter((d) => !documentIds || documentIds.includes(d.documentId));
+  const nameOf = (id: string) => table.documents.find((d) => d.documentId === id)?.filename ?? "document";
+  const gaps = inScope.flatMap((d) => [
+    ...(d.pagesNotRead.length ? [`${nameOf(d.documentId)} ${pagesPhrase(d.pagesNotRead)} could not be read`] : []),
+    ...(d.pagesPartlyRead.length ? [`${nameOf(d.documentId)} ${pagesPhrase(d.pagesPartlyRead)} ${d.pagesPartlyRead.length === 1 ? "was" : "were"} only partly read`] : []),
+  ]);
+  return gaps.length ? `${NOT_FOUND_IN_PAGES_READ} (${gaps.join("; ")}).` : `${NOT_FOUND_IN_PAGES_READ}.`;
 }
 
 export interface AbsenceNotice {
@@ -636,42 +648,41 @@ export interface AbsenceNotice {
   text: string;
 }
 
-/** Why each NOT STATED row has no value, from the optional coverage record.
- *  A miss is "not found in the pages read", never "not covered". */
-export function absenceNotices(table: Pick<Table, "rows">): AbsenceNotice[] {
-  const coverage = (table as { coverage?: CoverageShape }).coverage;
-  if (!coverage || !Array.isArray(coverage.absences)) return [];
-  return coverage.absences.flatMap((a) => {
-    if (typeof a?.factName !== "string") return [];
-    const row = table.rows.find((r) => r.factName === a.factName && r.verdict === "NOT STATED");
-    if (!row) return [];
-    const text = a.reason === "candidates-withheld"
-      ? "Possible source passages were found but could not be verified, so no value is shown."
-      : a.reason === "not-found-in-pages-read"
-        ? "Not found in the pages read."
-        : null;
-    return text ? [{ concept: a.factName, label: labelOf(a.factName), text }] : [];
+/** Absence text for every NOT STATED row the result explains. */
+export function absenceNotices(table: Pick<Table, "coverage" | "rows" | "documents">, documentIds?: readonly string[]): AbsenceNotice[] {
+  return table.rows.flatMap((row) => {
+    const text = row.verdict === "NOT STATED" ? absenceText(table, row.factName, documentIds) : undefined;
+    return text ? [{ concept: row.factName, label: labelOf(row.factName), text }] : [];
   });
 }
 
 export interface WithheldNotice {
   concept: string;
   label: string;
+  /** The row's verdict (NEEDS VERIFICATION when only withheld lines exist). */
+  verdict: Table["rows"][number]["verdict"];
   documentId: string;
   page: number;
+  /** Verified verbatim source line. */
   quote: string;
+  evidenceId?: string;
 }
 
-/** Source lines that state a fact but were withheld (shown verbatim so the
- *  drop is visible; never as a value). */
+/** Source lines that state a fact but were withheld: shown verbatim with a
+ *  page link so the drop is visible — never as a value. */
 export function withheldNotices(table: Pick<Table, "rows">): WithheldNotice[] {
-  return table.rows.flatMap((row) => {
-    const withheld = (row as { withheld?: unknown }).withheld;
-    if (!Array.isArray(withheld)) return [];
-    return withheld.flatMap((w: { documentId?: unknown; page?: unknown; quote?: unknown }) =>
-      typeof w?.documentId === "string" && Number.isInteger(w.page) && typeof w.quote === "string" && w.quote.trim()
-        ? [{ concept: row.factName, label: labelOf(row.factName), documentId: w.documentId, page: w.page as number, quote: w.quote }]
-        : [],
-    );
-  });
+  return table.rows.flatMap((row) =>
+    (row.withheld ?? []).map((w) => {
+      const evidenceId = (w as { evidenceId?: unknown }).evidenceId;
+      return {
+      concept: row.factName,
+      label: labelOf(row.factName),
+      verdict: row.verdict,
+      documentId: w.documentId,
+      page: w.page,
+      quote: w.quote,
+      ...(typeof evidenceId === "string" ? { evidenceId } : {}),
+      };
+    }),
+  );
 }

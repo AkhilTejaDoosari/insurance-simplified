@@ -41,6 +41,7 @@ import {
   loadComparisonResult,
   type ComparisonResultRecord,
 } from "@/app/lib/comparison-result-db";
+import { exclusionOutcomeViews, resolveExclusionOutcomes } from "@/app/lib/evidence/exclusion-outcomes";
 import {
   confirmStoredResult,
   resolutionsForCitations,
@@ -292,10 +293,21 @@ export async function POST(request: NextRequest) {
       // Comparison results this answer's citations relate to, each re-derived
       // first; an altered one is labelled "cannot be confirmed" (TB-3).
       const stored = await loadStored();
-      const related =
+      const current =
         stored && stored.documentFingerprint === documentFingerprint(session.documents)
-          ? resolutionsForCitations(confirmStored(stored), canonical)
-          : [];
+          ? confirmStored(stored)
+          : null;
+      const related = current ? resolutionsForCitations(current, canonical) : [];
+      // Exclusion/applicability outcomes for services the question names,
+      // resolved over the re-derived store and shown only through
+      // displayIssuedResolution (exclusion-outcomes.ts).
+      const exclusionOutcomes = current?.evidence
+        ? exclusionOutcomeViews(
+            current.evidence.authority,
+            session.sessionId,
+            resolveExclusionOutcomes(current.evidence.store, current.evidence.authority, question),
+          )
+        : [];
       trace({
         candidateCount: canonical.length,
         topK: canonical.map((c) => ({
@@ -309,6 +321,7 @@ export async function POST(request: NextRequest) {
         ...validated,
         citations: canonical.map(withEvidenceId),
         ...(related.length ? { resolutions: related } : {}),
+        ...(exclusionOutcomes.length ? { exclusionOutcomes } : {}),
       });
     }
     trace({

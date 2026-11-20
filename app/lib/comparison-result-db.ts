@@ -25,6 +25,7 @@ import type {
   ComparisonTable,
   ProvenPlan,
   RegisteredComparisonTable,
+  TableCoverage,
 } from "@/app/lib/extraction/types";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
 import { contentDigest } from "@/app/lib/evidence/canonical";
@@ -49,7 +50,7 @@ export interface PersistedComparisonResultPayload {
   resultFingerprint?: string;
   /** Server-derived reading coverage (EC-10) when the extraction produced
    *  one. Additive JSON field — no schema migration. */
-  coverage?: unknown;
+  coverage?: TableCoverage;
 }
 
 export interface ComparisonResultRecord {
@@ -107,7 +108,7 @@ export interface FingerprintedTable {
   factListVersion: string;
   documents: { documentId: string; filename: string; pageCount: number }[];
   plans?: unknown;
-  coverage?: unknown;
+  coverage?: TableCoverage;
   rows: unknown[];
 }
 

@@ -120,7 +120,11 @@ export function confirmStoredResult(input: {
     ...(plansVerified && stored.plans ? { plans: stored.plans } : {}),
     ...(bound && p.coverage !== undefined ? { coverage: p.coverage } : {}),
     presentationGroups: (p.presentationGroups ?? []) as RegisteredComparisonTable["presentationGroups"],
-    rows: rendered.rows.map((row) => ({ ...row, values: row.values.map((v) => ({ ...v, evidence: v.evidence.map(withEvidenceId) })) })),
+    rows: rendered.rows.map((row) => ({
+      ...row,
+      values: row.values.map((v) => ({ ...v, evidence: v.evidence.map(withEvidenceId) })),
+      ...(row.withheld ? { withheld: row.withheld.map(withEvidenceId) } : {}),
+    })),
   };
   return { table, cannotBeConfirmed: rendered.cannotBeConfirmed, storedRows: stored.rows, evidence };
 }

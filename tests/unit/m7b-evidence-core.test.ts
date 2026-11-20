@@ -193,6 +193,12 @@ describe("m7b ProvisionStore admission (TB-1 contract)", () => {
     expect(provisionSealIntact(authority, sealed)).toBe(false);
   });
 
+  it("issuesUnder confirms only the store's own authority", () => {
+    const { authority, store } = setup();
+    expect(store.issuesUnder(authority)).toBe(true);
+    expect(store.issuesUnder(new EvidenceAuthority())).toBe(false);
+  });
+
   it("refuses a registry from another session", () => {
     expect(() => new ProvisionStore("other", registry(), new EvidenceAuthority())).toThrow();
   });

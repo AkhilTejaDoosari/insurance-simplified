@@ -13,6 +13,8 @@ import { ProvisionStore } from "@/app/lib/evidence/provision-store";
 import { issueRows, renderIssuedRows } from "@/app/lib/evidence/row-resolution";
 import { sealVerifiedTable } from "@/app/lib/evidence/session-evidence";
 import { cannotBeConfirmedFacts } from "@/app/lib/presentation/adaptive";
+import { exclusionOutcomeViews, resolveExclusionOutcomes } from "@/app/lib/evidence/exclusion-outcomes";
+import { exclusionScenario } from "./m7d-trust-fixtures";
 import AdaptiveResults from "@/app/components/AdaptiveResults";
 import { POST as chat } from "@/app/api/chat/route";
 import { POST as exportPdf } from "@/app/api/export/route";
@@ -142,6 +144,18 @@ export async function runTb3(): Promise<void> {
     }));
     expect(html.toLowerCase()).toContain(CBC);
     expect(html).not.toContain(altered);
+
+    // Exclusion/applicability outcomes take the same gate on every surface
+    // (exclusion-outcomes.ts → displayIssuedResolution): altered after issue
+    // → "cannot be confirmed"; unaltered → confirmed.
+    const scenario = exclusionScenario({ coverage: "complete" });
+    const outcomes = resolveExclusionOutcomes(scenario.store, scenario.authority, "Is acupuncture covered?");
+    expect(outcomes.length).toBeGreaterThan(0);
+    expect(exclusionOutcomeViews(scenario.authority, scenario.sessionId, outcomes).every((v) => v.status === "confirmed")).toBe(true);
+    const alteredOutcomes = outcomes.map((o) => ({ ...o, resolution: { ...o.resolution, outcome: "verified" } }));
+    const shownAltered = exclusionOutcomeViews(scenario.authority, scenario.sessionId, alteredOutcomes);
+    expect(shownAltered.map((v) => v.status)).toEqual(outcomes.map(() => CBC));
+    expect(shownAltered.some((v) => v.verdict === "SUPPORTED")).toBe(false);
 
     // 2 & 3. The persisted result is altered after issue (stored fingerprint
     //    left untouched), then read back by chat and export.
