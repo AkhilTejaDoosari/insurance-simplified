@@ -8,7 +8,7 @@ Numbering continues from the closed V1.1 milestones, so the next milestone is M4
 Status words follow `quality.md` §1 (Not started · Partial · Implemented ·
 Tested · Verified). Update this file at every milestone close.
 
-**Current milestones: M5 — Retrieval correctness, M6 — Evaluation corpus (tooling), M7 — Verified Evidence Core (in progress on `integration/m5-m7`).** M4 closed 2026-11-19.
+**Current milestones: M5 (complete except RET-1), M6 (tooling done; labels pending), M7 (code complete for the trust core; acceptance needs labelled splits) — on `integration/m5-m7`.** M4 closed 2026-11-19.
 **Priority: finish health-insurance V1 before any other insurance domain.**
 
 ## 1. Where things stand (verified against `15f8cc2`, 2026-11-15)
@@ -83,13 +83,21 @@ approval. Do not start the next milestone automatically.
 
 **Closed (owner, 2026-11-19):** container build + health re-run at `8986f45` pass; the four defect-register rows are closed in `evidence-core.md` §6; review findings #2 (silent table-claim drop), #3 (same-scope contradiction) and #4 (tier-word guessing) are assigned to M7; the two low findings stay open in the review list above. The owner closed M4 on the review as recorded and set the defaults C-1 (five display verdicts, one mapping table), C-2 (keep semantic-only) and C-4 ($0) for M5–M7.
 
-### M5–M7 progress on `integration/m5-m7` (resume point, 2026-11-20)
+### M5–M7 status on `integration/m5-m7` (2026-11-20)
 
-Branches merged (one at a time, full checks after each): `m6/corpus-tooling` (E), `m7/trust-core` phase 1 interfaces (B), `m7/honest-reading` (C), `m5/retrieval` (A), `m7/authority` (F), `m7/exclusions` (D) — head `e51c3d1`. Local: 1414 passed / 22 skipped / 2 todo; tsc, build, e2e (55 passed, local Supabase) green. **CI red at `d72583a`:** one C test fails on Node 20 only (`m7c-honest-reading` › page image probe; production image is Node 20) — C is fixing; do not push until fixed.
+Levels per `quality.md` §1. "CI" = ran green on GitHub for the integration head; "local" = this machine only (Node 24 and Node 20 in Docker, e2e against local Supabase).
 
-Open branches: `m7/trust-core` phase 2 (TB-1/TB-3, extract wiring, read-back re-derivation, absence rendering; export-pdf fixture data being made genuine, assertions unchanged); `m7/session-wiring` (G: readability copy at upload/rehydration, session-store low findings, persistence-cutover key diagnosis); follow-ups on `m5/retrieval` (chat schema, eval RRF depth) and `m7/honest-reading` (Node 20 probe, row CONFLICTED, header tier scope). Worktrees: `../insurance-simplified-wt/{a,b,c,d,e,f,g,int}`.
+**M5 — complete except RET-1.** FILT-1 **Tested** (1,000 seeded sessions, k=5/10/40 complete, 0 foreign chunks; old HNSW path returned 0.4–2.4 % of true top-k when forced) — migration `0007_exact_session_match` filters by session before exact ranking; over-fetch 40 per leg (`fusion.ts` `CANDIDATES_PER_LEG`); chat answers schema-constrained. `npm run eval`: no metric moved (frozen v2 validation MRR@10 0.8500; records in `evals/runs/m5-*`). FILT-1/pgvector suites run in the CI e2e job from this commit on. RET-1 waits for M6 questions (plan recorded in agent-A report: 12 configs, decide on validation restriction recall@10 ≥ +5 pts). D-013 unchanged (C-2).
 
-Coordinator defaults recorded (owner-reviewable): conditional → NEEDS VERIFICATION (C-1 table in `app/lib/evidence/verdict-mapping.ts`); AT-PERSIST by re-derivation (no durable seal key — would add a secret); only exclusion claims must be verbatim; materiality map `health-materiality@1` (15 concepts) as adapter data; authority defaults per `app/lib/evidence/authority`.
+**M6 — tooling done.** Manifest builder, split tool and labelling guide (`quality.md` §5.1–5.2); `evals/manifests/corpus-v1.json`: 12 documents (5 SBC, 7 nonstandard, 190 pages), dev split, open (not frozen); ids only, mapping outside git. **Implemented** (tooling Tested by `m6e-*`). Labels and ~150 questions: not started (owner PDFs/labels).
+
+**M7 — code complete for the trust core; acceptance needs labelled splits.**
+- **Tested:** TB-1..TB-4 pass in `tests/integration/trust-boundary.test.ts`, each failing when its guard is removed; session registry, sealed provision store, issued resolutions on comparison view, chat and export; AT-PERSIST by re-derivation; exclusion inventory (EC-13) and applicability resolver (materiality map `health-materiality@1`, owner-reviewable); C4 authority + AT-AUTH-ORDER as a library; honest absence with per-page readability (Node 20 image probe fixed); strict LLM output + runtime validator; negation/exception/network grammars; review findings #2, #3, #4 and both lows fixed; C-1 mapping table in `evidence-core.md` §3.
+- **Not met:** "zero S1 on dev and validation splits" — no labels and no validation split yet. Real-document scorecard (3 local brochures) unchanged vs `m4-baseline` (display-span recall 0.491, in-inventory 0.634): no regression, no measured gain.
+- **Left (code):** a provision proposer that seals exclusions and plan-attributed values from real documents (today the line engine rarely attributes a plan, so most exclusion questions resolve "undetermined"); wiring C4 authority into a surface; exclusion outcomes outside chat.
+- **Left (owner):** labels + validation/held-out PDFs (M6); stale object-key contract (`evidence-core.md` §6) needs approval to change a test assertion.
+
+Checks at the integration head: `npm test` 1459 passed / 22 skipped / 0 failed (Node 24 and Node 20); with `REAL_FIXTURES_DIR` ~1580 passed; tsc, build, e2e 55 passed / 1 skipped.
 
 ### M5 — Retrieval correctness
 
