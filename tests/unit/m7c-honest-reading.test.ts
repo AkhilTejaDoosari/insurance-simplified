@@ -3,7 +3,7 @@
 // (review finding #4). Synthetic text only.
 import { describe, expect, it } from "vitest";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { extractPages } from "@/app/lib/pdf/extract-pages";
+import { extractPages, imagesInOperatorList } from "@/app/lib/pdf/extract-pages";
 import { assessPageReadability, classifyPage, readabilityFor, summarizeReadability } from "@/app/lib/pdf/page-readability";
 import { pageCoverage } from "@/app/lib/ingestion/quality-gate";
 import { extractFallback } from "@/app/lib/extraction/extract";
@@ -52,6 +52,22 @@ describe("per-page readability record (task 1)", () => {
     expect(classifyPage(1, "short", true).status).toBe("partly-unreadable");
     expect(classifyPage(1, "short").status).toBe("read");
     expect(assessPageReadability(["a", ""]).map((r) => r.status)).toEqual(["read", "empty"]);
+  });
+
+  it("an image check that cannot complete never reports a sparse page as fully read", () => {
+    expect(classifyPage(4, "Schedule of Benefits", undefined, "failed")).toEqual({ page: 4, status: "partly-unreadable", textChars: 18, imageCheck: "failed" });
+    expect(classifyPage(3, "", undefined, "failed").status).toBe("unreadable");
+    expect(summarizeReadability([classifyPage(1, "x", undefined, "failed")]).pagesPartlyRead).toEqual([1]);
+    // A text-rich page is read whatever the image check says.
+    expect(classifyPage(1, LONG_TEXT.repeat(3), undefined, "failed").status).toBe("read");
+  });
+
+  it("a truncated operator list (pdf.js ignored a page error) is a failed check, not 'no images'", () => {
+    const ops = { paint: new Set([85]), pairs: [[10, 11], [31, 32]] as const };
+    // save, beginText, setFont, restore: the text run never ended — truncated.
+    expect(imagesInOperatorList([10, 31, 59, 11], ops)).toBe("failed");
+    expect(imagesInOperatorList([10, 31, 59, 32, 11], ops)).toBe(false);
+    expect(imagesInOperatorList([10, 31, 32, 11, 10, 85, 11], ops)).toBe(true);
   });
 
   it("a stored record cannot claim a text-less page was read", () => {

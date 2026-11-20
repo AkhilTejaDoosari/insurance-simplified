@@ -35,25 +35,67 @@ export interface ExtractedPdf {
 
 type PdfPage = Awaited<ReturnType<Awaited<ReturnType<typeof getDocumentProxy>>["getPage"]>>;
 
-/** True when the page paints at least one image; undefined when the
- *  operator list cannot be read (image presence then stays unknown). */
-async function pagePaintsImages(page: PdfPage, imageOps: ReadonlySet<number>): Promise<boolean | undefined> {
+// pdf.js (v5+) transfers font buffers with ArrayBuffer#transferToFixedLength,
+// which Node < 21 lacks (our production image is node:20). Without it the
+// operator list of any page that loads a font is silently truncated, so an
+// image after the first text run is never seen. Install a copying fallback
+// only when the method is missing (no state; same result bytes).
+const arrayBufferProto = ArrayBuffer.prototype as ArrayBuffer & { transferToFixedLength?: (length?: number) => ArrayBuffer };
+if (typeof arrayBufferProto.transferToFixedLength !== "function") {
+  Object.defineProperty(ArrayBuffer.prototype, "transferToFixedLength", {
+    configurable: true,
+    writable: true,
+    value: function transferToFixedLength(this: ArrayBuffer, length = this.byteLength): ArrayBuffer {
+      const out = new ArrayBuffer(length);
+      new Uint8Array(out).set(new Uint8Array(this, 0, Math.min(length, this.byteLength)));
+      return out;
+    },
+  });
+}
+
+interface ImageOperators {
+  paint: ReadonlySet<number>;
+  /** Paired operators a complete operator list balances (save/restore,
+   *  beginText/endText). pdf.js "ignores" a page error by truncating the
+   *  list, which leaves a pair open. */
+  pairs: readonly (readonly [number, number])[];
+}
+
+/** True/false when the page's complete operator list shows whether it paints
+ *  an image; "failed" when the list could not be read or is truncated (an
+ *  unbalanced save/restore or beginText/endText). */
+export function imagesInOperatorList(fnArray: readonly number[], ops: ImageOperators): boolean | "failed" {
+  for (const [open, close] of ops.pairs) {
+    let depth = 0;
+    for (const fn of fnArray) {
+      if (fn === open) depth++;
+      else if (fn === close) depth--;
+    }
+    if (depth !== 0) return "failed";
+  }
+  return fnArray.some((fn) => ops.paint.has(fn));
+}
+
+async function pagePaintsImages(page: PdfPage, ops: ImageOperators): Promise<boolean | "failed"> {
   try {
-    const ops = await page.getOperatorList();
-    return ops.fnArray.some((fn: number) => imageOps.has(fn));
+    const list = await page.getOperatorList();
+    return imagesInOperatorList(list.fnArray as number[], ops);
   } catch {
-    return undefined;
+    return "failed";
   }
 }
 
-async function imageOperators(): Promise<ReadonlySet<number>> {
+async function imageOperators(): Promise<ImageOperators | undefined> {
   try {
     const { OPS } = await getResolvedPDFJS();
-    return new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject,
+    const paint = new Set([OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject,
       OPS.paintImageXObjectRepeat, OPS.paintImageMaskXObjectRepeat, OPS.paintImageMaskXObjectGroup,
       OPS.paintInlineImageXObjectGroup, OPS.paintSolidColorImageMask].filter((op) => typeof op === "number"));
+    const pairs = ([[OPS.save, OPS.restore], [OPS.beginText, OPS.endText]] as const)
+      .filter(([a, b]) => typeof a === "number" && typeof b === "number");
+    return paint.size > 0 ? { paint, pairs } : undefined;
   } catch {
-    return new Set();
+    return undefined;
   }
 }
 
@@ -105,7 +147,7 @@ export async function extractPages(
   const pages: string[] = [];
   const tables: LayoutTable[] = [];
   const readability: PageReadability[] = [];
-  let imageOps: ReadonlySet<number> | undefined;
+  let imageOps: ImageOperators | undefined | null = null;
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
@@ -113,12 +155,15 @@ export async function extractPages(
     pages.push(text);
     // Only sparse pages need the (costlier) operator list: a text-rich page
     // is "read" whether or not it also paints images.
-    let hasImages: boolean | undefined;
+    // A check that cannot complete is recorded as failed, never as "read".
+    let images: boolean | "failed" | undefined;
     if (textCharCount(text) < PARTLY_READ_MAX_CHARS) {
-      imageOps ??= await imageOperators();
-      hasImages = imageOps.size > 0 ? await pagePaintsImages(page, imageOps) : undefined;
+      if (imageOps === null) imageOps = await imageOperators();
+      images = imageOps ? await pagePaintsImages(page, imageOps) : "failed";
     }
-    readability.push(classifyPage(p, text, hasImages));
+    readability.push(images === "failed"
+      ? classifyPage(p, text, undefined, "failed")
+      : classifyPage(p, text, images));
     try {
       tables.push(...detectTables(text, items, p));
     } catch {

@@ -28,6 +28,20 @@ import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import type { PageReadability } from "@/app/lib/pdf/page-readability";
 import type { AbsenceReason, WithheldClaim } from "@/app/lib/extraction/types";
 import { annotateAbsence, WITHHELD_ROW_RATIONALE } from "@/app/lib/extraction/absence";
+import { hasSameScopeContradiction } from "@/app/lib/extraction/contradictions";
+
+/** Rationale for a plan's own structural same-scope contradiction. */
+export const STRUCTURAL_CONFLICT_RATIONALE =
+  "The plan's own document states different values for this provision in the same scope; both cited values are shown.";
+
+/** True when two attributed structural claims (table cell / statement) of the
+ *  same plan, document, scope and provision state different values. Values
+ *  of different plans, or table cells of differently-labelled rows, are
+ *  distinct provisions and never conflict (contradictions.ts). */
+function structuralConflict(values: readonly CellValue[]): boolean {
+  const proven = values.filter((v) => v.anchor !== undefined && typeof v.planId === "string");
+  return proven.some((a, i) => proven.some((b, j) => j > i && a.planId === b.planId && hasSameScopeContradiction([a, b])));
+}
 
 export interface VerifiableDocument {
   documentId: string;
@@ -135,7 +149,11 @@ export function verifyComparisonTable(table: ComparisonTable, documents: Verifia
         ...withheldField,
       });
     } else {
-      rows.push({ ...base, values, ...withheldField });
+      // A plan's own structural contradiction is CONFLICTED on the row too:
+      // consumers that read only the row verdict must not see SUPPORTED.
+      rows.push(base.verdict === "SUPPORTED" && structuralConflict(values)
+        ? { ...base, verdict: "CONFLICTED", rationale: STRUCTURAL_CONFLICT_RATIONALE, values, ...withheldField }
+        : { ...base, values, ...withheldField });
     }
   }
   const scopedDocs = documents.filter((doc) => table.documents.some((entry) => entry.documentId === doc.documentId));
