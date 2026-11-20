@@ -82,7 +82,7 @@ describe("strict structured output (client)", () => {
   it("the schema error names rule paths only, never output text", async () => {
     const leaked = { ...validOutput(), secretDocumentText: "Member SSN 000-00-0000" };
     fetchMock.mockResolvedValueOnce(completion(leaked));
-    const error = await extractViaLlm(docs, {}).catch((e: unknown) => e as Error);
+    const error = (await extractViaLlm(docs, {}).catch((e: unknown) => e)) as Error;
     expect(error).toBeInstanceOf(LlmSchemaError);
     expect(error.message).not.toContain("000-00-0000");
   });
