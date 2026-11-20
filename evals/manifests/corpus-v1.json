@@ -1,0 +1,116 @@
+{
+  "schema": "corpus-manifest/v1",
+  "name": "corpus-v1",
+  "splits": {
+    "dev": {
+      "frozen": false,
+      "frozenAt": null
+    },
+    "validation": {
+      "frozen": false,
+      "frozenAt": null
+    },
+    "held-out": {
+      "frozen": false,
+      "frozenAt": null
+    }
+  },
+  "documents": [
+    {
+      "id": "doc-001",
+      "sha256": "1705b291df3d015fdcfc574b43b414b6a3628e2a0b6170159e6f8ac7c857cd5e",
+      "bytes": 722087,
+      "pages": 39,
+      "family": "nonstandard",
+      "split": "dev"
+    },
+    {
+      "id": "doc-002",
+      "sha256": "28f9b1369b1bf27eb5dbb9622a09b62c32029be35ebf8fc8bbb07d5dc9ded624",
+      "bytes": 1119413,
+      "pages": 34,
+      "family": "nonstandard",
+      "split": "dev"
+    },
+    {
+      "id": "doc-003",
+      "sha256": "3b665e6953ce20a6b153f8a5ea9472484f84f671a72245b016bcaf838ad225e0",
+      "bytes": 495808,
+      "pages": 6,
+      "family": "sbc",
+      "split": "dev"
+    },
+    {
+      "id": "doc-004",
+      "sha256": "6f1f1dbef40d12da75b8b29cab5a42dafd87aebdfb32a377b431b24e123945db",
+      "bytes": 16607230,
+      "pages": 16,
+      "family": "nonstandard",
+      "split": "dev"
+    },
+    {
+      "id": "doc-005",
+      "sha256": "7f3f3f233af328f1caa8a7823e656ba26e4ea6f74ab5d6e3f82cc548f82bd477",
+      "bytes": 1347599,
+      "pages": 8,
+      "family": "sbc",
+      "split": "dev"
+    },
+    {
+      "id": "doc-006",
+      "sha256": "89c900f3ad831d0414b25987c6d1795a501c1c224810324856a3235bdbb3b6a4",
+      "bytes": 12857289,
+      "pages": 12,
+      "family": "nonstandard",
+      "split": "dev"
+    },
+    {
+      "id": "doc-007",
+      "sha256": "a0e85f874ae17509ab4dd7a63c2a6198247b0ac229b63ff53bfaebca7e2ddd7d",
+      "bytes": 1191249,
+      "pages": 39,
+      "family": "nonstandard",
+      "split": "dev"
+    },
+    {
+      "id": "doc-008",
+      "sha256": "bcdd1da85de323a366f5b9fab0b651deb7a963337a8d84c7ba1bafdca348bcf3",
+      "bytes": 2419939,
+      "pages": 8,
+      "family": "nonstandard",
+      "split": "dev"
+    },
+    {
+      "id": "doc-009",
+      "sha256": "c4db86f550e28bfa1a9089be5b13d8f887cb2f7b8c0f458b8cd39151ad9fa89f",
+      "bytes": 602193,
+      "pages": 9,
+      "family": "sbc",
+      "split": "dev"
+    },
+    {
+      "id": "doc-010",
+      "sha256": "d88ca332a984ae0bc76a2c4be990872c81d4a30422994e7ffe8161a069f20cc7",
+      "bytes": 302258,
+      "pages": 4,
+      "family": "nonstandard",
+      "split": "dev"
+    },
+    {
+      "id": "doc-011",
+      "sha256": "e0ca426f444cfb588471e12b05fad2737595e6dc19721e39099a1707a99bf634",
+      "bytes": 292877,
+      "pages": 7,
+      "family": "sbc",
+      "split": "dev"
+    },
+    {
+      "id": "doc-012",
+      "sha256": "fbc327ea22f956e534553f191348cce53e3c848a2ad613f29e7196f1775a2a2b",
+      "bytes": 856734,
+      "pages": 8,
+      "family": "sbc",
+      "split": "dev"
+    }
+  ]
+}
