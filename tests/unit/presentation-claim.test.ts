@@ -30,7 +30,7 @@ function line(display: string, quote = display): CellValue {
 describe("describeFact (P0-05)", () => {
   it("a long table cell yields a short claim, its conditions, and the full source wording", () => {
     const value = tableCell(
-      "Walk-in Clinic • Not subject to Deductible • Copayment: $40 • Copayment does not apply if the schedule states a $0 Deductible",
+      "Walk-in Clinic • Copayment: $40 • Referral from a physician is required",
       "In-Network Plan Pays",
       "90%",
       [NOTE],
@@ -39,14 +39,13 @@ describe("describeFact (P0-05)", () => {
 
     expect(d.claim).toBe("Walk-in Clinic (In-Network Plan Pays): 90%");
     expect(d.conditions).toEqual([
-      "Not subject to Deductible",
       "Copayment: $40",
-      "Copayment does not apply if the schedule states a $0 Deductible",
+      "Referral from a physician is required",
       NOTE,
     ]);
     expect(d.status).toBe("conditional");
     expect(d.sourceWording).toBe(value.display);
-    expect(d.claim!.length).toBeLessThan(value.display.length / 4);
+    expect(d.claim!.length).toBeLessThan(value.display.length / 3);
   });
 
   it("drops nothing: every material token of the display is in the claim or a condition", () => {
@@ -107,5 +106,40 @@ describe("describeFact (P0-05)", () => {
     const d = describeFact(line("Deductible $750 per certificate period", "Deductible $250 per certificate period"), "annual-deductible");
     expect(d.claim).toBeNull();
     expect(d.status).toBe("unconfirmed");
+  });
+
+  // Review R1: a sub-note that negates, excepts or scopes the cell must stay
+  // in the headline; a positive headline with "Not covered" only below it
+  // would change what the user reads first.
+  it.each([
+    ["Dental • Not covered for adults", "Copay", "$30"],
+    ["Emergency Transport • Must be approved in advance except in an emergency", "Plan Pays", "100%"],
+    ["Imaging • Out-of-network only", "Plan Pays", "70%"],
+  ])("keeps a negating/exception/network sub-note in the claim: %s", (label, heading, cell) => {
+    const value = tableCell(label, heading, cell, [NOTE]);
+    const d = describeFact(value, "dental-coverage");
+    expect(d.claim).toBe(`${label} (${heading}): ${cell}`);
+    expect(d.conditions).toEqual([NOTE]);
+    expect(d.status).toBe("conditional");
+  });
+
+  it("a label ending in a dangling separator yields no empty condition", () => {
+    const value = tableCell("Ambulance •", "Plan Pays", "80%");
+    const d = describeFact(value, "ambulance");
+    expect(d.claim).toBe("Ambulance (Plan Pays): 80%");
+    expect(d.conditions).toEqual([]);
+  });
+
+  it("a heading that contains a parenthesis stays whole", () => {
+    const value = tableCell("Deductible • Per Illness", "Tier (B) Plan Pays", "$100");
+    expect(describeFact(value, "per-illness-deductible").claim).toBe("Deductible (Tier (B) Plan Pays): $100");
+  });
+
+  it.each([
+    ["A. Smith Clinic visits are covered at 80%."],
+    ["- $500 deductible applies per certificate period."],
+  ])("does not strip text that only looks like a list marker: %s", (text) => {
+    const d = describeFact(line(text), "annual-deductible");
+    expect(d.claim).toBe(text.startsWith("- ") ? text.slice(2) : text);
   });
 });

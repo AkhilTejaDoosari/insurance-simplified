@@ -294,6 +294,13 @@ function markersIn(text: string): Set<string> {
   return out;
 }
 
+/** True when text states a negation, exception or network-scope marker of
+ *  the closed grammar above (P0-05: such a qualifier is never moved out of
+ *  a claim's headline). */
+export function statesScopingMarker(text: string): boolean {
+  return markersIn(grammarText(text)).size > 0;
+}
+
 function withoutNegations(text: string): string {
   let out = text;
   for (const m of MARKERS) if (m.kind === "negation") out = out.replace(new RegExp(m.re.source, "g"), " ");

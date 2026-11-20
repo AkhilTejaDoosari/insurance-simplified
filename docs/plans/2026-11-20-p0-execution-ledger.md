@@ -28,7 +28,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | 0 Investigation | validate audit | Done (see "Audit validation") |
 | 1 Inventory and selection | 1–2 | Checkpoint `04fd36d`; owner accepted as engineering checkpoint; e2e assertion change approved |
 | 2 Semantic correctness | 3–6 | Checkpoint `e3375b2`; owner accepted as engineering checkpoint |
-| 3 Presentation contract | 7 | Implemented, Tested (unit + rendering + export + real-PDF probe); see "Phase 3" |
+| 3 Presentation contract | 7 | Implemented, Tested (unit + rendering + export + real-PDF probe); independent review done, findings fixed; owner review pending |
 | 4 Chatbot correction | 8–10 | Not started — owner asked for a $0 local-model answer-generation proposal (with production cost) **before** Phase 4 |
 | 5 Real-document acceptance | 11 | BLOCKED — doc 02 file unresolved (see open items) |
 
@@ -329,6 +329,41 @@ Checks (Phase 3, before review): `npm test` 1641 passed / 22 skipped / 0
 failed; `npx tsc --noEmit` clean; `npm run build` green; `npm run test:e2e`
 57 passed / 1 skipped (unchanged); private-data guard ok.
 
+## Phase 3 independent review (read-only reviewer, range `e3375b2..5c6efdd`)
+
+Verdict before fixes: request changes. Fixed test-first (7 new cases, 4 red
+before the fix):
+
+- R1 (required): a label sub-note that negates, excepts or scopes the cell
+  ("Dental • Not covered for adults") was moved out of the headline, leaving a
+  positive claim ("Dental (Copay): $30"); the structural grounding call does
+  not run the dropped-marker rule, so it was not caught. Fixed: if any
+  sub-note states a marker of the shared negation/exception/network grammar
+  (`statesScopingMarker`, `evidence-verification.ts`), the claim keeps the
+  whole verbatim label; only governing notes become conditions. The earlier
+  Phase 3 tests used "Not subject to Deductible" as a split-out condition —
+  that was the flagged behaviour, so their sample sub-notes were changed to
+  non-scoping ones ("Copayment: $40", "Referral required"); the negating
+  case is now pinned by its own tests.
+- R7 (required, tests): added negating/exception/network sub-note cases, a
+  label ending in " •", a heading containing ")", "A. Smith …" not stripped,
+  and the PDF with a null claim.
+- Optional, done: one shared label splitter (`LABEL_NOTE_SEPARATOR` in
+  `table-facts.ts`); the vacuous substring guard replaced by an exact
+  reconstruction check; uppercase letters are no longer list markers; the
+  misleading "conditions count as kept" grounding argument removed.
+- Optional, not done (recorded): a table cell containing a line break would
+  have its continuation lines listed as conditions (still verbatim and
+  visible; none seen in the five PDFs).
+
+Real-PDF effect after the fix: 1,665 of 1,665 values still get a verified
+claim; claim length median 110, p95 133, max 267 characters.
+
+Checks (after review fixes): `npm test` 1649 passed / 22 skipped / 0 failed;
+with real fixtures 1771 passed / 1 failed (the same pre-existing missing-
+brochure gap) / 42 skipped; `tsc` clean; `build` green; `test:e2e` 57 passed /
+1 skipped.
+
 ## Open items (after Phase 3)
 
 1. Owner: doc 02 decision (replaced vs confirmed as uploaded) — Phase 5
@@ -351,6 +386,7 @@ failed; `npx tsc --noEmit` clean; `npm run build` green; `npm run test:e2e`
 
 ## Next atomic step
 
-Phase 3 independent review (read-only), then the checkpoint commit, then the
-owner report with the $0 chat-generation proposal. Phase 4 starts only after
-the owner has that proposal and authorizes it.
+Owner review of Phase 3 (screenshots, this ledger) and of the $0
+chat-generation proposal in the Phase 3 report. Phase 4 (Tasks 8–10) starts
+only after the owner authorizes it; first step then: a failing retrieval
+hygiene test (blank/definition pages excluded, per-passage ranking).

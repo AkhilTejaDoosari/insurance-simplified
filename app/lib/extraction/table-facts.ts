@@ -55,8 +55,11 @@ const compiled = FACTS.map((f) => ({
  *  parenthetical restrictions. ("Physical Therapy • Maximum Visits per day: 1"
  *  → "Physical Therapy"; "Local Ambulance (Not subject to coinsurance)" →
  *  "Local Ambulance"). The full label stays in the display. */
+/** Separator between a table label's head and its sub-notes. */
+export const LABEL_NOTE_SEPARATOR = /\s[•·]\s?|\s[•·]$/;
+
 export function labelHead(label: string): string {
-  return label.split(/\s[•·]\s?|\s[•·]$/)[0].replace(/\([^)]*\)?/g, " ").replace(/\s+/g, " ").trim();
+  return label.split(LABEL_NOTE_SEPARATOR)[0].replace(/\([^)]*\)?/g, " ").replace(/\s+/g, " ").trim();
 }
 
 export function factsForLabel(label: string): string[] {

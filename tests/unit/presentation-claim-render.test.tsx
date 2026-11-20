@@ -11,7 +11,7 @@ import { buildReportPdf } from "@/app/lib/report/pdf";
 import type { RegisteredCellValue, RegisteredComparisonTable as Table } from "@/app/lib/extraction/types";
 (globalThis as Record<string, unknown>).React ??= React;
 
-const LABEL = "Walk-in Clinic • Not subject to Deductible • Copayment: $40";
+const LABEL = "Walk-in Clinic • Referral required • Copayment: $40";
 const HEADING = "In-Network Plan Pays";
 const NOTE = "Outpatient services are limited to usual, reasonable and customary charges per period of coverage.";
 const DISPLAY = `${LABEL} (${HEADING}): 90%\n${NOTE}`;
@@ -49,7 +49,7 @@ describe("claim-first presentation (P0-05)", () => {
     expect(link?.[2]).toBe(CLAIM);
     expect(link?.[1]).toContain("ev-row");
     const conditions = /<ul class="cell-conditions"[^>]*>([\s\S]*?)<\/ul>/.exec(html)?.[1] ?? "";
-    expect(text(conditions)).toContain("Not subject to Deductible");
+    expect(text(conditions)).toContain("Referral required");
     expect(text(conditions)).toContain("Copayment: $40");
     expect(text(conditions)).toContain(NOTE);
     const wording = /<details class="cell-detail"><summary>Source wording<\/summary>([\s\S]*?)<\/details>/.exec(html)?.[1] ?? "";
@@ -82,7 +82,7 @@ describe("claim-first presentation (P0-05)", () => {
     const pdf = String(result.text).replace(/\s+/g, " ");
     const claimAt = pdf.indexOf(`Policy a: ${CLAIM}`);
     expect(claimAt).toBeGreaterThanOrEqual(0);
-    for (const condition of ["Not subject to Deductible", "Copayment: $40", NOTE]) {
+    for (const condition of ["Referral required", "Copayment: $40", NOTE]) {
       expect(pdf.indexOf(condition, claimAt)).toBeGreaterThan(claimAt);
     }
     const wordingAt = pdf.indexOf("Source wording:", claimAt);
@@ -91,5 +91,23 @@ describe("claim-first presentation (P0-05)", () => {
     // the wording is otherwise verbatim.
     expect(pdf.slice(wordingAt)).toContain(`(${HEADING}): 90%`);
     expect(pdf.slice(wordingAt)).toContain("Walk-in Clinic");
+  });
+
+  it("PDF export: a value without a verified claim keeps its verbatim display and lists no split conditions", async () => {
+    const unverified: RegisteredCellValue = {
+      ...VALUE,
+      evidence: VALUE.evidence.map((e) => (e.evidenceId === "ev-row" ? { ...e, quote: `${LABEL} 80%` } : e)),
+    };
+    const bytes = await buildReportPdf({
+      table: { ...TABLE, rows: [{ factName: "urgent-care", verdict: "SUPPORTED", values: [unverified] }] },
+      userContext: {},
+      selection: { resultFingerprint: "fp", viewMode: "understand", documentId: "a", planIds: ["a"], tiers: {}, legacyTiersByDocument: {} },
+    });
+    const proxy = await getDocumentProxy(bytes);
+    const pdf = String((await extractText(proxy, { mergePages: true })).text).replace(/\s+/g, " ");
+    expect(pdf).not.toContain(CLAIM);
+    expect(pdf).toContain(`(${HEADING}): 90%`);
+    expect(pdf).not.toContain("Source wording:");
+    expect(pdf).not.toContain("- Copayment: $40");
   });
 });
