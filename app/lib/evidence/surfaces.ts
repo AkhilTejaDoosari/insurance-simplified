@@ -65,7 +65,11 @@ export function exclusionInventoryViews(evidence: SessionEvidence): (ExclusionIn
     const built = buildExclusionInventory(evidence.store, doc.documentId);
     if (!built.ok) continue;
     const inv = built.inventory;
-    if (inv.exclusions.length === 0) continue;
+    // Never hide a missing or incomplete exclusion list: a document whose
+    // section was not found (unknown) or whose candidates were dropped
+    // (partial) is shown with that state even when no item could be sealed.
+    // Only a complete inventory with nothing to list is omitted.
+    if (inv.exclusions.length === 0 && inv.completeness.state === "complete") continue;
     if (inv.integrity !== "intact") { out.push(cannotBeConfirmed("exclusion-inventory")); continue; }
     const unread = new Set(inv.coverage.unreadPages);
     const itemPages = inv.completeness.state === "partial" ? inv.completeness.pages.filter((p) => !unread.has(p)) : [];
