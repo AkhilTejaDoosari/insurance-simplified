@@ -4,6 +4,10 @@
 
 import { documentHeader, frameSources } from "@/app/lib/llm/safe-prompt";
 import { completeJson } from "@/app/lib/llm/client";
+import {
+  stripNullProperties,
+  type NamedJsonSchema,
+} from "@/app/lib/llm/json-schema";
 import { chunkDocument, type ChunkableDocument } from "@/app/lib/rag/chunks";
 import { embedTexts, isEmbeddingConfigured } from "@/app/lib/rag/embeddings";
 import { InMemoryCosineIndex } from "@/app/lib/rag/cosine-index";
@@ -454,11 +458,41 @@ export async function answerQuestionSemantic(
   }
 }
 
+/** Strict structured output for the chat call (EC-9). One object shape for
+ *  both outcomes: strict mode cannot express optional fields, so answerText
+ *  and citations are required-nullable and nulls are stripped before
+ *  validateChatResponse (which stays the contract check). */
+export const CHAT_ANSWER_SCHEMA: NamedJsonSchema = {
+  name: "chat_answer",
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["cantAnswer", "answerText", "citations"],
+    properties: {
+      cantAnswer: { type: "boolean" },
+      answerText: { type: ["string", "null"] },
+      citations: {
+        type: ["array", "null"],
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["documentId", "page", "quote"],
+          properties: {
+            documentId: { type: "string", minLength: 1 },
+            page: { type: "integer", minimum: 1 },
+            quote: { type: "string", minLength: 1 },
+          },
+        },
+      },
+    },
+  },
+};
+
 const CHAT_INSTRUCTIONS = [
   "You answer questions about insurance documents.",
   "Use ONLY the DOCUMENT blocks below. Every substantive claim MUST be backed by a cited passage.",
-  'If nothing is relevant, return ONLY {"cantAnswer": true} with no other text.',
-  'Otherwise return ONLY a JSON object: {"answerText": string, "citations": [{documentId, page, quote}]}.',
+  'If nothing is relevant, return ONLY {"cantAnswer": true, "answerText": null, "citations": null} with no other text.',
+  'Otherwise return ONLY a JSON object: {"cantAnswer": false, "answerText": string, "citations": [{documentId, page, quote}]}.',
   "ANSWER FORMATTING (required for verification):",
   "- Each sentence of answerText MUST be composed ONLY of words that appear in the passages you cite for it. Copy the source wording near-verbatim; do not paraphrase or add connective words that are not in the source.",
   '- Do not add meta commentary (e.g. "According to the documents", "Based on the provided passages").',
@@ -668,19 +702,24 @@ export async function answerViaLlm(
   }
   // Build prompt from top-K retrieved chunks with budget enforcement
   const prompt = buildRetrievalPrompt(documents, passages, question);
-  const raw = (await completeJson([
-    { role: "user", content: prompt },
-  ])) as Record<string, unknown>;
+  const raw = stripNullProperties(
+    await completeJson([{ role: "user", content: prompt }], undefined, {
+      schema: CHAT_ANSWER_SCHEMA,
+    }),
+  ) as Record<string, unknown>;
 
   if (raw.cantAnswer === true) {
     console.warn(`[chat-refusal] stage=llm-cantAnswer`);
     return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
   }
 
+  // cantAnswer is a model-side flag, not part of chat-api v1.
+  const { cantAnswer: _cantAnswer, ...answerFields } = raw;
+  void _cantAnswer;
   const response = validateChatResponse({
     schemaVersion: "v1",
     kind: "answer",
-    ...(raw as object),
+    ...answerFields,
   });
 
   // validateChatResponse guarantees kind === "answer" here (cantAnswer handled above)
