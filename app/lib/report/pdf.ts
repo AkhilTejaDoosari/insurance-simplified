@@ -33,6 +33,7 @@ import {
 import { documentPlanTitle } from "@/app/lib/extraction/plan-names";
 import type { PersonalizedOverview } from "@/app/lib/extraction/overview";
 import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
+import { describeFact } from "@/app/lib/presentation/claim";
 import {
   absenceNotices,
   buildPresentation,
@@ -494,10 +495,17 @@ export async function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
         const plan = input.table.plans?.find(
           (p) => p.planId === fact.scope.planIds[0],
         );
+        // P0-05: the verified claim leads, its verbatim conditions follow,
+        // and the full source wording stays in the report.
+        const described = describeFact(fact.value, fact.concept);
         write(
-          `${fact.label}${plan ? ` - ${plan.name}` : ""}: ${fact.value.display}`,
+          `${fact.label}${plan ? ` - ${plan.name}` : ""}: ${described.claim ?? fact.value.display}`,
           { size: 10, font: bold },
         );
+        if (described.claim) {
+          for (const condition of described.conditions)
+            write(`- ${condition}`, { size: 9, indent: 8 });
+        }
         if (fact.state !== "verified-plan")
           write(
             fact.state === "unverified-applicability"
@@ -518,6 +526,8 @@ export async function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
           });
         for (const condition of conditionLines(fact.value))
           write(condition, { size: 9, color: MUTED });
+        if (described.claim && described.claim !== fact.value.display)
+          write(`Source wording: ${fact.value.display}`, { size: 8.5, color: MUTED });
         for (const evidence of fact.value.evidence)
           write(
             `Source: ${input.table.documents.find((d) => d.documentId === evidence.documentId)?.filename}, page ${evidence.page}`,

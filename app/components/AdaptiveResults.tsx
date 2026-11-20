@@ -37,6 +37,9 @@ type FactValueOptions = {
   showContext?: boolean;
   whyMatters?: boolean;
   showTierQualifier?: boolean;
+  /** Show the full verbatim display under a claim (cards without their own
+   *  "Source wording" block). */
+  showSourceWording?: boolean;
 };
 
 export default function AdaptiveResults(props: Props) {
@@ -83,6 +86,7 @@ export default function AdaptiveResults(props: Props) {
       showContext = true,
       whyMatters = false,
       showTierQualifier = true,
+      showSourceWording = true,
     } = options;
     const row = table.rows.find((r) => r.factName === fact.concept);
     const contextField = FACTS.find(
@@ -122,6 +126,8 @@ export default function AdaptiveResults(props: Props) {
           sessionId={sessionId}
           userContext={userContext}
           showTierQualifier={showTierQualifier}
+          factName={fact.concept}
+          showSourceWording={showSourceWording}
         />
         {hasEvidenceBackedExplanation ? (
           <div className="adaptiveWhy">
@@ -199,7 +205,7 @@ export default function AdaptiveResults(props: Props) {
             : "Document evidence"}
         </span>
         <h3>{fact.label}</h3>
-        {factValue(fact, { showContext: !finding, whyMatters: finding })}
+        {factValue(fact, { showContext: !finding, whyMatters: finding, showSourceWording: finding })}
         {!finding && evidence(fact)}
         {onAskFact && (
           <button

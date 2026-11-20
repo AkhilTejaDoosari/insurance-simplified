@@ -6,6 +6,7 @@ import { moneyAmounts, conditionBindingKnown } from "@/app/lib/extraction/condit
 import { summarizeNetworkDisplay } from "@/app/lib/extraction/network-display";
 import { documentUrl } from "@/app/lib/document-url";
 import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
+import { describeFact } from "@/app/lib/presentation/claim";
 
 /** V1.1 M2 task 6: one material value, rendered with the conditions needed to
  *  understand it beside the amount, its original-page citation intact, and an
@@ -113,7 +114,7 @@ function conditionNotes(
     notes.push({
       text: "Available options — your purchased option is not stated.",
     });
-  } else if (moneyAmounts(displayText) >= 2) {
+  } else if (moneyAmounts(`${rawDisplay} ${displayText}`) >= 2) {
     // Several dollar figures and no attested choice: the document lists
     // amounts without proving which one the member bought (spec I).
     notes.push({
@@ -137,6 +138,11 @@ export interface ConditionalValueProps {
   numericScope?: boolean;
   /** Hide a repeated tier note when the containing table group labels that tier. */
   showTierQualifier?: boolean;
+  /** Fact name, for the claim's grounding check (P0-05). */
+  factName?: string;
+  /** Render the full verbatim display under "Source wording" when a shorter
+   *  claim is shown. Off where the container already lists the cited wording. */
+  showSourceWording?: boolean;
 }
 
 export default function ConditionalValue({
@@ -148,10 +154,16 @@ export default function ConditionalValue({
   concise = false,
   numericScope = false,
   showTierQualifier = true,
+  factName = "",
+  showSourceWording = true,
 }: ConditionalValueProps) {
   const q = scopedQualifiers(value);
   const primary = value.evidence[0];
-  const base = concise ? summarizeNetworkDisplay(value.display) : value.display;
+  // P0-05: a short verbatim claim leads; the pieces of the display it leaves
+  // out are listed beside it as conditions; the full display stays below.
+  const described = concise ? null : describeFact(value, factName);
+  const claim = described?.claim ?? null;
+  const base = concise ? summarizeNetworkDisplay(value.display) : claim ?? value.display;
   const scope = numericScope && primary
     ? (["in-network", "out-of-network"] as const).find((s) =>
         primary.quote.toLowerCase().includes(`${value.display.trim().toLowerCase()} ${s}`),
@@ -180,6 +192,13 @@ export default function ConditionalValue({
       ) : (
         <span className="cell-value">{displayText}</span>
       )}
+      {claim && described!.conditions.length > 0 && (
+        <ul className="cell-conditions" aria-label={`Conditions stated with ${factLabel}`}>
+          {described!.conditions.map((condition, i) => (
+            <li key={i} className="cell-condition">{condition}</li>
+          ))}
+        </ul>
+      )}
       {notes.map((note, i) => (
         <span
           key={i}
@@ -195,6 +214,12 @@ export default function ConditionalValue({
         <span className="cell-condition cell-condition--question" role="note">
           {UNRESOLVED_PROMPT}
         </span>
+      )}
+      {showSourceWording && claim && claim !== value.display && (
+        <details className="cell-detail">
+          <summary>Source wording</summary>
+          <span className="cell-source-wording">{value.display}</span>
+        </details>
       )}
       {q.conditions && (
         <details className="cell-detail">

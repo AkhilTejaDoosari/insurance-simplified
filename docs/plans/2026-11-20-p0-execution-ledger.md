@@ -14,10 +14,10 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | --- | --- |
 | Worktree | `insurance-simplified-wt/p0` (separate from `int`, where an OpenCode session and `next dev :3333` were running) |
 | Branch | `p0/acceptance-remediation`, branched from `integration/m5-m7` @ `de4efe4` |
-| Checkpoints | `04fd36d` Phase 1 (accepted by owner 2026-11-20 as engineering checkpoint; product acceptance BLOCKED) · `d184c71` identity generalization + legacy read-back · `3d62ef6` Phase 2 · Phase 2 review fixes (see `git log`) |
+| Checkpoints | `04fd36d` Phase 1 (accepted by owner 2026-11-20 as engineering checkpoint; product acceptance BLOCKED) · `d184c71` identity generalization + legacy read-back · `3d62ef6` Phase 2 · `e3375b2` Phase 2 review fixes (owner accepted Phase 2 as engineering checkpoint 2026-11-20) · Phase 3 (see `git log`) |
 | Push / PR | none (not authorized) |
 | Recovery refs | `backup/*`, `refs/wip/*`, tag `recovery-pre-ui-2026-09-21` — untouched |
-| Real PDFs | `REAL_PDFS_DIR` (PDF corpus) — **unset**; `REAL_FIXTURES_DIR` (private labels/ground truth) — **unset**. Both are existing contracts (`docs/quality.md` §2); no new variable. |
+| Real PDFs | `REAL_PDFS_DIR` (PDF corpus) and `REAL_FIXTURES_DIR` (private labels/ground truth) — existing contracts (`docs/quality.md` §2), pointed at the owner's local corpus for probes and real-fixture runs; no new variable. Files stay outside git. |
 | Generation model | `.env.local` (int) has `EMBEDDING_*` and `SUPABASE_*` names only, **no `LLM_*`** (names inspected, values not read). Chat runs the semantic/lexical path. |
 | Local e2e | Local Supabase stack `supabase-int` (workdir `insurance-simplified-wt/.supabase-int`); env written mode 600 to the session scratchpad, never printed; e2e on `E2E_PORT=3344`. |
 
@@ -27,10 +27,10 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | --- | --- | --- |
 | 0 Investigation | validate audit | Done (see "Audit validation") |
 | 1 Inventory and selection | 1–2 | Checkpoint `04fd36d`; owner accepted as engineering checkpoint; e2e assertion change approved |
-| 2 Semantic correctness | 3–6 | Implemented, Tested (unit + real-PDF probe); independent review done, findings fixed; owner review pending |
-| 3 Presentation contract | 7 | Not started — EC-7 amendment approved in principle; compatibility review pending |
-| 4 Chatbot correction | 8–10 | Not started — chat-api extension approved in principle; C-4 synthesis proposal pending |
-| 5 Real-document acceptance | 11 | BLOCKED — the five PDFs are not available (`REAL_PDFS_DIR` unset) |
+| 2 Semantic correctness | 3–6 | Checkpoint `e3375b2`; owner accepted as engineering checkpoint |
+| 3 Presentation contract | 7 | Implemented, Tested (unit + rendering + export + real-PDF probe); see "Phase 3" |
+| 4 Chatbot correction | 8–10 | Not started — owner asked for a $0 local-model answer-generation proposal (with production cost) **before** Phase 4 |
+| 5 Real-document acceptance | 11 | BLOCKED — doc 02 file unresolved (see open items) |
 
 ## Audit validation (at `de4efe4`)
 
@@ -105,7 +105,7 @@ Screenshots (synthetic data, owner review): session scratchpad `shots/p0-phase1-
    `per-illness-deductible`; fact-list version bump).
 4. Provide the five PDFs via `REAL_PDFS_DIR` for Phase 5.
 
-## Next atomic step
+## Next atomic step (after Phase 1 — superseded)
 
 Owner review of Phase 1 (screenshots + this ledger). If authorized, Phase 2
 Task 3: failing pipeline test for "Proof of claim … within 90 days" → no
@@ -249,7 +249,7 @@ Checks: `npm test` 1630 passed / 22 skipped / 0 failed; with real fixtures
 1752 passed / 1 failed (pre-existing fixture gap) / 42 skipped; `tsc` clean;
 `build` green; `test:e2e` 57 passed / 1 skipped.
 
-## Open items after Phase 2
+## Open items after Phase 2 (superseded by the list after Phase 3)
 
 1. Owner: confirm the doc 02 file (its content is the same product as doc 05)
    and the doc 03 file name.
@@ -263,9 +263,94 @@ Checks: `npm test` 1630 passed / 22 skipped / 0 failed; with real fixtures
    is SKIPPED in effect.
 5. Phases 3–5 not started. Phase 5 needs the owner-confirmed five PDFs.
 
+## Owner decisions after Phase 2 (2026-11-20)
+
+1. Phase 2 accepted as an engineering checkpoint; product acceptance BLOCKED.
+2. Doc 03: the local file (no `_2026` suffix) is the file the owner uploaded.
+3. Doc 02: the owner's message offered two choices (file replaced and
+   inventory re-run, or file confirmed as uploaded) without selecting one.
+   The local file is unchanged since before this work (same size and
+   modification date), so it was not replaced; it still holds the same
+   product as doc 05. The five-document inventory stays 5/5 verified on the
+   current files. Needs an explicit answer before Phase 5.
+4. Phase 3 authorized under the same rules.
+5. Open items added by the owner: replace the insurer-specific title rule
+   with a general one; the residual misfiled lines.
+6. Before Phase 4: a one-paragraph proposal for $0 local-model chat answer
+   generation, with the production cost.
+
+## Phase 3 — presentation contract (Task 7, P0-05)
+
+Compatibility review (before code):
+
+- `CellValue.display` consumers that render to users: `ConditionalValue`
+  (result cards, reading brief, comparison cells — via `AdaptiveResults`),
+  the PDF export's live view path (`report/pdf.ts`, `activeView` branch), and
+  chat evidence (`session-evidence.ts`, Phase 4 scope, unchanged).
+  `ComparisonTable`/`PersonalizedOverview` components are rendered only by
+  tests; the export's non-view branch is legacy. Extraction-side consumers
+  (contradictions, overview, conditions, eligibility, premium) are unchanged.
+- Real-PDF measurement: every display over 200 characters (331 of 1,665) is
+  a table cell — `Label • sub-notes (Heading): cell` plus governing notes —
+  up to 973 characters. Single-line values are at most 154 characters.
+- EC-7 ("displays are verbatim; summarizers never rewrite meaning,
+  conditions or exclusions"): the layer composes the claim **only from
+  verbatim pieces** and shows every other piece as a condition, so it
+  satisfies EC-7 as written. **No rule amendment was made.** A true
+  plain-language rewrite would still need the amendment the plan proposed.
+
+Implementation:
+
+- `app/lib/presentation/claim.ts` `describeFact(value, factName)` →
+  `{ claim, conditions, status: supported | conditional | unconfirmed,
+  sourceWording }`. Table cell: claim = label head + `(heading): cell`;
+  conditions = label sub-notes + governing notes, in order. Line: claim = the
+  line without its list marker. Every piece must be a substring of the
+  display, and the claim must pass `checkDisplayGrounding` (material tokens +
+  negation/exception/network grammar) against the value's citations, with
+  the conditions counted as shown. Otherwise `claim: null` and the verbatim
+  display is shown exactly as before.
+- `ConditionalValue`: the claim is the evidence link; the conditions are a
+  visible list; the full display is under "Source wording" (omitted where
+  the card already lists the cited wording). The multi-amount "purchased
+  option unknown" check still reads the full display.
+- PDF export (live path): claim headline, each condition, then
+  "Source wording: …" and the page sources.
+- Tests: `tests/unit/presentation-claim.test.ts` (8; module absent before),
+  `tests/unit/presentation-claim-render.test.tsx` (3; all three fail on the
+  pre-Phase-3 components/export).
+- Real-PDF effect (local probe): 1,665 of 1,665 values get a verified claim
+  (385 table cells: 337 conditional, 48 plain); claim length median 107,
+  p95 126, max 251 characters (was up to 973).
+- Screenshots (desktop/mobile, light/dark) captured locally for owner review;
+  not committed.
+
+Checks (Phase 3, before review): `npm test` 1641 passed / 22 skipped / 0
+failed; `npx tsc --noEmit` clean; `npm run build` green; `npm run test:e2e`
+57 passed / 1 skipped (unchanged); private-data guard ok.
+
+## Open items (after Phase 3)
+
+1. Owner: doc 02 decision (replaced vs confirmed as uploaded) — Phase 5
+   blocker.
+2. Replace the pre-existing insurer-specific title rule (doc 04) in
+   `plan-identity.ts` with a general rule for brochure titles that have no
+   document-type heading (owner-requested).
+3. Residual misfiled lines (owner-requested): sub-benefit maximum sentences
+   under policy-limit in docs 01, 02, 05 (pre-existing "maximum
+   benefit/coverage" aliases); one benefit-specific geographic line; one doc 01
+   annual-deductible sentence fragment. Recall gap: no geographic restriction
+   captured for docs 03/04.
+4. Pre-existing: the PDF export's ASCII font prints "•" (and other
+   non-Latin-1 marks) as "?" in verbatim wording.
+5. Pre-existing: "Your purchased option is unknown" appears on a table cell
+   whose label notes carry two dollar amounts (e.g. a copayment and a $0
+   deductible condition) although the cell is not an option list.
+6. Labelled-scorecard fixtures are not on this machine; `eval:extraction`
+   is SKIPPED in effect.
+
 ## Next atomic step
 
-Owner review of Phase 2. If authorized: Phase 3 (Task 7). First do a
-compatibility review of the EC-7 plain-language claim layer against
-`evidence-core.md` and every consumer of `CellValue.display` (UI, export,
-chat), then write a failing `presentation-claim` test.
+Phase 3 independent review (read-only), then the checkpoint commit, then the
+owner report with the $0 chat-generation proposal. Phase 4 starts only after
+the owner has that proposal and authorizes it.

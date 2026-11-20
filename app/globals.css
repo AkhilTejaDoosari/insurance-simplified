@@ -789,6 +789,15 @@ select {
   font-size: 0.82rem;
   line-height: 1.45;
 }
+/* P0-05: verbatim conditions listed beside a claim, one per line. */
+.cell-conditions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cell-source-wording {
+  white-space: pre-line;
+}
 .cell-condition--match {
   color: var(--action);
   font-weight: 600;
