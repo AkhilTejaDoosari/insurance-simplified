@@ -28,6 +28,7 @@ import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import type { PageReadability } from "@/app/lib/pdf/page-readability";
 import type { AbsenceReason, WithheldClaim } from "@/app/lib/extraction/types";
 import { annotateAbsence, WITHHELD_ROW_RATIONALE } from "@/app/lib/extraction/absence";
+import { statedNetworkTier } from "@/app/lib/extraction/qualifier-evidence";
 import { hasSameScopeContradiction } from "@/app/lib/extraction/contradictions";
 
 /** Rationale for a plan's own structural same-scope contradiction. */
@@ -93,11 +94,15 @@ export function verifyComparisonTable(table: ComparisonTable, documents: Verifia
         if (verified.ok) evidence.push({ ...entry, quote: verified.quote });
       }
       if (evidence.length === 0) continue;
-      const candidate = { ...value, evidence };
+      const stated = value.anchor || value.qualifiers.networkTier !== undefined
+        ? undefined : statedNetworkTier({ display: value.display, evidence });
+      // EC-4: a network scope literally stated in the value's own cited clause
+      // travels with the claim (structural claims carry their heading scope).
+      const candidate = { ...value, evidence, ...(stated ? { qualifiers: { ...value.qualifiers, networkTier: stated } } : {}) };
       if (value.anchor && !verifyClaimAnchor(row.factName, candidate, documents)) continue;
       const grounding = timeSync("extract.checkDisplayGrounding", () =>
         checkDisplayGrounding(value.display, row.factName, evidence.map((e) => e.quote), {
-          qualifiers: value.qualifiers as unknown as Record<string, unknown>,
+          qualifiers: candidate.qualifiers as unknown as Record<string, unknown>,
           // The anchor re-derived above: the display is verbatim by construction.
           structural: !!value.anchor,
         })
