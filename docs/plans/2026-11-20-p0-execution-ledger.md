@@ -17,6 +17,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | Checkpoints | `04fd36d` Phase 1 (accepted by owner 2026-11-20 as engineering checkpoint; product acceptance BLOCKED) · `d184c71` identity generalization + legacy read-back · `3d62ef6` Phase 2 · `e3375b2` Phase 2 review fixes (owner accepted Phase 2 as engineering checkpoint 2026-11-20) · Phase 3 (see `git log`) |
 | Push / PR | none (not authorized) |
 | Recovery refs | `backup/*`, `refs/wip/*`, tag `recovery-pre-ui-2026-09-21` — untouched |
+| Recovery/private backups (outside git) | moved by the owner on 2026-11-20 to `~/Repositories/_insurance-simplified-archive/` (checkpoints, private backup, recovery copies). No repository doc pointed at the old location. |
 | Real PDFs | `REAL_PDFS_DIR` (PDF corpus) and `REAL_FIXTURES_DIR` (private labels/ground truth) — existing contracts (`docs/quality.md` §2), pointed at the owner's local corpus for probes and real-fixture runs; no new variable. Files stay outside git. |
 | Generation model | `.env.local` (int) has `EMBEDDING_*` and `SUPABASE_*` names only, **no `LLM_*`** (names inspected, values not read). Chat runs the semantic/lexical path. |
 | Local e2e | Local Supabase stack `supabase-int` (workdir `insurance-simplified-wt/.supabase-int`); env written mode 600 to the session scratchpad, never printed; e2e on `E2E_PORT=3344`. |
@@ -28,9 +29,9 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | 0 Investigation | validate audit | Done (see "Audit validation") |
 | 1 Inventory and selection | 1–2 | Checkpoint `04fd36d`; owner accepted as engineering checkpoint; e2e assertion change approved |
 | 2 Semantic correctness | 3–6 | Checkpoint `e3375b2`; owner accepted as engineering checkpoint |
-| 3 Presentation contract | 7 | Implemented, Tested (unit + rendering + export + real-PDF probe); independent review done, findings fixed; owner review pending |
-| 4 Chatbot correction | 8–10 | Not started — owner asked for a $0 local-model answer-generation proposal (with production cost) **before** Phase 4 |
-| 5 Real-document acceptance | 11 | BLOCKED — doc 02 file unresolved (see open items) |
+| 3 Presentation contract | 7 | Checkpoints `5c6efdd`, `1af706d`; owner accepted as engineering checkpoint |
+| 4 Chatbot correction | 8–10 | Authorized 2026-11-20; local Ollama model for development ($0); see "Phase 4" |
+| 5 Real-document acceptance | 11 | Not started — the five files are confirmed (doc 02 replaced, doc 03 confirmed) |
 
 ## Audit validation (at `de4efe4`)
 
@@ -364,14 +365,59 @@ with real fixtures 1771 passed / 1 failed (the same pre-existing missing-
 brochure gap) / 42 skipped; `tsc` clean; `build` green; `test:e2e` 57 passed /
 1 skipped.
 
+## Owner decisions after Phase 3 (2026-11-20)
+
+1. Phase 3 accepted as an engineering checkpoint; product acceptance BLOCKED.
+2. Doc 02 replaced with the real product brochure (the earlier duplicate is
+   kept outside the five and is ignored). An extra document in the corpus
+   folder is for later and not part of the five. Doc 03 confirmed.
+3. Chat generation for development: local open-weights model via Ollama, $0,
+   no document text leaves the machine; `verifyAnswerClaims` gates every
+   sentence and citation; failures become "cannot be confirmed" with cited
+   passages. Production budget, outside provider and adapter: deferred to
+   deployment, **not approved**.
+4. Phase 4 authorized under the same rules.
+5. Fix the two pre-existing bugs: PDF export "•" → "?", and the false
+   "purchased option unknown" note.
+
+## Doc 02 replacement — re-run (local probe)
+
+- Inventory before any change: docs 01, 03, 04, 05 verified (outputs
+  byte-identical to Phase 3); **doc 02 `no-verified-plan-name`**. Its page 1
+  is a brochure cover: a short product title on line 1, then a tagline, with
+  no document-type heading.
+- Fix (decision 2 scope, general): `plan-identity.ts` `coverTitle` — the
+  first line of page 1 passes the shared product-title shape (`productTitle`,
+  at most 6 words) and the same document names exactly that title as its
+  plan ("the <title> [insurance] plan|program|policy") on a line with no
+  example/illustration wording. Only for a document no other rule
+  identified; cited on page 1. Test: `tests/unit/plan-identity-cover-title.test.ts`
+  (13 cases; 3 positives red before the fix). Inventory after: **5/5
+  verified**.
+- Fact probe, doc 02 (118 values; the old duplicate file had 505):
+  - captured: coinsurance in/out-of-network (3), age conditions for
+    dependants (2), waiting period (1), material exclusions (8), others.
+  - **Not captured (recall gaps):** the deductibles ("Deductible<footnote
+    digit> at the student health center $50", "… elsewhere $100" — the
+    footnote marker is glued to the word) and "Annual maximum $1,000,000"
+    (no policy-limit alias for "annual maximum"). No tables are detected on
+    the benefit page.
+  - **Misfiled:** policy-limit holds three amount-less "maximum benefit"
+    sentence fragments and a newborn-coverage "$500" sentence (the
+    pre-existing alias residual, item 3 below); premium holds a newborn
+    notice clause ("additional required premium not paid"); waiting-period
+    holds a mention ("… exclusion and waiting period"); one age-limits value
+    is a sentence fragment.
+
 ## Open items (after Phase 3)
 
-1. Owner: doc 02 decision (replaced vs confirmed as uploaded) — Phase 5
-   blocker.
+1. Doc 02 recall gaps: footnote-marked deductible labels and "annual
+   maximum" (owner decision needed: fix before Phase 5, or accept).
 2. Replace the pre-existing insurer-specific title rule (doc 04) in
    `plan-identity.ts` with a general rule for brochure titles that have no
    document-type heading (owner-requested).
-3. Residual misfiled lines (owner-requested): sub-benefit maximum sentences
+3. Residual misfiled lines (owner-requested; doc 02 adds the cases listed
+   under "Doc 02 replacement"): sub-benefit maximum sentences
    under policy-limit in docs 01, 02, 05 (pre-existing "maximum
    benefit/coverage" aliases); one benefit-specific geographic line; one doc 01
    annual-deductible sentence fragment. Recall gap: no geographic restriction

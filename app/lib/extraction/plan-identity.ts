@@ -275,14 +275,44 @@ const NON_PRODUCT_TITLE =
 function documentTypeTitle(line: string, next: string | undefined, page: string): string | undefined {
   if (!DOCUMENT_TYPE_HEADING.test(next ?? "")) return undefined;
   if (pageDeclaresNonPlanContext(page)) return undefined;
+  return productTitle(line, MAX_DOCUMENT_TITLE_WORDS);
+}
+
+/** The shared product-title shape: the literal line, not a sentence, not a
+ *  heading, organisation, legal entity, sample, page furniture or number. */
+function productTitle(line: string, maxWords: number): string | undefined {
   const title = /^\s*([\w][\w &'().,®™℠-]{2,90}?)\s*$/.exec(line)?.[1].trim();
   if (!title || !/[A-Za-z]{2}/.test(title)) return undefined;
   if (/[.,:;?!]$/.test(title)) return undefined;
-  if (title.split(/\s+/).length > MAX_DOCUMENT_TITLE_WORDS) return undefined;
+  if (title.split(/\s+/).length > maxWords) return undefined;
   if (GENERIC_TITLE.test(title) || LEGAL_ENTITY_SUFFIX.test(title) || ILLUSTRATIVE_CONTEXT.test(title)) return undefined;
   if (TITLE_FURNITURE.test(title) || NON_PRODUCT_TITLE.test(title)) return undefined;
   if ((title.match(/\d/g) ?? []).length * 2 > title.replace(/\s/g, "").length) return undefined;
   return title;
+}
+
+const MAX_COVER_TITLE_WORDS = 6;
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Brochure-cover identity (P0-01, owner decision 2): the first line of
+ *  page 1 is a short product title with no document-type heading after it,
+ *  and the same document names exactly that title as its plan ("the <title>
+ *  [insurance] plan|program|policy") outside any example. The cover title is
+ *  the cited identity (page 1); the declaration only corroborates it. */
+function coverTitle(line: string, pages: readonly string[]): string | undefined {
+  const page = pages[0] ?? "";
+  if (pageDeclaresNonPlanContext(page)) return undefined;
+  const title = productTitle(line, MAX_COVER_TITLE_WORDS);
+  if (!title) return undefined;
+  const declared = new RegExp(`\\bthe ${escapeRegExp(title)}(?: insurance)? (?:plan|program|policy)\\b`, "i");
+  const corroborated = pages.some((text) =>
+    pageLines(text).some((sentence) => declared.test(sentence) && !ILLUSTRATIVE_CONTEXT.test(sentence)),
+  );
+  return corroborated ? title : undefined;
+}
+
+function groupsHaveDocument(groups: ReadonlyMap<string, ProvenPlan>, documentId: string): boolean {
+  return [...groups.values()].some((plan) => plan.sources.some((source) => source.documentId === documentId));
 }
 
 export function attestPlans(documents: readonly SourceDocument[]): ProvenPlan[] {
@@ -306,7 +336,8 @@ export function attestPlans(documents: readonly SourceDocument[]): ProvenPlan[] 
         const getInsuranceFromTitle = /^\s*Get\s+([A-Z][\w®-]*)\s+insurance\s+from\s+[A-Z][\w &'().,-]+\s*$/i.exec(line);
         const namedInsurerTitle = /^\s*Seven Corners (Travel Medical(?: Including the USA)?)\s*$/i.exec(line);
         const documentTitle = lineIndex === 0 ? documentTypeTitle(line, lines[1], page) : undefined;
-        const name = declaration?.[1].trim() ?? getInsuranceFromTitle?.[1] ?? namedInsurerTitle?.[1] ?? documentTitle;
+        const name = declaration?.[1].trim() ?? getInsuranceFromTitle?.[1] ?? namedInsurerTitle?.[1] ?? documentTitle ??
+          (lineIndex === 0 && !groupsHaveDocument(groups, doc.documentId) ? coverTitle(line, doc.pages) : undefined);
         if (!name) continue;
         const policyIdentifier = declaration?.[2]?.trim();
         const issuer = declaration?.[3]?.trim();
