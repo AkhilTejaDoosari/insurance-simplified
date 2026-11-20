@@ -107,7 +107,8 @@ CREATE INDEX IF NOT EXISTS chunks_document_page_idx
 CREATE INDEX IF NOT EXISTS chunks_fts_idx
   ON chunks USING GIN (fts);
 
--- Cosine-similarity ANN index. HNSW needs pgvector >= 0.7; fall back to
+-- Cosine-similarity ANN index (not used by the session-scoped match_chunks,
+-- which is exact per session since 0007). HNSW needs pgvector >= 0.7; fall back to
 -- IVFFLAT is a DBA decision at provision time — either way this statement
 -- is safe to re-run (IF NOT EXISTS) and safe to skip on small corpora
 -- (exact search via <=> still works, just slower).
@@ -136,10 +137,13 @@ CREATE INDEX IF NOT EXISTS sessions_status_idx
   ON sessions (status);
 
 -- ------------------------------------------------------- retrieval helpers
--- Cosine match over chunk embeddings with optional document / session
--- scoping. Score is cosine similarity (1 = identical direction). Ordering
--- here is score-only; the adapter applies the deterministic tie-break
--- (score DESC, chunkId ASC) client-side so DB and in-memory legs agree.
+-- Exact per-session cosine match (db/migrations/0007_exact_session_match.sql;
+-- roadmap M5 FILT-1). Session scope first: the session's chunks are selected
+-- in a MATERIALIZED CTE the HNSW index cannot serve, then ranked exactly, so
+-- completeness never depends on the query plan. filter_session is mandatory
+-- (NULL/blank raises). Score is cosine similarity (1 = identical direction);
+-- order is distance then chunk_id, and the adapter re-applies the
+-- deterministic tie-break (score DESC, chunkId ASC) client-side.
 CREATE OR REPLACE FUNCTION match_chunks(
   query_embedding vector(1024),
   match_count INTEGER DEFAULT 10,
@@ -153,21 +157,38 @@ RETURNS TABLE (
   quote TEXT,
   score DOUBLE PRECISION
 )
-LANGUAGE sql STABLE
+LANGUAGE plpgsql STABLE
 AS $$
+#variable_conflict use_column
+BEGIN
+  IF filter_session IS NULL OR btrim(filter_session) = '' THEN
+    RAISE EXCEPTION 'match_chunks: filter_session is required'
+      USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  WITH scoped AS MATERIALIZED (
+    SELECT
+      c.chunk_id,
+      c.document_id,
+      c.page_number,
+      c.text,
+      c.embedding <=> query_embedding AS distance
+    FROM documents d
+    JOIN chunks c ON c.document_id = d.id
+    WHERE d.owner_session = filter_session
+      AND (filter_document_id IS NULL OR d.id = filter_document_id)
+      AND c.embedding IS NOT NULL
+  )
   SELECT
-    c.chunk_id,
-    c.document_id,
-    c.page_number,
-    c.text AS quote,
-    1 - (c.embedding <=> query_embedding) AS score
-  FROM chunks c
-  JOIN documents d ON d.id = c.document_id
-  WHERE c.embedding IS NOT NULL
-    AND (filter_document_id IS NULL OR c.document_id = filter_document_id)
-    AND (filter_session IS NULL OR d.owner_session = filter_session)
-  ORDER BY c.embedding <=> query_embedding
+    s.chunk_id,
+    s.document_id,
+    s.page_number,
+    s.text AS quote,
+    1 - s.distance AS score
+  FROM scoped s
+  ORDER BY s.distance, s.chunk_id
   LIMIT match_count;
+END;
 $$;
 
 -- Full-text candidate leg (todo 58, evaluation ONLY): exact-term friendly

@@ -36,9 +36,10 @@ psql "$SUPABASE_DB_URL" -f db/migrations/0003_rls.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0004_sessions.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0005_comparison_results.sql
 psql -v ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f db/migrations/0006_schema_migrations_lock.sql
+psql -v ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f db/migrations/0007_exact_session_match.sql
 # 3. Verify:
 psql "$SUPABASE_DB_URL" -c "SELECT version FROM schema_migrations;"
-#    expect six rows: 0001_init, 0002_object_key, 0003_rls, 0004_sessions, 0005_comparison_results, 0006_schema_migrations_lock
+#    expect seven rows: 0001_init, 0002_object_key, 0003_rls, 0004_sessions, 0005_comparison_results, 0006_schema_migrations_lock, 0007_exact_session_match
 ```
 
 `db/schema.sql` is the canonical readable reference; `db/migrations/*.sql`
@@ -72,3 +73,9 @@ handles this automatically on next upsert).
   RLS enabled with a service-role-only SELECT policy, and
   `TRUNCATE/REFERENCES/TRIGGER` revoked from `anon`/`authenticated` on all
   public tables (`.down.sql` reverses it; drops the recorded ledger row).
+- `migrations/0007_exact_session_match.sql` — replaces the `match_chunks`
+  body (same signature, grants, SECURITY INVOKER): exact per-session cosine
+  search (session-scoped MATERIALIZED CTE, so the HNSW index can never drop a
+  session's own top-k) and a mandatory `filter_session` (NULL/blank raises).
+  Evidence: `evals/runs/m5-filt1/` (FILT-1). `.down.sql` restores the 0001
+  body.

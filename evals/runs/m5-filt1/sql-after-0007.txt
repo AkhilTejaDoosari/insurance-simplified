@@ -1,0 +1,20 @@
+      path       | k  | expected | found | completeness_pct 
+-----------------+----+----------+-------+------------------
+ ann             |  5 |      125 |     1 |              0.8
+ ann             | 10 |      250 |     1 |              0.4
+ ann             | 40 |      250 |     1 |              0.4
+ deployed        |  5 |      125 |   125 |            100.0
+ deployed        | 10 |      250 |   250 |            100.0
+ deployed        | 40 |      250 |   250 |            100.0
+ deployed-forced |  5 |      125 |   125 |            100.0
+ deployed-forced | 10 |      250 |   250 |            100.0
+ deployed-forced | 40 |      250 |   250 |            100.0
+ planner         |  5 |      125 |   125 |            100.0
+ planner         | 10 |      250 |   250 |            100.0
+ planner         | 40 |      250 |   250 |            100.0
+(12 rows)
+
+ path | foreign_rows 
+------+--------------
+(0 rows)
+
