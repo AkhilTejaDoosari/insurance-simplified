@@ -83,6 +83,14 @@ approval. Do not start the next milestone automatically.
 
 **Closed (owner, 2026-11-19):** container build + health re-run at `8986f45` pass; the four defect-register rows are closed in `evidence-core.md` §6; review findings #2 (silent table-claim drop), #3 (same-scope contradiction) and #4 (tier-word guessing) are assigned to M7; the two low findings stay open in the review list above. The owner closed M4 on the review as recorded and set the defaults C-1 (five display verdicts, one mapping table), C-2 (keep semantic-only) and C-4 ($0) for M5–M7.
 
+### M5–M7 progress on `integration/m5-m7` (resume point, 2026-11-20)
+
+Branches merged (one at a time, full checks after each): `m6/corpus-tooling` (E), `m7/trust-core` phase 1 interfaces (B), `m7/honest-reading` (C), `m5/retrieval` (A), `m7/authority` (F), `m7/exclusions` (D) — head `e51c3d1`. Local: 1414 passed / 22 skipped / 2 todo; tsc, build, e2e (55 passed, local Supabase) green. **CI red at `d72583a`:** one C test fails on Node 20 only (`m7c-honest-reading` › page image probe; production image is Node 20) — C is fixing; do not push until fixed.
+
+Open branches: `m7/trust-core` phase 2 (TB-1/TB-3, extract wiring, read-back re-derivation, absence rendering; export-pdf fixture data being made genuine, assertions unchanged); `m7/session-wiring` (G: readability copy at upload/rehydration, session-store low findings, persistence-cutover key diagnosis); follow-ups on `m5/retrieval` (chat schema, eval RRF depth) and `m7/honest-reading` (Node 20 probe, row CONFLICTED, header tier scope). Worktrees: `../insurance-simplified-wt/{a,b,c,d,e,f,g,int}`.
+
+Coordinator defaults recorded (owner-reviewable): conditional → NEEDS VERIFICATION (C-1 table in `app/lib/evidence/verdict-mapping.ts`); AT-PERSIST by re-derivation (no durable seal key — would add a secret); only exclusion claims must be verbatim; materiality map `health-materiality@1` (15 concepts) as adapter data; authority defaults per `app/lib/evidence/authority`.
+
 ### M5 — Retrieval correctness
 
 - **Objective:** session retrieval is complete and the chat retriever is chosen on evidence.
