@@ -1098,10 +1098,23 @@ async function runSemanticLeg(parts) {
 
 // ------------------------------------------------- RRF fusion
 // R4 RRF fusion measurement (todo 28): fuses lexical (line-overlap) + semantic
-// (cosine) legs using RRF with k=60. Per-leg top-10 -> fused top-5. DEV +
-// VALIDATION only, TEST stays frozen. Mirrors app/lib/rag/fusion.ts exactly.
+// (cosine) legs using RRF with k=60. Per-leg CANDIDATES_PER_LEG -> fused
+// top-5 (M5 over-fetch; was top-10 per leg). DEV + VALIDATION only, TEST stays
+// frozen. Mirrors app/lib/rag/fusion.ts exactly.
 
 const RRF_K = 60;
+
+// Per-leg candidate depth, read from the app's single definition so the
+// mirror cannot drift (run.mjs cannot import TS). Missing/invalid -> throw.
+const CANDIDATES_PER_LEG = (() => {
+  const src = readFileSync(join(DIR, "..", "app", "lib", "rag", "fusion.ts"), "utf8");
+  const m = /export const CANDIDATES_PER_LEG = (\d+);/.exec(src);
+  const n = m ? Number(m[1]) : NaN;
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error("eval mirror: CANDIDATES_PER_LEG not found in app/lib/rag/fusion.ts");
+  }
+  return n;
+})();
 
 function fuseRRF(lexicalTop10, semanticTop10, maxFused = 5) {
   const k = RRF_K;
@@ -1163,7 +1176,11 @@ function fuseRRF(lexicalTop10, semanticTop10, maxFused = 5) {
 }
 
 function retrieveRRF(lexicalRanked, semanticRanked, maxPassages = 5) {
-  return fuseRRF(lexicalRanked.slice(0, 10), semanticRanked.slice(0, 10), maxPassages);
+  return fuseRRF(
+    lexicalRanked.slice(0, CANDIDATES_PER_LEG),
+    semanticRanked.slice(0, CANDIDATES_PER_LEG),
+    maxPassages,
+  );
 }
 
 async function runRRFBaseline(parts) {
@@ -1205,7 +1222,7 @@ async function runRRFBaseline(parts) {
   [...parts.dev, ...parts.validation].forEach((it, i) => byId.set(it.id, questionVecs[i]));
 
   console.log(
-    `rrfconfig provider=local-ollama model=${config.model} base=${config.baseUrl} dims=${dims} batch=${SEM_BATCH_SIZE} attempts=${SEM_MAX_ATTEMPTS} chunks=${chunks.length} k=${RRF_K}`
+    `rrfconfig provider=local-ollama model=${config.model} base=${config.baseUrl} dims=${dims} batch=${SEM_BATCH_SIZE} attempts=${SEM_MAX_ATTEMPTS} chunks=${chunks.length} k=${RRF_K} perLeg=${CANDIDATES_PER_LEG}`
   );
 
   // Score DEV
@@ -1234,7 +1251,7 @@ function scorePartitionRRF(items, chunks, entries, dims, questionVectors) {
     const mustRefuse = it.mustRefuse === true;
 
     // Lexical leg (at chunk granularity: map line hits to their containing chunk)
-    const lexicalLines = retrieveCorpus(CORPUS, it.question, 10);
+    const lexicalLines = retrieveCorpus(CORPUS, it.question, CANDIDATES_PER_LEG);
     const lexicalRanked = lexicalLines.map((p) => ({
       documentId: p.documentId,
       page: p.page,
@@ -1244,7 +1261,7 @@ function scorePartitionRRF(items, chunks, entries, dims, questionVectors) {
     }));
 
     // Semantic leg
-    const semanticRanked = retrieveCosine(entries, dims, questionVectors.get(it.id), 10).map((r) => ({
+    const semanticRanked = retrieveCosine(entries, dims, questionVectors.get(it.id), CANDIDATES_PER_LEG).map((r) => ({
       documentId: r.chunk.documentId,
       page: r.chunk.page,
       chunkId: r.chunk.chunkId,
@@ -1399,7 +1416,7 @@ async function scorePartitionCitationPrecision(items, chunks, entries, dims, que
     const mustRefuse = it.mustRefuse === true;
 
     // Lexical leg (at chunk granularity: map line hits to their containing chunk)
-    const lexicalLines = retrieveCorpus(CORPUS, it.question, 10);
+    const lexicalLines = retrieveCorpus(CORPUS, it.question, CANDIDATES_PER_LEG);
     const lexicalRanked = lexicalLines.map((p) => ({
       documentId: p.documentId,
       page: p.page,
@@ -1409,7 +1426,7 @@ async function scorePartitionCitationPrecision(items, chunks, entries, dims, que
     }));
 
     // Semantic leg
-    const semanticRanked = retrieveCosine(entries, dims, questionVectors.get(it.id), 10).map((r) => ({
+    const semanticRanked = retrieveCosine(entries, dims, questionVectors.get(it.id), CANDIDATES_PER_LEG).map((r) => ({
       documentId: r.chunk.documentId,
       page: r.chunk.page,
       chunkId: r.chunk.chunkId,
