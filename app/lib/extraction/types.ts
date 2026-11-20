@@ -109,18 +109,77 @@ export interface CellValue {
   anchor?: ClaimAnchor;
 }
 
+/** Why a row has no value (EC-10). A miss is never "not covered":
+ *  - `not-found-in-pages-read`: no candidate passage was found in the pages
+ *    whose text was read;
+ *  - `candidates-withheld`: candidate passages were found but none survived
+ *    citation/structure verification, so none is shown. */
+export type AbsenceReason = "not-found-in-pages-read" | "candidates-withheld";
+
+export const ABSENCE_REASONS: readonly AbsenceReason[] = ["not-found-in-pages-read", "candidates-withheld"];
+
+/** Per-document reading coverage behind an absence. */
+export interface AbsenceCoverage {
+  documentId: string;
+  /** 1-based pages whose text was read. */
+  pagesRead: number[];
+  /** Pages with no extractable text (blank or image-only): never searched. */
+  pagesNotRead: number[];
+  /** Pages read only partly (little text, plus images that may hold more). */
+  pagesPartlyRead: number[];
+}
+
+/** Server-derived absence for one NOT STATED row (see `TableCoverage`). */
+export interface RowAbsence {
+  reason: AbsenceReason;
+  documents: AbsenceCoverage[];
+}
+
+/** Server-derived reading coverage of the whole result (EC-10). Kept beside
+ *  the rows (not inside them) so row and document records stay unchanged:
+ *  `absences` has exactly one entry per NOT STATED row; `documents` one entry
+ *  per document of the table. Never taken from model output. */
+export interface TableCoverage {
+  documents: AbsenceCoverage[];
+  absences: { factName: string; reason: AbsenceReason }[];
+}
+
+/** Why a passage that states this fact did not become a claim. */
+export type WithheldReason =
+  | "label-unrecognized"
+  | "header-unverifiable"
+  | "row-quote-too-long"
+  | "row-quote-unverifiable"
+  | "governing-context-unreadable"
+  | "governing-note-unverifiable";
+
+/** A source line the page states for this fact but that the reader withheld
+ *  (EC-2/EC-5). Shown so the drop is visible, never as a value. The quote is
+ *  the verified verbatim page span. */
+export interface WithheldClaim {
+  documentId: string;
+  page: number;
+  quote: string;
+  reason: WithheldReason;
+}
+
 export interface TableRow {
   factName: string;
   verdict: Verdict;
   /** Required when verdict is DOES NOT APPEAR TO FIT: names the ruling-out context field. */
   rationale?: string;
   values: CellValue[];
+  /** Source lines stating this fact that were withheld instead of shown. */
+  withheld?: WithheldClaim[];
 }
 
 export interface ComparisonTable {
   schemaVersion: "v1";
   factListVersion: string;
   documents: { documentId: string; filename: string; pageCount: number }[];
+  /** Pages read / not read per document and why each NOT STATED row has no
+   *  value (EC-10). Server-derived; absent on legacy results. */
+  coverage?: TableCoverage;
   /** Optional, evidence-attested identity. Absent on legacy or unresolved results. */
   plans?: ProvenPlan[];
   rows: TableRow[];
@@ -222,12 +281,40 @@ export function validateTable(payload: unknown): ComparisonTable {
     }
   }
 
+  if (t.coverage !== undefined) {
+    const c = t.coverage as Record<string, unknown> | null;
+    if (!c || typeof c !== "object" || !Array.isArray(c.documents) || !Array.isArray(c.absences)) fail("invalid coverage");
+    for (const a of c.absences as Record<string, unknown>[]) {
+      const row = (t.rows as Record<string, unknown>[]).find((r) => r && r.factName === a?.factName);
+      if (!a || !ABSENCE_REASONS.includes(a.reason as AbsenceReason) || !row || row.verdict !== "NOT STATED") {
+        fail("coverage absence must name a NOT STATED row with a known reason");
+      }
+    }
+    for (const d of c.documents as Record<string, unknown>[]) {
+      if (!d || typeof d.documentId !== "string" || !docIds.has(d.documentId)) fail("coverage references unknown document");
+    }
+  }
+
   for (const r of t.rows as Record<string, unknown>[]) {
     assertVerdict(r.verdict);
     if (typeof r.factName !== "string" || !r.factName) fail("row missing factName");
     if (!Array.isArray(r.values)) fail(`row ${r.factName}: values must be an array`);
     if (r.verdict === "NOT STATED" && (r.values as unknown[]).length > 0) {
       fail(`row ${r.factName}: NOT STATED rows must have empty values`);
+    }
+    if (r.withheld !== undefined) {
+      if (!Array.isArray(r.withheld)) fail(`row ${r.factName}: withheld must be an array`);
+      // A withheld statement of the fact is not an absence (finding #2).
+      if (r.verdict === "NOT STATED" && r.withheld.length > 0) {
+        fail(`row ${r.factName}: a row with withheld source lines cannot be NOT STATED`);
+      }
+      for (const w of r.withheld as Record<string, unknown>[]) {
+        if (!w || typeof w !== "object" || typeof w.documentId !== "string" || !docIds.has(w.documentId) ||
+          !Number.isInteger(w.page) || (w.page as number) < 1 || typeof w.quote !== "string" || !w.quote.trim() ||
+          typeof w.reason !== "string") {
+          fail(`row ${r.factName}: invalid withheld record`);
+        }
+      }
     }
     if (r.verdict === "DOES NOT APPEAR TO FIT" && typeof r.rationale !== "string") {
       fail(`row ${r.factName}: DOES NOT APPEAR TO FIT requires a rationale naming the context field`);

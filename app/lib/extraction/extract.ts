@@ -15,6 +15,7 @@ import {
   type Qualifiers,
   type SelectionStatus,
   type TableRow,
+  type WithheldClaim,
 } from "@/app/lib/extraction/types";
 import {
   FACTS,
@@ -40,7 +41,9 @@ import {
 } from "@/app/lib/extraction/conditions";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
-import { quoteInTable, tableClaims, tableOwnedSpans } from "@/app/lib/extraction/table-facts";
+import { quoteInTable, tableClaims, tableDrops, tableOwnedSpans, unrecognizedLabelDrops, type TableDrop } from "@/app/lib/extraction/table-facts";
+import { annotateAbsence, stripServerOnlyFields, WITHHELD_ROW_RATIONALE } from "@/app/lib/extraction/absence";
+import type { PageReadability } from "@/app/lib/pdf/page-readability";
 import { statementClaims, statementOwnedSpans } from "@/app/lib/extraction/statement-facts";
 
 const CARE_FACTS: ReadonlySet<string> = new Set(
@@ -56,7 +59,13 @@ export interface ExtractInputDocument {
   pageCount: number;
   pages: string[];
   tables?: LayoutTable[];
+  /** Per-page readability from upload (absent on legacy sessions; derived
+   *  from `pages` then). */
+  readability?: PageReadability[];
 }
+
+/** Rationale for a row whose only statements of the fact were withheld. */
+export const WITHHELD_RATIONALE = WITHHELD_ROW_RATIONALE;
 
 function normalize(display: string): string {
   return display.trim().toLowerCase().replace(/\s+/g, " ").replace(/[.]+$/, "");
@@ -447,14 +456,25 @@ export function extractFallback(
   const claimsByDoc = new Map(documents.map((doc) => [doc.documentId, [...tableClaims(doc), ...statementClaims(doc)]]));
   // A grammar-parsed statement owns its sentence for its own fact only.
   const statementOwnedByDoc = new Map(documents.map((doc) => [doc.documentId, statementOwnedSpans(doc)]));
+  // Table cells the document states for a fact but whose claim was dropped
+  // (finding #2): reported as withheld, never left as a silent NOT STATED.
+  const dropsByDoc = new Map(documents.map((doc) => [doc.documentId, tableDrops(doc)]));
 
-  const rows: TableRow[] = FACTS.map((fact) => {
+  const withheldByFact = new Map<string, { withheld: WithheldClaim[]; withheldOnly: boolean }>();
+  const builtRows: TableRow[] = FACTS.map((fact) => {
     const values: CellValue[] = [];
     let ruledOutField: string | null = null;
     let allVague = true;
     let ambiguousEvidence = false;
+    const withheld: WithheldClaim[] = [];
+    const docsWithValues = new Set<string>();
+    const withhold = (doc: ExtractInputDocument, drop: TableDrop) => {
+      if (withheld.some((w) => w.documentId === doc.documentId && w.page === drop.page && w.quote === drop.quote && w.reason === drop.reason)) return;
+      withheld.push({ documentId: doc.documentId, page: drop.page, quote: drop.quote, reason: drop.reason });
+    };
 
     for (const doc of documents) {
+      for (const drop of dropsByDoc.get(doc.documentId) ?? []) if (drop.factName === fact.name) withhold(doc, drop);
       const matches = findAllMatchesWithHeaders(fact.patterns, doc.pages, tierHeadersByDoc.get(doc.documentId)!);
 
       for (const match of matches) {
@@ -467,7 +487,10 @@ export function extractFallback(
           ambiguousEvidence = true;
           continue;
         }
-        if (quoteInTable(doc, ownedByDoc.get(doc.documentId)!, match.page, verified.quote)) continue;
+        if (quoteInTable(doc, ownedByDoc.get(doc.documentId)!, match.page, verified.quote)) {
+          for (const drop of unrecognizedLabelDrops(doc, fact.name, match.page, verified.quote)) withhold(doc, drop);
+          continue;
+        }
         const statementOwned = statementOwnedByDoc.get(doc.documentId)!.get(fact.name);
         if (statementOwned && quoteInTable(doc, statementOwned, match.page, verified.quote)) continue;
         const vague = isVague(match.quote);
@@ -481,16 +504,26 @@ export function extractFallback(
           evidence: [{ documentId: doc.documentId, page: match.page, quote: verified.quote }],
         };
         values.push({ ...value, qualifiers: attestedQualifiers(value, [doc]) });
+        docsWithValues.add(doc.documentId);
       }
       // Structural claims for this fact: table cells (verbatim label/cell,
       // column scope) and grammar-parsed statements (verbatim sentence).
       for (const claim of claimsByDoc.get(doc.documentId) ?? []) {
         if (claim.factName !== fact.name) continue;
         values.push(claim.value);
+        docsWithValues.add(doc.documentId);
         allVague = false;
       }
     }
 
+    // A document whose only statements of this fact were withheld must not
+    // read as an absence: the row needs verification, with the source lines.
+    if (withheld.length > 0) {
+      withheldByFact.set(fact.name, { withheld, withheldOnly: withheld.some((w) => !docsWithValues.has(w.documentId)) });
+    }
+    if (values.length === 0 && withheld.length > 0) {
+      return { factName: fact.name, verdict: "NEEDS VERIFICATION", rationale: WITHHELD_RATIONALE, values: [], withheld };
+    }
     if (values.length === 0) {
       return ambiguousEvidence
         ? {
@@ -553,8 +586,9 @@ export function extractFallback(
       values: displayValues,
     };
   });
+  const rows = builtRows.map((row) => withWithheld(row, withheldByFact.get(row.factName)));
 
-  return withEligibilityRow(
+  return annotateAbsence(withEligibilityRow(
     applyPremiumPersonalization(
       applyConditionBindings({
         schemaVersion: "v1",
@@ -569,7 +603,20 @@ export function extractFallback(
       userContext,
     ),
     userContext
-  );
+  ), documents);
+}
+
+/** Attach withheld source lines to a row. When some document's only
+ *  statements of the fact were withheld, a SUPPORTED/CONFLICTED row becomes
+ *  NEEDS VERIFICATION (that document would otherwise read as silent). */
+function withWithheld(row: TableRow, entry?: { withheld: WithheldClaim[]; withheldOnly: boolean }): TableRow {
+  if (!entry || row.withheld) return row;
+  const next: TableRow = { ...row, withheld: entry.withheld };
+  if (entry.withheldOnly && (row.verdict === "SUPPORTED" || row.verdict === "CONFLICTED")) {
+    next.verdict = "NEEDS VERIFICATION";
+    next.rationale = WITHHELD_RATIONALE;
+  }
+  return next;
 }
 
 const EXTRACTION_INSTRUCTIONS = [
@@ -1029,7 +1076,7 @@ export async function extractViaLlm(
     `${EXTRACTION_INSTRUCTIONS}\nUser context (apply a field ONLY when documents reference it): ${JSON.stringify(userContext)}`,
     documents.map(({ documentId, pages }) => ({ documentId, pages }))
   );
-  const raw = await completeJson([{ role: "user", content: prompt }]);
+  const raw = stripServerOnlyFields(await completeJson([{ role: "user", content: prompt }]));
   const prepared = prepareLlmOutput(raw, documents);
   if (prepared.rejectionCodes.length) {
     console.warn(`[extractViaLlm] quarantined model output: ${[...new Set(prepared.rejectionCodes)].join(",")}`);
@@ -1037,7 +1084,7 @@ export async function extractViaLlm(
   const reconciled = reconcileLlmTable(
     dropEvidenceLessValues(normalizeLlmTable(prepared.payload)), documents
   );
-  return withEligibilityRow(
+  return annotateAbsence(withEligibilityRow(
     applyPremiumPersonalization(
       applyConditionBindings(
         validateTable(
@@ -1047,7 +1094,7 @@ export async function extractViaLlm(
       userContext,
     ),
     userContext
-  );
+  ), documents);
 }
 
 export function extractComparison(
