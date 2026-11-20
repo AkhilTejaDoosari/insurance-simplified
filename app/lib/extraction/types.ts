@@ -182,7 +182,18 @@ export interface ComparisonTable {
   coverage?: TableCoverage;
   /** Optional, evidence-attested identity. Absent on legacy or unresolved results. */
   plans?: ProvenPlan[];
+  /** Server-derived: one entry per uploaded document saying whether a plan
+   *  identity was verified for it and, if not, why (P0-01). Absent on legacy
+   *  results; consumers use `planInventoryOf`, which rebuilds it. */
+  planInventory?: PlanInventoryEntry[];
   rows: TableRow[];
+}
+
+export interface PlanInventoryEntry {
+  documentId: string;
+  /** Verified plans sourced from this document (empty when unresolved). */
+  planIds: string[];
+  status: "verified-plan" | "no-verified-plan-name" | "plan-source-unverified";
 }
 
 export interface ProvenPlan {

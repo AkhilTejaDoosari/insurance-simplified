@@ -19,7 +19,8 @@
 //      whether nothing was found in the pages read or candidates were withheld.
 
 import { verifyEvidenceCitation, checkDisplayGrounding } from "@/app/lib/evidence-verification";
-import type { CellValue, ComparisonTable, EvidenceCitation } from "@/app/lib/extraction/types";
+import type { CellValue, ComparisonTable, EvidenceCitation, ProvenPlan } from "@/app/lib/extraction/types";
+import { buildPlanInventory } from "@/app/lib/extraction/plan-inventory";
 import { attestPlans, attributePlanScope, resolveRowPlanIds } from "@/app/lib/extraction/plan-identity";
 import { isGlossaryDefinitionLine, isTocEntryLine } from "@/app/lib/extraction/noise-shapes";
 import { verifyClaimAnchor } from "@/app/lib/extraction/claim-anchors";
@@ -66,10 +67,10 @@ function verifiedWithheld(withheld: readonly WithheldClaim[] | undefined, docume
 export function verifyComparisonTable(table: ComparisonTable, documents: VerifiableDocument[]): ComparisonTable {
   // Plan identity is optional and never inferred from filenames. A claimed
   // association survives only when every named source verifies on its page.
-  const proposedPlans = table.plans ?? attestPlans(documents.filter((doc) =>
+  const tableDocuments = documents.filter((doc) =>
     table.documents.some((entry) => entry.documentId === doc.documentId)
-  ));
-  const plans = proposedPlans.flatMap((plan) => {
+  );
+  const verifyPlans = (candidates: readonly ProvenPlan[]) => candidates.flatMap((plan) => {
     const verifiedSources = plan.sources.map((source) => {
       const result = verifyEvidenceCitation(documents, source);
       return result.ok ? { ...source, quote: result.quote } : null;
@@ -78,6 +79,19 @@ export function verifyComparisonTable(table: ComparisonTable, documents: Verifia
       ? [{ ...plan, sources: verifiedSources as NonNullable<typeof verifiedSources[number]>[] }]
       : [];
   });
+  const proposedPlans = verifyPlans(table.plans ?? []);
+  // Documents a proposed plan did not prove (omitted, or its source failed)
+  // still get deterministic attestation (P0-01): a model proposal must never
+  // suppress page-literal identity proof for the rest of the upload. Running
+  // only on unowned documents keeps this idempotent for read-back.
+  const owned = new Set(proposedPlans.flatMap((plan) => plan.sources.map((s) => s.documentId)));
+  const attested = verifyPlans(attestPlans(tableDocuments.filter((doc) => !owned.has(doc.documentId))));
+  const plans = [...proposedPlans, ...attested];
+  const unverifiedSourceDocumentIds = new Set(
+    (table.plans ?? [])
+      .filter((plan) => !proposedPlans.some((kept) => kept.planId === plan.planId))
+      .flatMap((plan) => plan.sources.map((s) => s.documentId)),
+  );
   const scoped = plans.length > 0 ? attributePlanScope({ ...table, plans }, documents) : table;
 
   const rows: ComparisonTable["rows"] = [];
@@ -162,5 +176,10 @@ export function verifyComparisonTable(table: ComparisonTable, documents: Verifia
     }
   }
   const scopedDocs = documents.filter((doc) => table.documents.some((entry) => entry.documentId === doc.documentId));
-  return annotateAbsence({ ...table, ...(plans.length ? { plans } : { plans: undefined }), rows }, scopedDocs, absenceReasons);
+  const planInventory = buildPlanInventory(table.documents, plans, unverifiedSourceDocumentIds);
+  return annotateAbsence(
+    { ...table, ...(plans.length ? { plans } : { plans: undefined }), planInventory, rows },
+    scopedDocs,
+    absenceReasons,
+  );
 }

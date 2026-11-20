@@ -385,7 +385,9 @@ test("five uploaded documents display at most three plans and selection/order re
   await openReview(page, 5);
   await expect(page.locator(".table").first().locator("thead th")).toHaveCount(4);
   const picker = page.getByRole("group", { name: "Select plans to compare" });
-  await expect(picker.getByLabel("Compare Omega", { exact: true })).toBeDisabled();
+  // P0-01 acceptance change: an unselected verified plan is selectable (it
+  // replaces a column); the cap of three columns is asserted above.
+  await expect(picker.getByLabel("Compare Omega", { exact: true })).toBeEnabled();
   await picker.getByLabel("Compare Alpha", { exact: true }).uncheck();
   await expect(page.getByRole("columnheader", { name: "Alpha" })).toHaveCount(0);
   await picker.getByLabel("Compare Alpha", { exact: true }).check();

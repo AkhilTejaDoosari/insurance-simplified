@@ -19,7 +19,11 @@ export interface EffectiveSelection {
   selectedPlanIds: string[];
 }
 
-const MAX_SELECTED_PLANS = 3;
+/** Comparison columns shown side by side (A-012B). The inventory itself is
+ *  never capped: every verified plan stays selectable by replacement. */
+export const MAX_SELECTED_PLANS = 3;
+/** A comparison needs two plans; removal below this is refused. */
+export const MIN_COMPARED_PLANS = 2;
 const ALL_TIERS = "__all__";
 
 function availablePlans(table: ComparisonTable, documentId: string): string[] {
@@ -290,6 +294,33 @@ export function setSelectedPlanIds(
     if (!valid.has(id)) throw new Error("Selected plan is not a proven plan");
   }
   return { ...prior, selectedPlanIds: [...planIds] };
+}
+
+/** Swap one compared plan for another verified plan, keeping its column
+ *  position and every other selected plan (P0-01). Throws instead of guessing
+ *  when either plan is not a valid choice. */
+export function replaceSelectedPlan(
+  planIds: readonly string[],
+  table: ComparisonTable,
+  outgoingPlanId: string,
+  incomingPlanId: string,
+): string[] {
+  if (!alphabeticalPlanIds(table).includes(incomingPlanId) || !(table.plans ?? []).some((p) => p.planId === incomingPlanId))
+    throw new Error("Selected plan is not a proven plan");
+  const index = planIds.indexOf(outgoingPlanId);
+  if (index === -1) throw new Error("Plan to replace is not selected");
+  if (planIds.includes(incomingPlanId)) throw new Error("Plan is already selected");
+  const next = [...planIds];
+  next[index] = incomingPlanId;
+  return next;
+}
+
+/** Drop one plan from the comparison; a comparison keeps at least two. */
+export function removeSelectedPlan(planIds: readonly string[], planId: string): string[] {
+  if (!planIds.includes(planId)) return [...planIds];
+  if (planIds.length <= MIN_COMPARED_PLANS)
+    throw new Error(`Keep at least two plans to compare`);
+  return planIds.filter((id) => id !== planId);
 }
 
 export function setSection(

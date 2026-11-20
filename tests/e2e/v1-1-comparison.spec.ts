@@ -323,8 +323,14 @@ test("plan picker lets the user swap a selected plan while keeping three columns
   ).toBeVisible();
 });
 
-test("plan picker prevents selecting a fourth plan", async ({ page }) => {
-  await mockExtractResponse(page, fivePlanTable);
+// P0-01 acceptance change (owner, 2026-11-20): the three-column cap stays,
+// but an unselected verified plan is never a dead end. It replaces a plan
+// instead of being disabled.
+async function openFivePlanComparison(
+  page: import("@playwright/test").Page,
+  table: unknown = fivePlanTable,
+) {
+  await mockExtractResponse(page, table);
   await startIntake(page);
   await page.setInputFiles('input[type="file"]', [
     FIXTURE_A,
@@ -338,14 +344,89 @@ test("plan picker prevents selecting a fourth plan", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Compare your policies" }),
   ).toBeVisible();
+}
 
+test("a fourth verified plan stays selectable and replaces the last column, keeping three", async ({
+  page,
+}) => {
+  await openFivePlanComparison(page);
   const picker = page.locator(".plan-picker");
-  // Gamma is an unselected plan beyond the three-column cap.
-  const gamma = picker
-    .locator("label", { hasText: "Gamma" })
-    .getByRole("checkbox");
-  await expect(gamma).toBeDisabled();
   await expect(picker).toContainText("Choose up to three plans");
+  await expect(page.locator(".planCount")).toHaveText(
+    "3 of 5 verified plans in the comparison · 5 uploaded documents",
+  );
+  const gamma = picker.locator("label", { hasText: "Gamma" }).getByRole("checkbox");
+  await expect(gamma).toBeEnabled();
+  await gamma.check();
+
+  const table = page.getByRole("table");
+  await expect(table.locator("thead").getByRole("columnheader")).toHaveCount(4);
+  await expect(table.getByRole("columnheader", { name: "Gamma" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Delta" })).toHaveCount(0);
+  await expect(table.getByRole("columnheader", { name: "Alpha" })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Beta" })).toBeVisible();
+  await expect(page.locator(".planAnnouncement")).toHaveText(
+    "Gamma replaced Delta in column 3.",
+  );
+});
+
+test("Replace with swaps a chosen column and Remove never drops below two plans", async ({
+  page,
+}) => {
+  await openFivePlanComparison(page);
+  await page
+    .getByLabel("Replace Alpha with another plan", { exact: true })
+    .selectOption({ label: "Epsilon" });
+  const headers = page.getByRole("table").locator("thead").getByRole("columnheader");
+  await expect(headers).toHaveCount(4);
+  await expect(headers.nth(1)).toHaveText("Epsilon");
+  await expect(page.getByRole("columnheader", { name: "Alpha" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Remove Beta from the comparison" }).click();
+  await expect(headers).toHaveCount(3);
+  const removeEpsilon = page.getByRole("button", {
+    name: "Remove Epsilon from the comparison",
+  });
+  await expect(removeEpsilon).toHaveAttribute("aria-disabled", "true");
+  // aria-disabled keeps it focusable; force the click to prove the guard refuses.
+  await removeEpsilon.focus();
+  await removeEpsilon.click({ force: true });
+  await expect(headers).toHaveCount(3);
+  await expect(page.locator("#plan-remove-reason")).toContainText(
+    "at least two plans",
+  );
+});
+
+test("every uploaded document stays discoverable; an unresolved one is explained and readable", async ({
+  page,
+}) => {
+  const withUnresolved = {
+    ...fivePlanTable,
+    plans: fivePlanTable.plans.filter((p) => p.planId !== "plan-epsilon"),
+    planInventory: [
+      { documentId: "doc-5", planIds: [], status: "no-verified-plan-name" },
+    ],
+    rows: fivePlanTable.rows.map((row) => ({
+      ...row,
+      values: row.values.filter((v) => v.planId !== "plan-epsilon"),
+    })),
+  };
+  await openFivePlanComparison(page, withUnresolved);
+  await expect(page.locator(".planCount")).toHaveText(
+    "3 of 4 verified plans in the comparison · 5 uploaded documents",
+  );
+  const inventory = page.getByRole("region", {
+    name: "Uploaded documents that cannot be compared as plans",
+  });
+  await expect(inventory).toContainText("1 uploaded document isn’t available for plan comparison");
+  await expect(inventory).toContainText("No plan name could be verified");
+  await inventory.getByRole("button", { name: "Read this document on its own" }).click();
+  await expect(
+    page.getByRole("button", { name: "Understand one policy" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByLabel("Choose a document for individual reading"),
+  ).toHaveValue("doc-5");
 });
 
 test("All tiers keeps one column per plan with tier-labeled details", async ({

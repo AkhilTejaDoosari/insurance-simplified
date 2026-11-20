@@ -318,6 +318,9 @@ export default function Home() {
   function changeActiveView(next: ActiveView) {
     setExportError(null);
     if (next.mode === "understand") {
+      // Reading an unresolved document from the comparison inventory
+      // switches mode without reuploading (P0-01).
+      if (viewMode !== "understand") setViewMode("understand");
       if (next.documentId !== activeView.documentId) {
         setActiveDocumentId(next.documentId!);
         setReadings((prior) =>
@@ -414,6 +417,11 @@ export default function Home() {
                 type="button"
                 aria-pressed={viewMode === "compare"}
                 disabled={(table.plans?.length ?? 0) < 2}
+                aria-describedby={
+                  (table.plans?.length ?? 0) < 2 && table.documents.length > 1
+                    ? "compare-unavailable"
+                    : undefined
+                }
                 onClick={() => {
                   setViewMode("compare");
                   setExportError(null);
@@ -422,6 +430,13 @@ export default function Home() {
                 Compare policies
               </button>
             </div>
+            {(table.plans?.length ?? 0) < 2 && table.documents.length > 1 && (
+              <p className="reviewNote" id="compare-unavailable">
+                Comparing needs at least two documents with a verified plan
+                name; {table.plans?.length ?? 0} of {table.documents.length}{" "}
+                documents have one. Each document can still be read on its own.
+              </p>
+            )}
             <button
               type="button"
               ref={aboutTrigger}
@@ -473,7 +488,9 @@ export default function Home() {
             <div>
               <span className="eyebrow">
                 Your document review · {table.documents.length}{" "}
-                {table.documents.length === 1 ? "document" : "documents"}
+                {table.documents.length === 1 ? "document" : "documents"} ·{" "}
+                {table.plans?.length ?? 0} verified{" "}
+                {(table.plans?.length ?? 0) === 1 ? "plan" : "plans"}
               </span>
               <h1>
                 {viewMode === "understand"

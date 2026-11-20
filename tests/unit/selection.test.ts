@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alphabeticalPlanIds, createSelection, moveSelectedPlan, reconcileSelection, resetPlanOrder, selectPlan, selectTier, selectDocumentTier, selectedPlanIds, selectionKey, setSection, setSelectedPlanIds, planTiers, planDocuments } from "@/app/lib/extraction/selection";
+import { alphabeticalPlanIds, createSelection, moveSelectedPlan, reconcileSelection, resetPlanOrder, selectPlan, selectTier, selectDocumentTier, selectedPlanIds, selectionKey, setSection, setSelectedPlanIds, planTiers, planDocuments, replaceSelectedPlan, removeSelectedPlan, MAX_SELECTED_PLANS } from "@/app/lib/extraction/selection";
 import type { ComparisonTable } from "@/app/lib/extraction/types";
 
 const source = (documentId: string, name: string) => ({ documentId, page: 1, quote: `Policy name: ${name}` });
@@ -177,5 +177,35 @@ describe("effective selection", () => {
     const reset = resetPlanOrder(manual, table);
     expect(reset.selectedPlanIds).toEqual(["alpha", "gamma"]);
     expect(reset.tiers).toEqual(manual.tiers);
+  });
+
+  describe("replace and remove (P0-01)", () => {
+    const fivePlans: ComparisonTable = {
+      ...table,
+      plans: ["p1", "p2", "p3", "p4", "p5"].map((id, i) => ({
+        planId: id, name: `Plan ${i + 1}`, sources: [source(i % 2 ? "b" : "a", `Plan ${i + 1}`)],
+      })),
+      rows: [],
+    };
+
+    it("keeps the three-plan cap at 3", () => {
+      expect(MAX_SELECTED_PLANS).toBe(3);
+    });
+
+    it("replaces a selected plan in place with an unselected verified plan", () => {
+      expect(replaceSelectedPlan(["p1", "p2", "p3"], fivePlans, "p2", "p5")).toEqual(["p1", "p5", "p3"]);
+      expect(replaceSelectedPlan(["p1", "p2", "p3"], fivePlans, "p3", "p4")).toEqual(["p1", "p2", "p4"]);
+    });
+
+    it("refuses an unknown, unselected or already-selected plan instead of guessing", () => {
+      expect(() => replaceSelectedPlan(["p1", "p2", "p3"], fivePlans, "p2", "ghost")).toThrow(/proven plan/);
+      expect(() => replaceSelectedPlan(["p1", "p2", "p3"], fivePlans, "p4", "p5")).toThrow(/not selected/);
+      expect(() => replaceSelectedPlan(["p1", "p2", "p3"], fivePlans, "p2", "p3")).toThrow(/already selected/);
+    });
+
+    it("removes a plan but never below two compared plans", () => {
+      expect(removeSelectedPlan(["p1", "p2", "p3"], "p2")).toEqual(["p1", "p3"]);
+      expect(() => removeSelectedPlan(["p1", "p3"], "p1")).toThrow(/at least two/);
+    });
   });
 });
