@@ -96,7 +96,9 @@ export function confirmStoredResult(input: {
     let rederived = verifyComparisonTable(structuredClone(stored), docs);
     plansVerified = samePlans(rederived);
     planInventory = rederived.planInventory;
-    if (!plansVerified) {
+    // Bounded (review O1): only results produced before the identity-rule
+    // change (fact list v1) take the compatibility path.
+    if (!plansVerified && stored.factListVersion === "v1") {
       // Owner decision 3 (P0): a result stored under an earlier identity rule
       // keeps its identities when every stored plan still verifies on its
       // page exactly as stored. Nothing new is trusted: no attestation runs,

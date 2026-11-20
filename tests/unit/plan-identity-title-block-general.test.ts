@@ -43,8 +43,19 @@ describe("generalized title-block plan identity", () => {
     ["no document-type heading", "Northwind Voyager Plus®\nWelcome to your benefits"],
     ["title not on the first line", "Welcome\nNorthwind Voyager Plus®\nCertificate of Insurance"],
     ["over-long title", `${"Northwind ".repeat(12)}Plan\nCertificate of Insurance`],
+    // Independent review (Phase 2): page furniture, forms, specimens,
+    // organisations and generic descriptions are not product names.
+    ["page furniture", "Page 1 of 30\nCertificate of Insurance"],
+    ["a specimen marker", "SPECIMEN\nCertificate of Coverage"],
+    ["a form number", "Form GC-2024 Rev 3\nPolicy Document"],
+    ["an organisation without a legal suffix", "Northwind Health Group\nCertificate of Insurance"],
+    ["a generic description", "Group Accident and Sickness Insurance Policy\nCertificate of Insurance"],
   ])("abstains for a %s", (_label, first) => {
     expect(names(`${first}\n${BODY}`)).toEqual([]);
+  });
+
+  it("abstains when page 1 says it is not an actual policy", () => {
+    expect(names(`Northwind Gold\nCertificate of Insurance\nThis is not an actual policy.`)).toEqual([]);
   });
 
   it("does not attest from a later page (page-1 rule unchanged)", () => {

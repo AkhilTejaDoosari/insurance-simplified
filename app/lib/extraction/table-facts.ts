@@ -70,7 +70,7 @@ export function factsForLabel(label: string): string[] {
     .filter((f) => f.patterns.some((re) => re.test(f.matchFullLabel ? label : head)))
     .filter((f) => !f.labelHead || f.labelHead.test(head))
     .filter((f) => !f.excludes.some((re) => re.test(label)))
-    .filter((f) => f.requires.length === 0 || f.requires.some((re) => re.test(label)))
+    .filter((f) => f.requires.length === 0 || f.requires.some((re) => re.test(label)) || (f.labelHead?.test(head) ?? false))
     .map((f) => f.name);
 }
 

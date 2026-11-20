@@ -14,7 +14,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | --- | --- |
 | Worktree | `insurance-simplified-wt/p0` (separate from `int`, where an OpenCode session and `next dev :3333` were running) |
 | Branch | `p0/acceptance-remediation`, branched from `integration/m5-m7` @ `de4efe4` |
-| Checkpoints | `04fd36d` Phase 1 (accepted by owner 2026-11-20 as engineering checkpoint; product acceptance BLOCKED) · `d184c71` identity generalization + legacy read-back · Phase 2 commit (see `git log`) |
+| Checkpoints | `04fd36d` Phase 1 (accepted by owner 2026-11-20 as engineering checkpoint; product acceptance BLOCKED) · `d184c71` identity generalization + legacy read-back · `3d62ef6` Phase 2 · Phase 2 review fixes (see `git log`) |
 | Push / PR | none (not authorized) |
 | Recovery refs | `backup/*`, `refs/wip/*`, tag `recovery-pre-ui-2026-09-21` — untouched |
 | Real PDFs | `REAL_PDFS_DIR` (PDF corpus) — **unset**; `REAL_FIXTURES_DIR` (private labels/ground truth) — **unset**. Both are existing contracts (`docs/quality.md` §2); no new variable. |
@@ -27,7 +27,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | --- | --- | --- |
 | 0 Investigation | validate audit | Done (see "Audit validation") |
 | 1 Inventory and selection | 1–2 | Checkpoint `04fd36d`; owner accepted as engineering checkpoint; e2e assertion change approved |
-| 2 Semantic correctness | 3–6 | Authorized 2026-11-20 (new fact ids + fact-list version); in progress |
+| 2 Semantic correctness | 3–6 | Implemented, Tested (unit + real-PDF probe); independent review done, findings fixed; owner review pending |
 | 3 Presentation contract | 7 | Not started — EC-7 amendment approved in principle; compatibility review pending |
 | 4 Chatbot correction | 8–10 | Not started — chat-api extension approved in principle; C-4 synthesis proposal pending |
 | 5 Real-document acceptance | 11 | BLOCKED — the five PDFs are not available (`REAL_PDFS_DIR` unset) |
@@ -215,3 +215,57 @@ fixture gap, see above) / 42 skipped; `npx tsc --noEmit` clean; `npm run build`
 green; `npm run test:e2e` 57 passed / 1 skipped. `npm run eval:extraction`:
 SKIPPED in effect — its labelled brochures are not on this machine (all
 metrics 0/0).
+
+## Phase 2 independent review (read-only reviewer, range `04fd36d..3d62ef6`)
+
+Verdict before fixes: request changes. All required findings fixed test-first
+(15 new regression cases, all red before the fix):
+
+- R1 phantom identities from the generalized title rule. Fixed: page-1
+  non-plan context check, page/form/specimen furniture, mostly-digit lines,
+  organisation names and generic document descriptions are rejected.
+- R2 governed limit heading too broad. Fixed: it requires an overall-limit
+  heading and excludes out-of-pocket, visit, per-day and drug maximums. The
+  bullet must start with an age band, not a bare digit.
+- R3 annual vs per-illness crossover. Fixed: the basis must sit next to
+  "deductible"; a line naming the annual/calendar-year deductible stays annual.
+- R4 geographic regex. Fixed: "U.S." followed by a space now matches; contact
+  lines are excluded; a "Label: The … only" restriction is no longer treated as
+  a definition.
+- O1 legacy path. Now gated to fact-list v1 results, with a stripped-plans v2
+  test.
+- O2 geographic table rows. A geographic label head ("Area of Coverage") now
+  satisfies the restriction requirement, and unrelated labels are refused.
+- Not changed (recorded): O3, where later age bands also cite their earlier
+  sibling bullets. The quote is contiguous page text and verifies; this is
+  extra context, not a different claim. Nit: the eligibility alias
+  "required to be" was removed on purpose (claim-procedure false positives);
+  this costs some recall.
+
+Real-PDF effect after the fixes: all five identities verified; the fact counts
+are unchanged from the table above.
+
+Checks: `npm test` 1630 passed / 22 skipped / 0 failed; with real fixtures
+1752 passed / 1 failed (pre-existing fixture gap) / 42 skipped; `tsc` clean;
+`build` green; `test:e2e` 57 passed / 1 skipped.
+
+## Open items after Phase 2
+
+1. Owner: confirm the doc 02 file (its content is the same product as doc 05)
+   and the doc 03 file name.
+2. Pre-existing insurer-specific title regex (doc 04) is still in
+   `plan-identity.ts`. Replacing it needs a generic rule for brochure titles
+   without a document-type heading.
+3. Residual noise: sub-benefit maximum sentences under policy-limit (from
+   the pre-existing aliases); one benefit-specific geographic line; a doc 01
+   annual-deductible fragment.
+4. Labelled-scorecard fixtures are not on this machine; `eval:extraction`
+   is SKIPPED in effect.
+5. Phases 3–5 not started. Phase 5 needs the owner-confirmed five PDFs.
+
+## Next atomic step
+
+Owner review of Phase 2. If authorized: Phase 3 (Task 7). First do a
+compatibility review of the EC-7 plain-language claim layer against
+`evidence-core.md` and every consumer of `CellValue.display` (UI, export,
+chat), then write a failing `presentation-claim` test.

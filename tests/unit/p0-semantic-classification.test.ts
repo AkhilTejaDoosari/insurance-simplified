@@ -107,6 +107,16 @@ describe("Task 4 — a per-illness or per-injury deductible is not the annual de
     );
   });
 
+  it("keeps an annual deductible that only mentions a per-illness one as annual", () => {
+    const line = "Annual deductible $1,000 replaces the per illness deductible";
+    expect(classify(line).factsCiting(line)).toEqual(["annual-deductible"]);
+  });
+
+  it("keeps an annual deductible with an incidental per-visit waiver", () => {
+    const line = "Annual deductible: $500, waived for each emergency room visit";
+    expect(classify(line).factsCiting(line)).toContain("annual-deductible");
+  });
+
   it("does not file a non-medical per-damage deductible as the annual deductible", () => {
     expect(classify("• Per damage Deductible: $75").factsCiting("Per damage")).not.toContain("annual-deductible");
   });
@@ -167,6 +177,13 @@ describe("Task 5 — an age-dependent coverage maximum is not an age limit", () 
     }
   });
 
+  it.each([
+    ["an out-of-pocket maximum", "Out-of-Pocket Maximum\n• Under 19: $2,000", "Under 19"],
+    ["a visit limit", "Physical Therapy Visit Limit\n• 20 visits: $50", "20 visits"],
+  ])("does not govern a bullet under %s as the policy limit", (_label, block, cited) => {
+    expect(classify(block).factsCiting(cited)).not.toContain("policy-limit");
+  });
+
   it("does not take age-banded amounts under an unrelated heading as a policy limit", () => {
     const block = "Premium rates\n• Up to age 64: $45 per month\n• Ages 65 through 74: $90 per month";
     expect(classify(block).factsCiting("Up to age 64")).not.toContain("policy-limit");
@@ -213,6 +230,23 @@ describe("Task 6 — geographic restrictions require a restriction, not a mentio
     "Benefits are payable only within the United States.",
   ])("captures a restriction sentence: %j", (line) => {
     expect(classify(line).factsCiting(line)).toContain("geographic-restrictions");
+  });
+
+  it.each([
+    "Benefits are not available in the U.S. for residents of other countries.",
+    "Area of Coverage: The United States only",
+  ])("captures a restriction written as %j", (line) => {
+    expect(classify(line).factsCiting(line)).toContain("geographic-restrictions");
+  });
+
+  it("does not take a contact line as a restriction", () => {
+    const line = "Customer service (USA only): 1-800-555-0100";
+    expect(classify(line).factsCiting(line)).not.toContain("geographic-restrictions");
+  });
+
+  it("reads a geographic table row by its heading, not by an unrelated label", () => {
+    expect(factsForLabel("Area of Coverage")).toContain("geographic-restrictions");
+    expect(factsForLabel("Coinsurance Outside the United States")).not.toContain("geographic-restrictions");
   });
 
   it("requires a restriction for international-coverage too", () => {

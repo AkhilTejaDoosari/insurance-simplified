@@ -74,4 +74,14 @@ describe("legacy read-back keeps verified identities (owner decision 3)", () => 
     expect(confirmed.table.plans).toBeUndefined();
     expect(confirmed.evidence).toBeNull();
   });
+
+  it("does not apply the legacy path to a current (v2) result whose plans were stripped", () => {
+    const current = verifyComparisonTable(
+      { schemaVersion: "v1", factListVersion: "v2", documents: docs.map(({ pages: _p, ...d }) => d), rows: [] },
+      docs,
+    );
+    const { planInventory: _drop, plans: _stripped, ...stripped } = current;
+    const confirmed = confirmStoredResult({ sessionId: SESSION, documents: docs, record: recordFor(stripped as ComparisonTable) });
+    expect(confirmed.evidence).toBeNull();
+  });
 });
