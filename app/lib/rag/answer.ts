@@ -8,6 +8,7 @@ import { chunkDocument, type ChunkableDocument } from "@/app/lib/rag/chunks";
 import { embedTexts, isEmbeddingConfigured } from "@/app/lib/rag/embeddings";
 import { InMemoryCosineIndex } from "@/app/lib/rag/cosine-index";
 import {
+  CANDIDATES_PER_LEG,
   fuseRRF,
   fuseSingleLeg,
   retrieveFused,
@@ -208,16 +209,25 @@ function toRankedPassage(p: RetrievedPassage): RankedPassage {
   return { ...p, chunkId: `${p.documentId}:${p.page}:${p.quote}` };
 }
 
-/** Lexical retriever leg: line-overlap, returns top-10 RankedPassage. */
+/** Passages the semantic leg hands to the chat prompt (see retrieval-prompt
+ *  budget notes below; raised 10 -> 16 in todo 6). */
+const SEMANTIC_TOP_K = 16;
+
+/** Lexical retriever leg: line-overlap, returns up to CANDIDATES_PER_LEG
+ *  RankedPassage candidates for fusion. */
 async function retrieveLexical(
   documents: RagDocument[],
   question: string,
 ): Promise<RankedPassage[]> {
-  const passages = retrieve(documents, question, 10);
+  const passages = retrieve(documents, question, CANDIDATES_PER_LEG);
   return passages.map(toRankedPassage);
 }
 
-/** Semantic retriever leg: chunk + embed + cosine, returns top-10 RankedPassage.
+/** Semantic retriever leg: chunk + embed + cosine, returns the top `limit`
+ *  RankedPassage (chat: SEMANTIC_TOP_K). M5 over-fetching: both the pgvector
+ *  and the in-memory index are asked for CANDIDATES_PER_LEG candidates; the
+ *  page-provenance filter runs on that pool and only then is the list cut to
+ *  `limit`, so dropped candidates never shrink the final top-k.
  *  Persistent-first cutover: when a session scope is provided and the durable
  *  stack is configured, pgvector serves the query; persistent errors fall
  *  back to the in-memory leg, and only persistent unavailability (null)
@@ -227,27 +237,32 @@ async function retrieveSemantic(
   documents: RagDocument[],
   question: string,
   sessionId?: string,
+  limit: number = SEMANTIC_TOP_K,
 ): Promise<RankedPassage[]> {
   if (!isEmbeddingConfigured()) return [];
+  const pool = Math.max(limit, CANDIDATES_PER_LEG);
   if (sessionId !== undefined) {
     try {
       const persistent = await retrievePersistentSemantic(
         question,
         sessionId,
-        16,
+        pool,
         documents.map((d) => d.documentId),
       );
       if (persistent !== null)
-        return persistent.filter((p) => {
-          const page = documents.find((d) => d.documentId === p.documentId)
-            ?.pages[p.page - 1];
-          const normalized = (text: string) => text.replace(/\s+/g, " ").trim();
-          return (
-            page !== undefined &&
-            p.quote.trim().length > 0 &&
-            normalized(page).includes(normalized(p.quote))
-          );
-        });
+        return persistent
+          .filter((p) => {
+            const page = documents.find((d) => d.documentId === p.documentId)
+              ?.pages[p.page - 1];
+            const normalized = (text: string) =>
+              text.replace(/\s+/g, " ").trim();
+            return (
+              page !== undefined &&
+              p.quote.trim().length > 0 &&
+              normalized(page).includes(normalized(p.quote))
+            );
+          })
+          .slice(0, limit);
     } catch (e) {
       if (process.env.NODE_ENV !== "test") {
         const cls = e instanceof Error ? e.constructor.name : typeof e;
@@ -275,8 +290,7 @@ async function retrieveSemantic(
     });
   }
   const qVecs = await embedTexts([question]);
-  const results = index.search(qVecs[0], 16);
-  return results;
+  return index.search(qVecs[0], pool).slice(0, limit);
 }
 
 /** Hybrid retrieval: RRF fusion of lexical + semantic, with single-leg degradation. */
@@ -287,7 +301,7 @@ export async function retrieveHybrid(
 ): Promise<FusedPassage[]> {
   return retrieveFused(
     () => retrieveLexical(documents, question),
-    () => retrieveSemantic(documents, question),
+    () => retrieveSemantic(documents, question, undefined, CANDIDATES_PER_LEG),
     maxPassages,
   );
 }

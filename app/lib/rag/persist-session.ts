@@ -237,7 +237,16 @@ export async function retrievePersistentSemantic(
         )
       )
         .flat()
-        .sort((a, b) => b.score - a.score)
+        // Same deterministic tie-break as the adapter (score DESC, chunkId ASC).
+        .sort((a, b) =>
+          b.score !== a.score
+            ? b.score - a.score
+            : a.chunkId < b.chunkId
+              ? -1
+              : a.chunkId > b.chunkId
+                ? 1
+                : 0,
+        )
         .slice(0, topK)
     : await store.queryTopK(qVec, topK, { sessionId: scope });
   return rows.map((r) => ({

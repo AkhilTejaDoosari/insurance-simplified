@@ -1,0 +1,61 @@
+# M5 retrieval eval — after (base commit 3530af5; metrics only, no document text)
+# Note: evals/run.mjs mirrors the retrievers in plain node and never imports app/lib/rag,
+# so these numbers cannot move with this change; the semantic leg was run after only.
+# The run.mjs RRF mirror still cuts each leg at 10 (app now over-fetches 40): mirror update needed.
+# npm run eval  (EMBEDDING_*/SUPABASE_* unset)
+partition=dev n=10 answerable=8
+overall recall@5=1.0000 recall@10=1.0000 mrr@5=0.8750 mrr@10=0.8750
+overall refusal-accuracy=0.9000 false-refusals=0 false-acceptances=1
+  subset=answerable n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  subset=paraphrase n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+partition=validation n=10 answerable=8
+overall recall@5=0.7500 recall@10=0.7500 mrr@5=0.6250 mrr@10=0.6250
+overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+  subset=answerable n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  subset=paraphrase n=2 answerable=2 recall@5=0.0000 recall@10=0.0000 mrr@5=0.0000 mrr@10=0.0000
+  subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+test: 10 items FROZEN, unscored until F1 (todo 49)
+
+# npm run eval -- --eval=v2  (frozen v2; test partition unscored)
+partition=v2-dev n=36 answerable=31
+overall recall@5=0.9677 recall@10=1.0000 mrr@5=0.8575 mrr@10=0.8629
+overall refusal-accuracy=1.0000 false-refusals=0 false-acceptances=0
+  subset=answerable n=13 answerable=13 recall@5=1.0000 recall@10=1.0000 mrr@5=0.8654 mrr@10=0.8654
+  subset=paraphrase n=7 answerable=7 recall@5=0.8571 recall@10=1.0000 mrr@5=0.8571 mrr@10=0.8810
+  subset=multi-doc n=6 answerable=6 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  subset=distractor n=5 answerable=5 recall@5=1.0000 recall@10=1.0000 mrr@5=0.6667 mrr@10=0.6667
+  subset=must-refuse n=5 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+partition=v2-validation n=12 answerable=10
+overall recall@5=1.0000 recall@10=1.0000 mrr@5=0.8500 mrr@10=0.8500
+overall refusal-accuracy=1.0000 false-refusals=0 false-acceptances=0
+  subset=answerable n=4 answerable=4 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  subset=paraphrase n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+v2 test: 12 items FROZEN, V2 TEST MUST NOT BE SCORED until P2 FINAL AUDIT (todo 65)
+
+# npm run eval -- --leg=semantic  (local Ollama qwen3-embedding:0.6b, 1024 dims; $0)
+semanticconfig provider=local-ollama model=qwen3-embedding:0.6b dims=1024 batch=32 attempts=3 chunks=4
+semantic partition=dev n=10 answerable=8
+semantic overall recall@5=1.0000 recall@10=1.0000 mrr@5=0.8750 mrr@10=0.8750
+semantic overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+  semantic subset=answerable n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  semantic subset=paraphrase n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  semantic subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  semantic subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  semantic subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+semantic partition=validation n=10 answerable=8
+semantic overall recall@5=1.0000 recall@10=1.0000 mrr@5=0.8438 mrr@10=0.8438
+semantic overall refusal-accuracy=0.8000 false-refusals=0 false-acceptances=2
+  semantic subset=answerable n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  semantic subset=paraphrase n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.6250 mrr@10=0.6250
+  semantic subset=multi-doc n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=1.0000 mrr@10=1.0000
+  semantic subset=distractor n=2 answerable=2 recall@5=1.0000 recall@10=1.0000 mrr@5=0.7500 mrr@10=0.7500
+  semantic subset=must-refuse n=2 answerable=0 recall@5=n/a recall@10=n/a mrr@5=n/a mrr@10=n/a
+semantic test: 10 items FROZEN, unscored until F1 (todo 49)

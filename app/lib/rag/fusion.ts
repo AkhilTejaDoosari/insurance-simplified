@@ -1,5 +1,6 @@
 // R4 RRF fusion (todo 27): Reciprocal Rank Fusion 1/(k+rank) over
-// lexical + semantic legs. k=60 FIXED. Per-leg top-10 -> fused top-5
+// lexical + semantic legs. k=60 FIXED. retrieveFused over-fetches
+// CANDIDATES_PER_LEG (M5: 30-50 per leg) before fusion -> fused top-5
 // with branch provenance {chunkId,finalRank,rrfScore,bm25Rank?,cosineRank?,docId,page}.
 // No score-sum mixing. Single-leg degradation: if one leg empty, other leg alone
 // still returns ranked results (rrfScore = 1/(k+rank) from that leg).
@@ -10,6 +11,11 @@
 import type { RankedPassage } from "@/app/lib/rag/embeddings";
 
 export const RRF_K = 60;
+
+/** Candidates each retriever leg supplies before fusion / final top-k
+ *  (roadmap M5: over-fetch 30–50 per leg so post-retrieval filters and the
+ *  final cut never starve on a shallow candidate list). */
+export const CANDIDATES_PER_LEG = 40;
 
 /** Provenance record for a fused result, carrying branch ranks. */
 export interface FusedPassage extends RankedPassage {
@@ -158,7 +164,11 @@ export async function retrieveFused(
   const sem = Array.isArray(semanticResults) ? semanticResults : [];
 
   if (lex.length > 0 && sem.length > 0) {
-    return fuseRRF(lex.slice(0, 10), sem.slice(0, 10), maxFused);
+    return fuseRRF(
+      lex.slice(0, CANDIDATES_PER_LEG),
+      sem.slice(0, CANDIDATES_PER_LEG),
+      maxFused,
+    );
   }
   if (lex.length > 0) {
     return fuseSingleLeg(lex, maxFused);
