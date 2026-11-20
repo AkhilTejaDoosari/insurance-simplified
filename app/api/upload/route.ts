@@ -4,6 +4,7 @@
 // capability cookie (see app/lib/session-db.ts, app/lib/session-auth.ts).
 
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
+import type { PageReadability } from "@/app/lib/pdf/page-readability";
 import { NextRequest, NextResponse } from "next/server";
 import { extractPages } from "@/app/lib/pdf/extract-pages";
 import {
@@ -98,6 +99,8 @@ export async function POST(request: NextRequest) {
     /** Layout tables from the same text items as `pages` (instance cache;
      *  recomputed from the stored bytes on durable rehydration). */
     tables: LayoutTable[];
+    /** Per-page readability from the same extraction (EC-10). */
+    readability?: PageReadability[];
   }[] = [];
   const rawFiles = new Map<string, Uint8Array>();
   const failures: { filename: string; reason: string }[] = [];
@@ -109,7 +112,7 @@ export async function POST(request: NextRequest) {
       try {
         state = transition(state, "PROCESSING");
         const buffer = await file.arrayBuffer();
-        const { pageCount, pages, tables } = await timeAsync("upload.extractPages", () =>
+        const { pageCount, pages, tables, readability } = await timeAsync("upload.extractPages", () =>
           extractPages(buffer, file.name),
           { documentId, byteCount: buffer.byteLength }
         );
@@ -120,7 +123,14 @@ export async function POST(request: NextRequest) {
           return;
         }
         state = transition(state, "READY");
-        documents.push({ documentId, filename: file.name, pageCount, pages, tables });
+        documents.push({
+          documentId,
+          filename: file.name,
+          pageCount,
+          pages,
+          tables,
+          ...(Array.isArray(readability) ? { readability } : {}),
+        });
         rawFiles.set(documentId, new Uint8Array(buffer));
       } catch (err) {
         try {
