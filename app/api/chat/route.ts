@@ -54,6 +54,8 @@ import {
   activeViewFromSelection,
 } from "@/app/lib/extraction/selection-request";
 import { scopeDocumentsForChat } from "@/app/lib/rag/selection-scope";
+import { surfacesForReadBack } from "@/app/lib/evidence/surfaces-consumer/read-back";
+import { exclusionCoverageNotes } from "@/app/lib/presentation/adaptive";
 
 export async function POST(request: NextRequest) {
   const requestId = newRequestId();
@@ -308,6 +310,19 @@ export async function POST(request: NextRequest) {
             resolveExclusionOutcomes(current.evidence.store, current.evidence.authority, question),
           )
         : [];
+      // When the answer touches a service, link each named plan's exclusion
+      // inventory state if it may be incomplete (partial / unknown / cannot
+      // be confirmed). Surfaces are re-derived, never read from storage.
+      const exclusionCoverage =
+        current && stored && exclusionOutcomes.length
+          ? exclusionCoverageNotes(
+              current.table,
+              surfacesForReadBack({ sessionId: session.sessionId, documents: session.documents, record: stored, confirmed: current }),
+              exclusionOutcomes.some((o) => !o.documentId)
+                ? scopedDocuments.map((d) => d.documentId)
+                : [...new Set(exclusionOutcomes.flatMap((o) => (o.documentId ? [o.documentId] : [])))],
+            )
+          : [];
       trace({
         candidateCount: canonical.length,
         topK: canonical.map((c) => ({
@@ -322,6 +337,7 @@ export async function POST(request: NextRequest) {
         citations: canonical.map(withEvidenceId),
         ...(related.length ? { resolutions: related } : {}),
         ...(exclusionOutcomes.length ? { exclusionOutcomes } : {}),
+        ...(exclusionCoverage.length ? { exclusionCoverage } : {}),
       });
     }
     trace({

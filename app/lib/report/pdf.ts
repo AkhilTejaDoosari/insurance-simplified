@@ -40,11 +40,15 @@ import {
   indexFacts,
   readingCoverage,
   readingCoverageText,
+  surfacesDisplay,
+  AUTHORITY_HEADING,
+  EXCLUSIONS_HEADING,
   withheldNotices,
   viewDocumentIds,
   type ActiveView,
 } from "@/app/lib/presentation/adaptive";
 import type { ContactHit } from "@/app/lib/extraction/contacts";
+import type { EvidenceSurfaces } from "@/app/lib/evidence/surface-types";
 
 /** Validated plan/tier scope the report renders. Structurally the SAME
  *  payload chat/export validate (selection-request.ts); nothing but IDs and
@@ -65,6 +69,8 @@ export interface ReportInput {
   readonly selection?: Readonly<ReportSelection>;
   readonly overview?: Readonly<PersonalizedOverview>;
   readonly contacts?: readonly unknown[];
+  /** Evidence surfaces re-derived for this request (never the stored ones). */
+  readonly surfaces?: EvidenceSurfaces | null;
 }
 
 const PAGE_WIDTH = 612;
@@ -372,6 +378,46 @@ export async function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
       const filename = input.table.documents.find((d) => d.documentId === w.documentId)?.filename ?? "Source document";
       write(`${w.label}: NEEDS VERIFICATION`, { font: bold, size: 9.5 });
       write(`"${w.quote}" (${filename}, page ${w.page})`, { size: 9, color: MUTED });
+    }
+    y -= 8;
+  }
+
+  // ---- Exclusions read and which document governs (M7 surfaces) ----------
+  const surfaces = surfacesDisplay(
+    input.table,
+    input.surfaces ?? null,
+    activeDocuments ? [...activeDocuments] : undefined,
+  );
+  if (surfaces.exclusions.length > 0) {
+    write(EXCLUSIONS_HEADING, { font: bold, size: 12 });
+    for (const x of surfaces.exclusions) {
+      if (x.kind === "cannot-be-confirmed") {
+        write(`NEEDS VERIFICATION: ${x.text}`, { size: 9, color: MUTED });
+        continue;
+      }
+      write(`${x.planName} (${x.filename})`, { font: bold, size: 9.5 });
+      write(x.coverageText, { size: 9, color: MUTED });
+      if (x.emptyText) write(x.emptyText, { size: 9 });
+      for (const item of x.items) {
+        const cites = item.links.map((l) => `${l.filename}, page ${l.page}`).join("; ");
+        write(`"${item.claim}" (${cites})`, { size: 9, indent: 8 });
+      }
+    }
+    y -= 8;
+  }
+  if (surfaces.authority.length > 0) {
+    write(AUTHORITY_HEADING, { font: bold, size: 12 });
+    for (const a of surfaces.authority) {
+      if (a.kind === "cannot-be-confirmed") {
+        write(`NEEDS VERIFICATION: ${a.text}`, { size: 9, color: MUTED });
+        continue;
+      }
+      write(a.verdict ? `${a.verdict}: ${a.text}` : a.text, { font: bold, size: 9.5 });
+      if (a.reasons.length) write(`Why: ${a.reasons.join("; ")}.`, { size: 9 });
+      for (const r of a.relations) {
+        write(r.text, { size: 9, indent: 8 });
+        for (const l of r.links) write(`"${l.quote}" (${l.filename}, page ${l.page})`, { size: 9, color: MUTED, indent: 16 });
+      }
     }
     y -= 8;
   }

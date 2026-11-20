@@ -22,6 +22,14 @@ import {
   type Interpretation,
 } from "@/app/lib/extraction/eligibility";
 import { VARIES_BY_AGE } from "@/app/lib/extraction/premium";
+import {
+  SURFACES_SCHEMA,
+  type AuthorityView,
+  type EvidenceSurfaces,
+  type ExclusionInventoryView,
+} from "@/app/lib/evidence/surface-types";
+import { displayVerdictFor } from "@/app/lib/evidence/verdict-mapping";
+import { VERDICTS, type Verdict } from "@/app/lib/verdicts";
 
 export interface ActiveView {
   mode: "understand" | "compare";
@@ -685,4 +693,308 @@ export function withheldNotices(table: Pick<Table, "rows">): WithheldNotice[] {
       };
     }),
   );
+}
+
+// ---- Evidence surfaces (M7): exclusion inventories and document authority ----
+//
+// Rendered EXACTLY as the producer issued them (surface-types.ts): nothing
+// here builds, completes or edits a view. A view that is malformed is shown
+// as "cannot be confirmed" with no values. An empty or incomplete exclusion
+// list is never worded as "No exclusions", "Not covered", "Not excluded" or
+// "Excluded" (EC-10, EC-13, evidence-core §3).
+
+export const EXCLUSIONS_HEADING = "Exclusions read";
+export const AUTHORITY_HEADING = "Which document governs";
+export const NO_EXCLUSION_SECTION_FOUND = "No exclusion section was found in the pages read.";
+
+export interface SurfaceLink {
+  documentId: string;
+  filename: string;
+  page: number;
+  quote: string;
+  evidenceId?: string;
+}
+
+export interface ExclusionInventoryDisplay {
+  kind: "exclusion-inventory";
+  documentId: string;
+  filename: string;
+  planId: string;
+  planName: string;
+  coverage: "complete" | "partial" | "unknown";
+  /** Plain-words coverage state; always shown. */
+  coverageText: string;
+  /** Only for an empty list with complete coverage. */
+  emptyText?: string;
+  /** Verbatim claims, each with its page links. */
+  items: { provisionId: string; claim: string; links: SurfaceLink[] }[];
+}
+
+export interface AuthorityDisplay {
+  kind: "authority";
+  scopeLabel: string;
+  status: "resolved" | "conflict";
+  verdict?: Verdict;
+  /** Plain-words summary of who governs, or why it is CONFLICTED. */
+  text: string;
+  /** Plain-words reasons for a conflict (empty when resolved). */
+  reasons: string[];
+  relations: { text: string; links: SurfaceLink[] }[];
+}
+
+export interface SurfaceCannotBeConfirmedDisplay {
+  kind: "cannot-be-confirmed";
+  of: "exclusion-inventory" | "authority";
+  status: typeof CANNOT_BE_CONFIRMED;
+  text: string;
+}
+
+export type SurfaceDisplay = ExclusionInventoryDisplay | AuthorityDisplay | SurfaceCannotBeConfirmedDisplay;
+
+export interface SurfacesDisplay {
+  exclusions: (ExclusionInventoryDisplay | SurfaceCannotBeConfirmedDisplay)[];
+  authority: (AuthorityDisplay | SurfaceCannotBeConfirmedDisplay)[];
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+const isStr = (v: unknown): v is string => typeof v === "string";
+const isPage = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 1;
+
+/** The evidence-surfaces field carried by an extract response / table, or
+ *  null when absent (legacy results) or of another schema. */
+export function surfacesOf(holder: unknown): EvidenceSurfaces | null {
+  const s = isObj(holder) ? holder.surfaces : undefined;
+  if (!isObj(s) || s.schema !== SURFACES_SCHEMA || !Array.isArray(s.exclusions) || !Array.isArray(s.authority)) return null;
+  return s as unknown as EvidenceSurfaces;
+}
+
+function cannotBeConfirmedDisplay(of: SurfaceCannotBeConfirmedDisplay["of"]): SurfaceCannotBeConfirmedDisplay {
+  return {
+    kind: "cannot-be-confirmed",
+    of,
+    status: CANNOT_BE_CONFIRMED,
+    text:
+      of === "exclusion-inventory"
+        ? `This plan's exclusion list ${CANNOT_BE_CONFIRMED}, so it is not shown. Check the original document or re-run the comparison.`
+        : `Which document governs ${CANNOT_BE_CONFIRMED}, so it is not shown. Check the original documents or re-run the comparison.`,
+  };
+}
+
+function linksFor(table: Pick<Table, "documents">, evidence: unknown): SurfaceLink[] | null {
+  if (!Array.isArray(evidence)) return null;
+  const out: SurfaceLink[] = [];
+  for (const e of evidence) {
+    if (!isObj(e) || !isStr(e.documentId) || !isPage(e.page) || !isStr(e.quote) || !e.quote.trim()) return null;
+    const doc = table.documents.find((d) => d.documentId === e.documentId);
+    if (!doc || (e.page as number) > doc.pageCount) return null;
+    out.push({
+      documentId: e.documentId,
+      filename: doc.filename,
+      page: e.page as number,
+      quote: e.quote,
+      ...(isStr(e.evidenceId) ? { evidenceId: e.evidenceId } : {}),
+    });
+  }
+  return out;
+}
+
+const pageList = (pages: readonly number[]) =>
+  pages.length === 1 ? `Page ${pages[0]}` : `Pages ${pages.slice(0, -1).join(", ")} and ${pages[pages.length - 1]}`;
+
+/** Plain-words reading state of one plan's exclusions. */
+export function exclusionCoverageText(
+  coverage: ExclusionInventoryView["coverage"],
+  pagesNotRead: readonly number[],
+  pageCount?: number,
+): string {
+  if (coverage === "complete")
+    return pageCount ? `All ${pageCount} page${pageCount === 1 ? " was" : "s were"} read.` : "All pages were read.";
+  if (pagesNotRead.length)
+    return `${pageList(pagesNotRead)} could not be read fully — exclusions there may be missing.`;
+  return coverage === "partial"
+    ? "Some pages could not be read fully — exclusions there may be missing."
+    : "It is not known whether every page was read — exclusions may be missing.";
+}
+
+function inventoryDisplay(
+  table: Pick<Table, "documents">,
+  view: unknown,
+): ExclusionInventoryDisplay | SurfaceCannotBeConfirmedDisplay {
+  if (!isObj(view) || view.kind !== "exclusion-inventory") return cannotBeConfirmedDisplay("exclusion-inventory");
+  const doc = table.documents.find((d) => d.documentId === view.documentId);
+  if (
+    !doc ||
+    !isStr(view.planId) ||
+    !isStr(view.planName) ||
+    !["complete", "partial", "unknown"].includes(view.coverage as string) ||
+    !Array.isArray(view.pagesNotRead) ||
+    !view.pagesNotRead.every(isPage) ||
+    !Array.isArray(view.exclusions) ||
+    // A "complete" reading that names unread pages contradicts itself.
+    (view.coverage === "complete" && view.pagesNotRead.length > 0)
+  )
+    return cannotBeConfirmedDisplay("exclusion-inventory");
+  const items: ExclusionInventoryDisplay["items"] = [];
+  for (const x of view.exclusions) {
+    const links = isObj(x) ? linksFor(table, x.evidence) : null;
+    if (!isObj(x) || !isStr(x.provisionId) || !isStr(x.claim) || !x.claim.trim() || !links?.length)
+      return cannotBeConfirmedDisplay("exclusion-inventory");
+    items.push({ provisionId: x.provisionId, claim: x.claim, links });
+  }
+  const coverage = view.coverage as ExclusionInventoryDisplay["coverage"];
+  const pagesNotRead = [...(view.pagesNotRead as number[])].sort((a, b) => a - b);
+  return {
+    kind: "exclusion-inventory",
+    documentId: doc.documentId,
+    filename: doc.filename,
+    planId: view.planId,
+    planName: view.planName,
+    coverage,
+    coverageText: exclusionCoverageText(coverage, pagesNotRead, doc.pageCount),
+    ...(items.length === 0 && coverage === "complete" ? { emptyText: NO_EXCLUSION_SECTION_FOUND } : {}),
+    items,
+  };
+}
+
+const CONFLICT_REASON_TEXT: Readonly<Record<string, string>> = {
+  identity: "the documents could not be shown to describe the same plan",
+  period: "their coverage periods could not be matched",
+  basis: "neither document states that it replaces the other",
+  scope: "they could not be shown to apply to the same group or benefit",
+  ambiguous: "the wording leaves more than one reading",
+  order: "which document came later could not be established",
+};
+
+/** Plain words for a conflict proof element; unknown elements stay generic. */
+export function conflictReasonText(reason: string): string {
+  return CONFLICT_REASON_TEXT[reason] ?? "part of the proof could not be confirmed";
+}
+
+const RELATION_TEXT: Readonly<Record<string, string>> = {
+  supersedes: "replaces",
+  conflicts_with: "disagrees with",
+  concordant: "agrees with",
+  independent: "is separate from",
+};
+
+function authorityDisplay(
+  table: Pick<Table, "documents">,
+  view: unknown,
+): AuthorityDisplay | SurfaceCannotBeConfirmedDisplay {
+  if (!isObj(view) || view.kind !== "authority") return cannotBeConfirmedDisplay("authority");
+  const nameOf = (id: unknown) => table.documents.find((d) => d.documentId === id)?.filename;
+  if (
+    !isStr(view.scopeLabel) ||
+    !view.scopeLabel.trim() ||
+    (view.status !== "resolved" && view.status !== "conflict") ||
+    (view.verdict !== undefined && !(VERDICTS as readonly unknown[]).includes(view.verdict)) ||
+    // CONFLICTED only via the single mapping table; a resolved view never shows it.
+    (view.status === "conflict" && view.verdict !== undefined && view.verdict !== displayVerdictFor("conflict")) ||
+    (view.status === "resolved" && view.verdict === displayVerdictFor("conflict")) ||
+    !Array.isArray(view.governing) ||
+    !view.governing.every((g) => isObj(g) && nameOf(g.documentId) && isStr(g.provisionId)) ||
+    (view.status === "resolved" && view.governing.length === 0) ||
+    !Array.isArray(view.relations)
+  )
+    return cannotBeConfirmedDisplay("authority");
+  const relations: AuthorityDisplay["relations"] = [];
+  const reasons: string[] = [];
+  for (const r of view.relations) {
+    const links = isObj(r) ? linksFor(table, r.evidence) : null;
+    if (!isObj(r) || !nameOf(r.from) || !nameOf(r.to) || !isStr(r.relation) || !RELATION_TEXT[r.relation] || !links)
+      return cannotBeConfirmedDisplay("authority");
+    // A supersession is shown only with its proof quotes.
+    if (r.relation === "supersedes" && links.length === 0) return cannotBeConfirmedDisplay("authority");
+    if (r.relation === "conflicts_with" && Array.isArray(r.reasons))
+      for (const reason of r.reasons) if (isStr(reason)) reasons.push(conflictReasonText(reason));
+    relations.push({ text: `${nameOf(r.from)} ${RELATION_TEXT[r.relation]} ${nameOf(r.to)}.`, links });
+  }
+  const scopeLabel = view.scopeLabel;
+  const governing = [...new Set((view.governing as { documentId: string }[]).map((g) => nameOf(g.documentId)!))];
+  const status = view.status;
+  const uniqueReasons = [...new Set(reasons)];
+  return {
+    kind: "authority",
+    scopeLabel,
+    status,
+    ...(status === "conflict"
+      ? { verdict: displayVerdictFor("conflict") }
+      : view.verdict !== undefined
+        ? { verdict: view.verdict as Verdict }
+        : {}),
+    text:
+      status === "resolved"
+        ? `${governing.join(" and ")} ${governing.length === 1 ? "governs" : "govern"} ${scopeLabel}.`
+        : `The documents disagree about ${scopeLabel}, and which one governs could not be proven.`,
+    reasons: status === "conflict" ? (uniqueReasons.length ? uniqueReasons : [conflictReasonText("")]) : [],
+    relations,
+  };
+}
+
+/** Display model of the issued surfaces, scoped to the documents in view.
+ *  "cannot be confirmed" entries carry no document and are always shown. */
+export function surfacesDisplay(
+  table: Pick<Table, "documents">,
+  surfaces: EvidenceSurfaces | null,
+  documentIds?: readonly string[],
+): SurfacesDisplay {
+  if (!surfaces) return { exclusions: [], authority: [] };
+  const inView = (ids: readonly string[]) => !documentIds || ids.some((id) => documentIds.includes(id));
+  const exclusions = surfaces.exclusions
+    .map((v) => inventoryDisplay(table, v))
+    .filter((d) => d.kind === "cannot-be-confirmed" || inView([d.documentId]));
+  const authority = surfaces.authority
+    .map((v) => ({ v, d: authorityDisplay(table, v) }))
+    .filter(({ v, d }) => {
+      if (d.kind === "cannot-be-confirmed") return true;
+      const a = v as AuthorityView;
+      return inView([...a.governing.map((g) => g.documentId), ...a.relations.flatMap((r) => [r.from, r.to])]);
+    })
+    .map(({ d }) => d);
+  return { exclusions, authority };
+}
+
+/** All user-facing text of a surfaces display (verbatim claims excluded
+ *  when `withClaims` is false), for export and wording checks. */
+export function surfacesText(display: SurfacesDisplay, withClaims = true): string[] {
+  const out: string[] = [];
+  for (const x of display.exclusions) {
+    if (x.kind === "cannot-be-confirmed") { out.push(x.text); continue; }
+    out.push(x.planName, x.filename, x.coverageText, ...(x.emptyText ? [x.emptyText] : []));
+    if (withClaims) for (const i of x.items) out.push(i.claim, ...i.links.map((l) => `${l.filename}, page ${l.page}`));
+  }
+  for (const a of display.authority) {
+    if (a.kind === "cannot-be-confirmed") { out.push(a.text); continue; }
+    out.push(a.text, ...(a.verdict ? [a.verdict] : []), ...a.reasons, ...a.relations.map((r) => r.text));
+    if (withClaims) for (const r of a.relations) out.push(...r.links.map((l) => l.quote));
+  }
+  return out;
+}
+
+export interface ExclusionCoverageNote {
+  documentId?: string;
+  planName?: string;
+  coverage: "partial" | "unknown" | typeof CANNOT_BE_CONFIRMED;
+  text: string;
+}
+
+/** For chat: the inventory coverage state of each named plan whose list may
+ *  be incomplete (partial / unknown / cannot be confirmed). Complete
+ *  inventories add nothing. */
+export function exclusionCoverageNotes(
+  table: Pick<Table, "documents">,
+  surfaces: EvidenceSurfaces | null,
+  documentIds: readonly string[],
+): ExclusionCoverageNote[] {
+  if (!surfaces || documentIds.length === 0) return [];
+  return surfacesDisplay(table, surfaces, documentIds).exclusions.flatMap((x): ExclusionCoverageNote[] => {
+    if (x.kind === "cannot-be-confirmed") return [{ coverage: CANNOT_BE_CONFIRMED, text: x.text }];
+    if (x.coverage === "complete") return [];
+    return [{
+      documentId: x.documentId,
+      planName: x.planName,
+      coverage: x.coverage,
+      text: `${x.planName} (${x.filename}): ${x.coverageText}`,
+    }];
+  });
 }
