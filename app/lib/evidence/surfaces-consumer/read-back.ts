@@ -5,16 +5,14 @@
 // (ConfirmedResult.evidence, see read-back.ts), through the producer's
 // `rederiveSurfaces` in app/lib/evidence/surfaces.ts (agent H).
 //
-// MERGE POINT (coordinator): `rederive` below is the single call site. Until
-// the producer lands it returns null: export and chat never show stored
-// values (stored entries become "cannot be confirmed" markers). Replace that
-// one line with the producer call, e.g.
-//   const rederive: Rederive = (input) => rederiveSurfaces(input);
+// `rederive` below is the single call site, wired to the producer's
+// `rederiveSurfaces` (app/lib/evidence/surfaces.ts).
 
 import type { ConfirmedResult } from "@/app/lib/evidence/read-back";
 import { SURFACES_SCHEMA, type EvidenceSurfaces, type SurfaceCannotBeConfirmed } from "@/app/lib/evidence/surface-types";
 import type { ComparisonResultRecord } from "@/app/lib/comparison-result-db";
 import type { ReadBackDocument } from "@/app/lib/evidence/read-back";
+import { rederiveSurfaces } from "@/app/lib/evidence/surfaces";
 
 export interface ReadBackSurfacesInput {
   sessionId: string;
@@ -26,8 +24,8 @@ export interface ReadBackSurfacesInput {
 
 type Rederive = (input: ReadBackSurfacesInput) => EvidenceSurfaces | null;
 
-// >>> coordinator: point this line at H's rederiveSurfaces at merge <<<
-const rederive: Rederive = () => null;
+// The producer's re-derivation, bound to this module's input shape.
+const rederive: Rederive = (input) => rederiveSurfaces(input);
 
 /** A stored surface list that cannot be re-derived is shown as one
  *  "cannot be confirmed" marker per stored entry: no stored value is used. */
