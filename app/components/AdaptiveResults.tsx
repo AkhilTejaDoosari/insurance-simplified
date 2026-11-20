@@ -5,10 +5,17 @@ import type ComparisonTable from "@/app/components/ComparisonTable";
 import { MissingContextPrompt } from "@/app/components/ComparisonTable";
 import ConditionalValue from "@/app/components/ConditionalValue";
 import VerifyContact from "@/app/components/VerifyContact";
+import VerdictBadge from "@/app/components/VerdictBadge";
 import {
+  absenceNotices,
   buildPresentation,
+  cannotBeConfirmedFacts,
   indexFacts,
   projectView,
+  readingCoverage,
+  readingCoverageText,
+  viewDocumentIds,
+  withheldNotices,
   type ActiveView,
   type PresentationFact,
 } from "@/app/lib/presentation/adaptive";
@@ -534,6 +541,91 @@ export default function AdaptiveResults(props: Props) {
           </React.Fragment>
         );
       })}
+      <TrustNotices table={table} sessionId={sessionId} viewDocumentIds={viewDocumentIds(table, view)} />
     </div>
+  );
+}
+
+/** Issued-resolution failures and honest-absence notes (M7). Rendered only
+ *  when present; a missing value is never shown as "No" or "Not covered". */
+function TrustNotices({
+  table,
+  sessionId,
+  viewDocumentIds: documentIds,
+}: {
+  table: Props["table"];
+  sessionId: string;
+  viewDocumentIds: string[];
+}) {
+  const unconfirmed = cannotBeConfirmedFacts(table);
+  const inView = new Set(documentIds);
+  const coverage = readingCoverage(table).filter((c) => inView.has(c.documentId));
+  const absences = absenceNotices(table, documentIds);
+  const withheld = withheldNotices(table).filter((w) => inView.has(w.documentId));
+  if (!unconfirmed.length && !coverage.length && !absences.length && !withheld.length) return null;
+  return (
+    <section className="adaptiveBlock adaptiveTrustNotices" aria-label="What could not be confirmed or read">
+      {unconfirmed.length > 0 && (
+        <div className="adaptiveUnconfirmed" role="note">
+          <h3>Results that cannot be confirmed</h3>
+          <ul>
+            {unconfirmed.map((n) => (
+              <li key={n.concept} data-status={n.status}>
+                <strong>{n.label}</strong>: {n.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {absences.length > 0 && (
+        <div className="adaptiveAbsences">
+          <h3>Not found in the pages read</h3>
+          <ul>
+            {absences.map((a) => (
+              <li key={a.concept}>
+                <strong>{a.label}</strong>: {a.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {withheld.length > 0 && (
+        <div className="adaptiveWithheld">
+          <h3>Source lines found but not verified</h3>
+          <ul>
+            {withheld.map((w, i) => (
+              <li key={`${w.concept}-${i}`}>
+                <VerdictBadge verdict="NEEDS VERIFICATION" />{" "}
+                <strong>{w.label}</strong>:{" "}
+                <a
+                  href={documentUrl(
+                    sessionId,
+                    w.documentId,
+                    table.documents.find((d) => d.documentId === w.documentId)?.filename ?? "Source document",
+                    w.page,
+                    w.evidenceId,
+                  )}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  page {w.page}
+                </a>{" "}
+                <q>{w.quote}</q>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {coverage.length > 0 && (
+        <div className="adaptiveCoverage">
+          <h3>Pages read</h3>
+          <ul>
+            {coverage.map((c) => (
+              <li key={c.documentId}>{readingCoverageText(c)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }

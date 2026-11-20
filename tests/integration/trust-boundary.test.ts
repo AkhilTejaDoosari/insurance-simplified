@@ -8,8 +8,9 @@
 import { describe, it } from "vitest";
 
 describe("trust boundary (evidence-core.md §5, INV-EC-09 source binding)", () => {
-  it.todo(
+  it(
     "TB-1 — Attack: Provision with plan-name and period evidence not bound to real source blocks — Must hold: Persisting it is refused; nothing is stored",
+    async () => (await import("./m7b-trust-boundary")).runTb1(),
   );
   it(
     'TB-2 — Attack: Caller-built "not applicable" assessment for an exclusion that names the service — Must hold: Conclusion is never covered',
@@ -55,8 +56,10 @@ describe("trust boundary (evidence-core.md §5, INV-EC-09 source binding)", () =
       }
     },
   );
-  it.todo(
+  it(
     'TB-3 — Attack: Resolution altered after issue, shown on comparison view, chat answer and export — Must hold: Each surface shows "cannot be confirmed"',
+    async () => (await import("./m7b-trust-boundary")).runTb3(),
+    30_000,
   );
   it(
     "TB-4 — Attack: Exclusion coverage declared complete with an empty or partial exclusion list, while verified evidence contains an exclusion naming the service — Must hold: Conclusion is never covered; the inventory equals the sealed exclusion provisions",

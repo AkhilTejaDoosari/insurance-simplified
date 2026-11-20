@@ -36,10 +36,17 @@ import {
   timeSync,
 } from "@/app/lib/observability/timing";
 import {
-  documentFingerprint,
   comparisonTableFromPayload,
+  documentFingerprint,
   loadComparisonResult,
+  type ComparisonResultRecord,
 } from "@/app/lib/comparison-result-db";
+import { exclusionOutcomeViews, resolveExclusionOutcomes } from "@/app/lib/evidence/exclusion-outcomes";
+import {
+  confirmStoredResult,
+  resolutionsForCitations,
+  type ConfirmedResult,
+} from "@/app/lib/evidence/read-back";
 import {
   parseSelectionRequest,
   selectionMatchesResultFingerprint,
@@ -83,6 +90,22 @@ export async function POST(request: NextRequest) {
   // names a scope (opaque fingerprint + plan IDs + tiers); it never supplies
   // facts. Absent selection keeps the previous whole-document behaviour.
   let scopedDocuments = session.documents;
+  // AT-PERSIST: a stored result is used only after re-derivation from the
+  // session's stored page text under this request's authority (read-back.ts).
+  let storedRecord: ComparisonResultRecord | null | undefined;
+  const loadStored = async () => {
+    if (storedRecord === undefined) {
+      storedRecord = await loadComparisonResult(session.sessionId).catch(() => null);
+    }
+    return storedRecord;
+  };
+  let confirmed: ConfirmedResult | null = null;
+  const confirmStored = (record: ComparisonResultRecord) =>
+    (confirmed ??= confirmStoredResult({
+      sessionId: session.sessionId,
+      documents: session.documents,
+      record,
+    }));
   if (body.selection !== undefined) {
     const parsed = parseSelectionRequest(body.selection);
     if (!parsed) {
@@ -91,9 +114,7 @@ export async function POST(request: NextRequest) {
         message: "Malformed selection payload",
       });
     }
-    const record = await loadComparisonResult(session.sessionId).catch(
-      () => null,
-    );
+    const record = await loadStored();
     if (!record) {
       return errorResponse("STATE_CONFLICT", 409, {
         requestId,
@@ -118,6 +139,9 @@ export async function POST(request: NextRequest) {
         message: "Selection is stale: a newer comparison result exists.",
       });
     }
+    // Scope only narrows retrieval to the user's own session documents; it
+    // renders no conclusion. Any comparison result shown with the answer is
+    // re-derived first (see `resolutionsForCitations` below).
     const table = comparisonTableFromPayload(record);
     const scopeError = validateSelectionScope(parsed, table);
     if (scopeError) {
@@ -266,6 +290,24 @@ export async function POST(request: NextRequest) {
         });
       }
       registerEvidence(session.sessionId, canonical);
+      // Comparison results this answer's citations relate to, each re-derived
+      // first; an altered one is labelled "cannot be confirmed" (TB-3).
+      const stored = await loadStored();
+      const current =
+        stored && stored.documentFingerprint === documentFingerprint(session.documents)
+          ? confirmStored(stored)
+          : null;
+      const related = current ? resolutionsForCitations(current, canonical) : [];
+      // Exclusion/applicability outcomes for services the question names,
+      // resolved over the re-derived store and shown only through
+      // displayIssuedResolution (exclusion-outcomes.ts).
+      const exclusionOutcomes = current?.evidence
+        ? exclusionOutcomeViews(
+            current.evidence.authority,
+            session.sessionId,
+            resolveExclusionOutcomes(current.evidence.store, current.evidence.authority, question),
+          )
+        : [];
       trace({
         candidateCount: canonical.length,
         topK: canonical.map((c) => ({
@@ -278,6 +320,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ...validated,
         citations: canonical.map(withEvidenceId),
+        ...(related.length ? { resolutions: related } : {}),
+        ...(exclusionOutcomes.length ? { exclusionOutcomes } : {}),
       });
     }
     trace({

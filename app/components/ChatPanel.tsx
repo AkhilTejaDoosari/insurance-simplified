@@ -4,6 +4,59 @@ import { useEffect, useRef, useState } from "react";
 import type { RegisteredChatResponse } from "@/app/lib/rag/answer";
 import { documentUrl } from "@/app/lib/document-url";
 
+/** Comparison results related to an answer (server re-derived). An altered
+ *  one arrives as "cannot be confirmed" and is shown exactly so. */
+interface AnswerResolution {
+  factName: string;
+  status: string;
+  verdict: string;
+}
+
+function ExclusionOutcomes({ response }: { response: unknown }) {
+  const list = (response as { exclusionOutcomes?: unknown }).exclusionOutcomes;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const items = list.filter(
+    (o): o is { service?: string; status: string; verdict: string } =>
+      !!o && typeof o === "object" && typeof (o as { status?: unknown }).status === "string",
+  );
+  if (!items.length) return null;
+  return (
+    <div className="chat__resolutions">
+      <p className="text-muted">Exclusion check</p>
+      <ul className="list">
+        {items.map((o, i) => (
+          <li key={i} data-status={o.status}>
+            {o.service ?? "service"}: {o.status === "confirmed" ? o.verdict : "cannot be confirmed"}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AnswerResolutions({ response }: { response: unknown }) {
+  const list = (response as { resolutions?: unknown }).resolutions;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const items = list.filter(
+    (r): r is AnswerResolution =>
+      !!r && typeof r === "object" && typeof (r as AnswerResolution).factName === "string" &&
+      typeof (r as AnswerResolution).status === "string",
+  );
+  if (!items.length) return null;
+  return (
+    <div className="chat__resolutions">
+      <p className="text-muted">Related comparison results</p>
+      <ul className="list">
+        {items.map((r) => (
+          <li key={r.factName} data-status={r.status}>
+            {r.factName}: {r.status === "confirmed" ? r.verdict : "cannot be confirmed"}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 interface Turn {
   question: string;
   response: RegisteredChatResponse;
@@ -286,6 +339,8 @@ export default function ChatPanel({
                           </li>
                         ))}
                       </ul>
+                      <AnswerResolutions response={t.response} />
+                      <ExclusionOutcomes response={t.response} />
                     </div>
                   ) : (
                     <p className="chat__refusal">{t.response.refusalText}</p>

@@ -25,8 +25,10 @@ import type {
   ComparisonTable,
   ProvenPlan,
   RegisteredComparisonTable,
+  TableCoverage,
 } from "@/app/lib/extraction/types";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
+import { contentDigest } from "@/app/lib/evidence/canonical";
 
 export const COMPARISON_RESULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -46,6 +48,9 @@ export interface PersistedComparisonResultPayload {
    *  export validate the client's selection against it (M5 tasks 17/19).
    *  Additive field on the existing JSON payload — no schema migration. */
   resultFingerprint?: string;
+  /** Server-derived reading coverage (EC-10) when the extraction produced
+   *  one. Additive JSON field — no schema migration. */
+  coverage?: TableCoverage;
 }
 
 export interface ComparisonResultRecord {
@@ -97,6 +102,34 @@ export function documentFingerprint(
   return createHash("sha256").update(JSON.stringify(canonical), "utf8").digest("hex");
 }
 
+/** The verified-table content a result fingerprint binds. */
+export interface FingerprintedTable {
+  schemaVersion: string;
+  factListVersion: string;
+  documents: { documentId: string; filename: string; pageCount: number }[];
+  plans?: unknown;
+  coverage?: TableCoverage;
+  rows: unknown[];
+}
+
+/** Opaque validated-result fingerprint over canonical content (key order and
+ *  JSON round-trips through Postgres jsonb do not change it). Issued to the
+ *  client at extraction; on read-back the stored content must reproduce it,
+ *  so a stored result altered after issue no longer matches (AT-PERSIST). */
+export function resultFingerprintFor(input: {
+  documentFingerprint: string;
+  table: FingerprintedTable;
+  context: Record<string, string>;
+}): string {
+  const { schemaVersion, factListVersion, documents, plans, coverage, rows } = input.table;
+  return contentDigest({
+    v: 2,
+    documents: input.documentFingerprint,
+    table: { schemaVersion, factListVersion, documents, plans, coverage, rows },
+    context: input.context,
+  });
+}
+
 /** Shared reader of the persisted payload as the validated comparison table
  *  (M5: chat scope validation and the export snapshot must consume the SAME
  *  stored result — no competing reconstruction of validated facts). */
@@ -110,6 +143,7 @@ export function comparisonTableFromPayload(
     documents: payload.documents,
     ...(payload.resultFingerprint ? { resultFingerprint: payload.resultFingerprint } : {}),
     ...(payload.plans ? { plans: payload.plans } : {}),
+    ...(payload.coverage !== undefined ? { coverage: payload.coverage } : {}),
     presentationGroups: (payload.presentationGroups ?? []) as RegisteredComparisonTable["presentationGroups"],
     rows: (payload.rows as ComparisonTable["rows"]).map((row) => ({
       ...row,

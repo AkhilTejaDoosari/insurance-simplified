@@ -9,6 +9,7 @@ import type { ComparisonTable } from "@/app/lib/extraction/types";
 import {
   deleteComparisonResult,
   documentFingerprint,
+  resultFingerprintFor,
   saveComparisonResult,
   type PersistedComparisonResultPayload,
 } from "@/app/lib/comparison-result-db";
@@ -22,12 +23,30 @@ import {
 const SESSIONS_DIR = join(tmpdir(), "insurance-simplified-sessions");
 const created: string[] = [];
 const originalEnv = { ...process.env };
-const RESULT_FINGERPRINT = "fp-export-pdf";
-
+// Genuine stored results (AT-PERSIST read-back re-derives them on export):
+// every stored quote is on its page, and the fingerprint is the one
+// /api/extract issues for the stored content.
+const benefitLine = (i: number) => (`Benefit ${i}: ` + "coverage details with qualifications ".repeat(16)).trim();
 const documents: SessionDocument[] = [
-  { documentId: "doc-1", filename: "acmetravel.pdf", pageCount: 8, pages: ["AcmeTravel deductible section"] },
-  { documentId: "doc-2", filename: "northpoint.pdf", pageCount: 4, pages: ["North Point deductible options"] },
+  {
+    documentId: "doc-1", filename: "acmetravel.pdf", pageCount: 8,
+    pages: [
+      "AcmeTravel deductible section\nAlpha", "", "Basic deductible $0\nElite deductible $100", "",
+      Array.from({ length: 20 }, (_, i) => benefitLine(i)).join("\n"),
+      // Labelled plan/fact/value lines: page evidence that proves plan Alpha.
+      "Plan name: Alpha; annual-deductible: $0\nPlan name: Alpha; annual-deductible: $100", "", "",
+    ],
+  },
+  {
+    documentId: "doc-2", filename: "northpoint.pdf", pageCount: 4,
+    pages: ["North Point deductible options\nBeta", "Lone Star deductible $50", "Plan name: Beta; annual-deductible: $50", ""],
+  },
 ];
+const PLAN_PROOF: Record<string, { page: number; quote: string }> = {
+  "doc-1:$0": { page: 6, quote: "Plan name: Alpha; annual-deductible: $0" },
+  "doc-1:$100": { page: 6, quote: "Plan name: Alpha; annual-deductible: $100" },
+  "doc-2:$50": { page: 3, quote: "Plan name: Beta; annual-deductible: $50" },
+};
 
 const payload: PersistedComparisonResultPayload = {
   schemaVersion: "v1",
@@ -70,15 +89,21 @@ const payload: PersistedComparisonResultPayload = {
           documentId: "doc-1",
           display: `Benefit ${i}: ` + "coverage details with qualifications ".repeat(16),
           qualifiers: {},
-          evidence: [{ documentId: "doc-1", page: 5, quote: `Benefit ${i} coverage` }],
+          evidence: [{ documentId: "doc-1", page: 5, quote: benefitLine(i) }],
         },
       ],
     })),
   ],
   contacts: [],
   userContext: { age: "24", visaOrStatus: "F-1" },
-  resultFingerprint: RESULT_FINGERPRINT,
 };
+
+/** Fingerprint issued for the most recently saved result; selections carry it. */
+let RESULT_FINGERPRINT = "";
+function issued(p: PersistedComparisonResultPayload, docs = documents): PersistedComparisonResultPayload {
+  RESULT_FINGERPRINT = resultFingerprintFor({ documentFingerprint: documentFingerprint(docs), table: p, context: p.userContext });
+  return { ...p, resultFingerprint: RESULT_FINGERPRINT };
+}
 
 function ownSession() {
   const { session, capability } = createSession(documents, payload.userContext);
@@ -118,7 +143,7 @@ async function saveFor(sessionId: string, docs = documents) {
   await saveComparisonResult({
     sessionId,
     documentFingerprint: documentFingerprint(docs),
-    payload,
+    payload: issued(payload, docs),
   });
 }
 
@@ -128,8 +153,11 @@ describe("POST /api/export PDF contract", () => {
     const data: PersistedComparisonResultPayload = { ...payload, plans: [
       { planId: "alpha", name: "Alpha", sources: [{ documentId: "doc-1", page: 1, quote: "Alpha" }] },
       { planId: "beta", name: "Beta", sources: [{ documentId: "doc-2", page: 1, quote: "Beta" }] },
-    ], rows: (payload.rows as ComparisonTable["rows"]).map((r) => ({ ...r, values: r.values.map((v) => ({ ...v, planId: v.documentId === "doc-1" ? "alpha" : "beta" })) })) };
-    await saveComparisonResult({ sessionId: own.session.sessionId, documentFingerprint: documentFingerprint(documents), payload: data });
+    ], rows: (payload.rows as ComparisonTable["rows"]).map((r) => ({ ...r, values: r.values.map((v) => {
+      const proof = PLAN_PROOF[`${v.documentId}:${v.display}`];
+      return proof ? { ...v, planId: v.documentId === "doc-1" ? "alpha" : "beta", evidence: [{ documentId: v.documentId, ...proof }] } : v;
+    }) })) };
+    await saveComparisonResult({ sessionId: own.session.sessionId, documentFingerprint: documentFingerprint(documents), payload: issued(data) });
     const response = await POST(request(own.session.sessionId, own.capability, selectionWith({ viewMode: "compare", planIds: ["beta", "alpha"], tiers: { alpha: "Scholar Shield Basic" } })));
     expect(response.status).toBe(200);
     const { text } = await pdfText(new Uint8Array(await response.arrayBuffer()));

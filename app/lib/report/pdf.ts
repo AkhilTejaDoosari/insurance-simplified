@@ -34,8 +34,13 @@ import { documentPlanTitle } from "@/app/lib/extraction/plan-names";
 import type { PersonalizedOverview } from "@/app/lib/extraction/overview";
 import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
 import {
+  absenceNotices,
   buildPresentation,
+  cannotBeConfirmedFacts,
   indexFacts,
+  readingCoverage,
+  readingCoverageText,
+  withheldNotices,
   viewDocumentIds,
   type ActiveView,
 } from "@/app/lib/presentation/adaptive";
@@ -338,6 +343,36 @@ export async function buildReportPdf(input: ReportInput): Promise<Uint8Array> {
   if (context.length > 0) {
     write("Your details", { font: bold, size: 12 });
     for (const [key, value] of context) write(`${key}: ${value}`, { size: 9 });
+    y -= 8;
+  }
+
+  // ---- Trust notices (M7) ------------------------------------------------
+  const unconfirmed = cannotBeConfirmedFacts(input.table);
+  if (unconfirmed.length > 0) {
+    write("Results that cannot be confirmed", { font: bold, size: 12 });
+    for (const notice of unconfirmed) {
+      write(`${notice.label}: ${notice.status}`, { font: bold, size: 9.5 });
+      write(notice.text, { size: 9, color: MUTED });
+    }
+    y -= 8;
+  }
+  const inScope = (documentId: string) => !activeDocuments || activeDocuments.has(documentId);
+  const coverageNotes = readingCoverage(input.table).filter((c) => inScope(c.documentId));
+  const absences = absenceNotices(input.table, activeDocuments ? [...activeDocuments] : undefined);
+  if (coverageNotes.length > 0 || absences.length > 0) {
+    write("Pages read", { font: bold, size: 12 });
+    for (const note of coverageNotes) write(readingCoverageText(note), { size: 9 });
+    for (const a of absences) write(`${a.label}: ${a.text}`, { size: 9, color: MUTED });
+    y -= 8;
+  }
+  const withheld = withheldNotices(input.table).filter((w) => inScope(w.documentId));
+  if (withheld.length > 0) {
+    write("Source lines found but not verified", { font: bold, size: 12 });
+    for (const w of withheld) {
+      const filename = input.table.documents.find((d) => d.documentId === w.documentId)?.filename ?? "Source document";
+      write(`${w.label}: NEEDS VERIFICATION`, { font: bold, size: 9.5 });
+      write(`"${w.quote}" (${filename}, page ${w.page})`, { size: 9, color: MUTED });
+    }
     y -= 8;
   }
 
