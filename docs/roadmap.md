@@ -8,7 +8,7 @@ Numbering continues from the closed V1.1 milestones, so the next milestone is M4
 Status words follow `quality.md` §1 (Not started · Partial · Implemented ·
 Tested · Verified). Update this file at every milestone close.
 
-**Current milestone: M4 — Baseline integrity and CI.**
+**Current milestones: M5 — Retrieval correctness, M6 — Evaluation corpus (tooling), M7 — Verified Evidence Core (in progress on `integration/m5-m7`).** M4 closed 2026-11-19.
 **Priority: finish health-insurance V1 before any other insurance domain.**
 
 ## 1. Where things stand (verified against `15f8cc2`, 2026-11-15)
@@ -49,14 +49,14 @@ committed as WIP `15f8cc2`; **independent code review not yet performed**).
 Each milestone ends with the report in `AGENTS.md` and stops for owner
 approval. Do not start the next milestone automatically.
 
-### M4 — Baseline integrity and CI · *current*
+### M4 — Baseline integrity and CI · *closed 2026-11-19*
 
 - **Objective:** a trustworthy, continuously checked baseline before new
   capability work.
 - **Responsibilities:**
   Evidence labels: **Tested — CI** = the task's tests ran green in CI run [44615419523](https://github.com/AkhilTejaDoosari/insurance-simplified/actions/runs/44615419523) at `aaba221` (1196 passed / 16 skipped / 4 todo; e2e 55 passed / 1 skipped). **Tested locally** = only local runs. Nothing below is *Verified* in the `quality.md` §1 sense (that level needs a real-document evaluation run; CI runs no real documents and reports those suites SKIPPED).
 
-  1. **Tested — CI** (`d7af28b`): container listener, exposed/published port and compose health probe aligned at 3333; `tests/contract/container-port.test.ts` fails on the old mismatch, passes after. **Tested locally:** tracked-files-only `docker build` and the compose health probe in the container (not in CI; last run before `6900e87`).
+  1. **Tested — CI** (`d7af28b`): container listener, exposed/published port and compose health probe aligned at 3333; `tests/contract/container-port.test.ts` fails on the old mismatch, passes after. **Tested locally:** tracked-files-only `docker build` and the compose health probe in the container (not in CI); re-run at `8986f45` on 2026-11-19: `git archive HEAD | docker build` succeeds and the compose probe (`wget --spider http://localhost:3333/api/health`) passes in the container (`{"ok":true}`).
   2. **Tested — CI** (`e4a65a7`): upload requires durable configuration and successful persistence before populating the cache; session/storage failures return retryable 503 even if cleanup fails (D-018). `tests/unit/upload-durability-failure.test.ts` (5 regressions). The durable success path is exercised by the e2e job against local Supabase.
   3. **Tested — CI** (`7e8dd6f`): uploaded filenames and raw errors excluded from upload logs and timing metadata; 4 log-capture regressions in `tests/unit/upload-durability-failure.test.ts` › "never records an uploaded filename in logs or timings (%s)".
   4. **Tested — CI** (`65e77c5`, `3a05b05`): `llm/safe-prompt.ts` and the chat path (`buildRetrievalPrompt`) use fresh collision-checked frame tokens and JSON-quoted ids/filenames; `tests/unit/safe-prompt-framing.test.ts` (5) and `tests/unit/chat-prompt-framing.test.ts` (4). Framing protects source boundaries only; outputs still rely on citation verification.
@@ -81,13 +81,7 @@ approval. Do not start the next milestone automatically.
 
 **Status (2026-11-19):** tasks 1–5 Tested — CI (CI run [44615419523](https://github.com/AkhilTejaDoosari/insurance-simplified/actions/runs/44615419523) at `aaba221`); 6 Implemented (todo in CI); 7 Implemented; 8 review recorded, independence pending. No paid API calls approved or intended; one unplanned batch of embedding-provider calls occurred during the first local e2e run (2026-11-19) before `60bf06d` blanked `EMBEDDING_*` — owner to check provider usage. No deployment; no state-ownership or session-auth change.
 
-**Left for M4 exit:**
-
-1. *Owner decision:* accept the task-8 review as independent, or commission another reviewer.
-2. *Owner decision:* fix the three open medium review findings in M4, or defer them to M7/M8.
-3. *Local run, no code:* `docker build` + container health at the current head (completion evidence requires it; CI does not build the image).
-4. *Doc update, no code:* close the four M4 rows in the `evidence-core.md` §6 defect register (delimiter, non-durable fallback, filenames in logs, health check) with their commits — a change to an authoritative document, so owner approval.
-5. *Owner decision:* approve closing M4 and starting M5.
+**Closed (owner, 2026-11-19):** container build + health re-run at `8986f45` pass; the four defect-register rows are closed in `evidence-core.md` §6; review findings #2 (silent table-claim drop), #3 (same-scope contradiction) and #4 (tier-word guessing) are assigned to M7; the two low findings stay open in the review list above. The owner closed M4 on the review as recorded and set the defaults C-1 (five display verdicts, one mapping table), C-2 (keep semantic-only) and C-4 ($0) for M5–M7.
 
 ### M5 — Retrieval correctness
 
@@ -162,9 +156,9 @@ by design; no plugin system is built before a second domain is approved.
 
 | # | Decision | Proposal | Blocks |
 | --- | --- | --- | --- |
-| C-1 | Verdict model | Keep five display verdicts; map ADR-003.1 statuses onto them | M7 |
-| C-2 | D-013 semantic-only retrieval | Keep until RET-1; exact per-session fix proceeds now | M5 |
-| C-4 | Budget for paid LLM evaluation, hosted OCR, annotation (D-020) | Owner approval required; spending rule in `operations.md` §4 | M6, M10, live acceptance scripts |
+| C-1 | Verdict model | **Decided 2026-11-19:** keep five display verdicts; one mapping table (`evidence-core.md` §3) | — |
+| C-2 | D-013 semantic-only retrieval | **Decided 2026-11-19:** keep until RET-1; exact per-session fix proceeds now | RET-1 only |
+| C-4 | Budget for paid LLM evaluation, hosted OCR, annotation (D-020) | **Decided 2026-11-19:** $0 (local models only) until revisited; spending rule in `operations.md` §4 | M6, M10, live acceptance scripts |
 | C-5 | Keep D-016 (no queue/worker) | Keep unless measured p95 exceeds the request budget | M11 |
 | ADJ-1 | Doc A pre-certification note (83 pending claims) | Owner adjudication | M7 scoring |
 | D-027…D-031 | Accept or amend the proposed decisions | Owner review | Nothing in M4 |

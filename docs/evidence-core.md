@@ -125,10 +125,10 @@ in the app until an application test fails.
 | Absence reported from a regex miss | `extraction/extract.ts` emits NOT STATED on pattern miss and when values are dropped for missing evidence | M7 |
 | Claim checks digits only | `evidence-verification.ts` skips tokens without a digit | M7 |
 | No schema enforcement on LLM output | `llm/client.ts` uses `response_format: json_object` | M7 |
-| Forgeable document delimiter | `llm/safe-prompt.ts` closes untrusted text with a plain `>>>` | M4 |
-| Non-durable fallback | `api/upload/route.ts` falls back to tmpdir session files | M4 |
-| Filenames in logs | `api/upload/route.ts` logs `file.name` | M4 |
-| Health check misses the server | Dockerfile/compose expect port 3000; `npm start` serves 3333 | M4 |
+| ~~Forgeable document delimiter~~ | Closed `65e77c5`, `3a05b05`: collision-checked per-call frames (`safe-prompt-framing`, `chat-prompt-framing` tests) | M4 ✓ |
+| ~~Non-durable fallback~~ | Closed `e4a65a7`: upload requires durable storage, else retryable 503 (`upload-durability-failure` tests) | M4 ✓ |
+| ~~Filenames in logs~~ | Closed `7e8dd6f`: no filenames in upload logs/timings (`upload-durability-failure` log-capture tests) | M4 ✓ |
+| ~~Health check misses the server~~ | Closed `d7af28b`: aligned at 3333 (`container-port` test; container probe re-run at `8986f45`) | M4 ✓ |
 | Partly scanned PDFs may lose pages silently | Quality gate checks total characters only | M10 |
 | Fixed 48-fact vocabulary drives rows and absence | `extraction/fact-list.ts` | M8 |
 | Row verdicts shared across documents | An unstructured line in one PDF can mark another PDF's claims needs-verification (conservative) | M8 |
