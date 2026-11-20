@@ -11,7 +11,8 @@
     "test:e2e": "playwright test",
     "eval": "node evals/run.mjs",
     "eval:extraction": "tsx scripts/p2-experiment/scorecard.ts",
-    "gen-fixtures": "tsx scripts/gen-fixtures.ts"
+    "gen-fixtures": "tsx scripts/gen-fixtures.ts",
+    "gen-demo-fixtures": "tsx scripts/gen-demo-fixtures.ts"
   },
   "dependencies": {
     "next": "15",

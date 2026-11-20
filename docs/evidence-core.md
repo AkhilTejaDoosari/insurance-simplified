@@ -125,8 +125,10 @@ shown to fail when its guard is removed (TB-1 plan-name and period span checks;
 TB-2 proposal guard; TB-3 row render gate and exclusion-outcome gate; TB-4
 caller inventory, missing-coverage-as-complete and partial-list guards).
 AT-PERSIST is met by re-derivation (no durable seal key);
-AT-C4/AT-AUTH-ORDER pass as a library (`app/lib/evidence/authority/`), not
-yet wired into a surface.
+AT-C4/AT-AUTH-ORDER pass as a library (`app/lib/evidence/authority/`), and the
+resulting authority views are now produced and rendered on the comparison view,
+chat coverage notes and the export PDF (read-back re-derives them; the stored
+payload is never trusted).
 
 Supporting acceptance tests named in ADR-003.2 and to be ported with their
 components: AT-C4 / AT-AUTH-ORDER (authority cases, acyclic order per scope),
