@@ -252,6 +252,31 @@ function recognizeTitleBlockPlan(
   return quote ? { name: title, quote } : undefined;
 }
 
+/** Insurance document-type headings. A product title is the first line of
+ *  page 1 and this heading is the very next line ("<Product>\nCertificate of
+ *  Insurance"). Generic document roles only — never an insurer or product. */
+const DOCUMENT_TYPE_HEADING =
+  /^\s*(?:Certificate of (?:Insurance|Coverage)|Description of Coverage|Evidence of Coverage|Policy (?:Wording|Document)|Summary Plan Description)\s*$/i;
+/** First lines that are headings or roles, not a product name. */
+const GENERIC_TITLE =
+  /\b(?:certificate|table of contents|contents|notice|summary of benefits|schedule of benefits|declarations?|application|enrol?lment form|claim form|welcome|introduction|overview)\b/i;
+const MAX_DOCUMENT_TITLE_WORDS = 10;
+
+/** Generalized title-block identity (P0-01, owner decision 2026-11-20): the
+ *  former rule accepted only titles ending in "Program". Abstains for generic
+ *  headings, legal entities, illustrative/sample titles, sentences and long
+ *  lines. The name is the literal first line, so page verification and the
+ *  name-in-quote check apply unchanged. */
+function documentTypeTitle(line: string, next: string | undefined): string | undefined {
+  if (!DOCUMENT_TYPE_HEADING.test(next ?? "")) return undefined;
+  const title = /^\s*([\w][\w &'().,®™℠-]{2,90}?)\s*$/.exec(line)?.[1].trim();
+  if (!title || !/[A-Za-z]{2}/.test(title)) return undefined;
+  if (/[.,:;?!]$/.test(title)) return undefined;
+  if (title.split(/\s+/).length > MAX_DOCUMENT_TITLE_WORDS) return undefined;
+  if (GENERIC_TITLE.test(title) || LEGAL_ENTITY_SUFFIX.test(title) || ILLUSTRATIVE_CONTEXT.test(title)) return undefined;
+  return title;
+}
+
 export function attestPlans(documents: readonly SourceDocument[]): ProvenPlan[] {
   const groups = new Map<string, ProvenPlan>();
   for (const doc of documents) {
@@ -272,14 +297,8 @@ export function attestPlans(documents: readonly SourceDocument[]): ProvenPlan[] 
         const declaration = /^\s*(?:Policy|Plan) name:\s*([\w][\w &'().,-]{0,99}?)(?:\s*;\s*Policy ID:\s*([A-Za-z0-9][A-Za-z0-9-]{0,63}))?(?:\s*;\s*Issuer:\s*([\w][\w &'().,-]{0,99}))?\s*$/i.exec(line);
         const getInsuranceFromTitle = /^\s*Get\s+([A-Z][\w®-]*)\s+insurance\s+from\s+[A-Z][\w &'().,-]+\s*$/i.exec(line);
         const namedInsurerTitle = /^\s*Seven Corners (Travel Medical(?: Including the USA)?)\s*$/i.exec(line);
-        const programTitleMatch = lineIndex === 0
-          ? /^\s*([\w][\w &'().,-]{2,90}?\s+Program(?:SM|℠)?)\s*$/i.exec(line)
-          : null;
-        const programTitle = programTitleMatch &&
-          /^\s*Certificate of Insurance\s*$/i.test(lines[1] ?? "")
-          ? programTitleMatch[1].trim()
-          : undefined;
-        const name = declaration?.[1].trim() ?? getInsuranceFromTitle?.[1] ?? namedInsurerTitle?.[1] ?? programTitle;
+        const documentTitle = lineIndex === 0 ? documentTypeTitle(line, lines[1]) : undefined;
+        const name = declaration?.[1].trim() ?? getInsuranceFromTitle?.[1] ?? namedInsurerTitle?.[1] ?? documentTitle;
         if (!name) continue;
         const policyIdentifier = declaration?.[2]?.trim();
         const issuer = declaration?.[3]?.trim();

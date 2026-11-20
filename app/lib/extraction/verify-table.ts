@@ -64,7 +64,18 @@ function verifiedWithheld(withheld: readonly WithheldClaim[] | undefined, docume
   });
 }
 
-export function verifyComparisonTable(table: ComparisonTable, documents: VerifiableDocument[]): ComparisonTable {
+export interface VerifyOptions {
+  /** Attest identities for documents no verified proposed plan owns (default
+   *  true). Read-back passes false to re-verify a legacy stored identity set
+   *  exactly as stored, without trusting anything new. */
+  attestUnowned?: boolean;
+}
+
+export function verifyComparisonTable(
+  table: ComparisonTable,
+  documents: VerifiableDocument[],
+  options: VerifyOptions = {},
+): ComparisonTable {
   // Plan identity is optional and never inferred from filenames. A claimed
   // association survives only when every named source verifies on its page.
   const tableDocuments = documents.filter((doc) =>
@@ -85,12 +96,14 @@ export function verifyComparisonTable(table: ComparisonTable, documents: Verifia
   // suppress page-literal identity proof for the rest of the upload. Running
   // only on unowned documents keeps this idempotent for read-back.
   const owned = new Set(proposedPlans.flatMap((plan) => plan.sources.map((s) => s.documentId)));
-  const attested = verifyPlans(attestPlans(tableDocuments.filter((doc) => !owned.has(doc.documentId))));
+  const attested = options.attestUnowned !== false
+    ? verifyPlans(attestPlans(tableDocuments.filter((doc) => !owned.has(doc.documentId))))
+    : [];
   const plans = [...proposedPlans, ...attested];
-  const unverifiedSourceDocumentIds = new Set(
+  const unverifiedSourceDocumentIds = new Map(
     (table.plans ?? [])
       .filter((plan) => !proposedPlans.some((kept) => kept.planId === plan.planId))
-      .flatMap((plan) => plan.sources.map((s) => s.documentId)),
+      .flatMap((plan) => plan.sources.map((s) => [s.documentId, "plan-source-unverified" as const] as const)),
   );
   const scoped = plans.length > 0 ? attributePlanScope({ ...table, plans }, documents) : table;
 

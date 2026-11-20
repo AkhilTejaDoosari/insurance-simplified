@@ -23,7 +23,8 @@ import {
 } from "@/app/lib/comparison-result-db";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
 import { verifyComparisonTable, type VerifiableDocument } from "@/app/lib/extraction/verify-table";
-import type { ComparisonTable, RegisteredComparisonTable, TableRow } from "@/app/lib/extraction/types";
+import type { ComparisonTable, PlanInventoryEntry, RegisteredComparisonTable, TableRow } from "@/app/lib/extraction/types";
+import { buildPlanInventory } from "@/app/lib/extraction/plan-inventory";
 
 /** Surfaces re-derivation for read-back (same rule as rows). */
 export { rederiveSurfaces } from "@/app/lib/evidence/surfaces";
@@ -89,9 +90,31 @@ export function confirmStoredResult(input: {
       });
 
   let plansVerified = false;
+  let planInventory: PlanInventoryEntry[] | undefined;
   try {
-    const rederived = verifyComparisonTable(structuredClone(stored), docs);
-    plansVerified = canonicalJson(rederived.plans ?? null) === canonicalJson(stored.plans ?? null);
+    const samePlans = (t: ComparisonTable) => canonicalJson(t.plans ?? null) === canonicalJson(stored.plans ?? null);
+    let rederived = verifyComparisonTable(structuredClone(stored), docs);
+    plansVerified = samePlans(rederived);
+    planInventory = rederived.planInventory;
+    if (!plansVerified) {
+      // Owner decision 3 (P0): a result stored under an earlier identity rule
+      // keeps its identities when every stored plan still verifies on its
+      // page exactly as stored. Nothing new is trusted: no attestation runs,
+      // and documents today's rule could identify are flagged for re-analysis
+      // instead of silently losing or gaining a plan.
+      const current = rederived;
+      const legacy = verifyComparisonTable(structuredClone(stored), docs, { attestUnowned: false });
+      if (samePlans(legacy)) {
+        rederived = legacy;
+        plansVerified = true;
+        const reanalysis = new Map(
+          (current.planInventory ?? [])
+            .filter((e) => e.status === "verified-plan" && !(legacy.plans ?? []).some((p) => p.sources.some((s) => s.documentId === e.documentId)))
+            .map((e) => [e.documentId, "reanalysis-available" as const] as const),
+        );
+        planInventory = buildPlanInventory(stored.documents, legacy.plans, reanalysis);
+      }
+    }
     if (bound && plansVerified && rederived.rows.length === stored.rows.length) {
       evidence = sealVerifiedTable(input.sessionId, docs, rederived, { authority });
       const rows = rederived.rows.map((row, i) =>
@@ -121,6 +144,7 @@ export function confirmStoredResult(input: {
     ...(p.resultFingerprint ? { resultFingerprint: p.resultFingerprint } : {}),
     // Plan identities are kept only when every source re-verifies unchanged.
     ...(plansVerified && stored.plans ? { plans: stored.plans } : {}),
+    ...(planInventory ? { planInventory: plansVerified ? planInventory : buildPlanInventory(stored.documents, undefined) } : {}),
     ...(bound && p.coverage !== undefined ? { coverage: p.coverage } : {}),
     presentationGroups: (p.presentationGroups ?? []) as RegisteredComparisonTable["presentationGroups"],
     rows: rendered.rows.map((row) => ({

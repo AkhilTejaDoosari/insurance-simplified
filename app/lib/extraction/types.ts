@@ -193,7 +193,9 @@ export interface PlanInventoryEntry {
   documentId: string;
   /** Verified plans sourced from this document (empty when unresolved). */
   planIds: string[];
-  status: "verified-plan" | "no-verified-plan-name" | "plan-source-unverified";
+  /** reanalysis-available: restored from a session stored under an earlier
+   *  identity rule; the current rule can identify a plan if analysed again. */
+  status: "verified-plan" | "no-verified-plan-name" | "plan-source-unverified" | "reanalysis-available";
 }
 
 export interface ProvenPlan {

@@ -14,6 +14,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | --- | --- |
 | Worktree | `insurance-simplified-wt/p0` (separate from `int`, where an OpenCode session and `next dev :3333` were running) |
 | Branch | `p0/acceptance-remediation`, branched from `integration/m5-m7` @ `de4efe4` |
+| Checkpoints | `04fd36d` Phase 1 (accepted by owner 2026-11-20 as engineering checkpoint; product acceptance BLOCKED) |
 | Push / PR | none (not authorized) |
 | Recovery refs | `backup/*`, `refs/wip/*`, tag `recovery-pre-ui-2026-09-21` — untouched |
 | Real PDFs | `REAL_PDFS_DIR` (PDF corpus) — **unset**; `REAL_FIXTURES_DIR` (private labels/ground truth) — **unset**. Both are existing contracts (`docs/quality.md` §2); no new variable. |
@@ -25,8 +26,8 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | Phase | Tasks | Status |
 | --- | --- | --- |
 | 0 Investigation | validate audit | Done (see "Audit validation") |
-| 1 Inventory and selection | 1–2 | Implemented, Tested (unit + e2e); owner review pending |
-| 2 Semantic correctness | 3–6 | Not started — needs owner authorization (new fact ids, fact-list version) |
+| 1 Inventory and selection | 1–2 | Checkpoint `04fd36d`; owner accepted as engineering checkpoint; e2e assertion change approved |
+| 2 Semantic correctness | 3–6 | Authorized 2026-11-20 (new fact ids + fact-list version); in progress |
 | 3 Presentation contract | 7 | Not started — EC-7 amendment approved in principle; compatibility review pending |
 | 4 Chatbot correction | 8–10 | Not started — chat-api extension approved in principle; C-4 synthesis proposal pending |
 | 5 Real-document acceptance | 11 | BLOCKED — the five PDFs are not available (`REAL_PDFS_DIR` unset) |
@@ -109,3 +110,63 @@ Screenshots (synthetic data, owner review): session scratchpad `shots/p0-phase1-
 Owner review of Phase 1 (screenshots + this ledger). If authorized, Phase 2
 Task 3: failing pipeline test for "Proof of claim … within 90 days" → no
 eligibility value.
+
+## Owner decisions (2026-11-20, after Phase 1)
+
+1. e2e assertion change approved; keep 3-plan cap and explicit replacement controls.
+2. Generalizable plan-name recognition beyond page 1 approved (not deferred to M8). Must reproduce on the original PDFs first; no insurer-specific or filename-based identity.
+3. Silent loss of plan identity on legacy read-back rejected: implement a bounded compatibility correction or an explicit re-analysis-required state; preserve verification and original data.
+4. Phase 2 (Tasks 3–6) authorized, including fact ids and fact-list version.
+5. Use `REAL_PDFS_DIR` / `REAL_FIXTURES_DIR`; missing fixtures remain an explicit acceptance blocker.
+
+Real PDFs: four of the five owner files exist with the exact names under the
+git-ignored `nonstandard/` of the main checkout (the `REAL_PDFS_DIR` root per
+`quality.md`). Doc 03 exists under a slightly different file name: **identity
+with the uploaded file is unconfirmed** until the owner confirms or supplies it.
+
+## Decision 2 — plan-name recognition (reproduced, then fixed)
+
+Reproduction (local probe outside git, `REAL_PDFS_DIR` = main checkout root):
+before the change, doc 02 and doc 05 → `no-verified-plan-name`, doc 01/03/04
+verified — exactly the owner's Compare screen (3 plans).
+
+Cause: both documents open with "<product title>" on line 1 of page 1 and
+"Certificate of Insurance" on line 2; the only recognizer for that shape
+required the title to end in "Program". Page-1-only was **not** the cause for
+any of the five documents, so it was left unchanged (no reproduced failure).
+
+Fix: `plan-identity.ts` `documentTypeTitle` — first line of page 1 followed by
+a generic insurance document-type heading (Certificate of Insurance/Coverage,
+Description/Evidence of Coverage, Policy Wording/Document, Summary Plan
+Description). Abstains for generic headings, legal entities, illustrative
+titles, sentences, >10 words. No insurer names, no filenames. Subsumes the
+Program rule. After: all five documents `verified-plan`.
+
+**Finding for the owner:** the local file for doc 02 does not contain the
+product its filename names; it is a certificate of the same product as doc 05
+(98.7% text-identical; doc 05 carries a SAMPLE watermark). Filename→content
+details are in the private session notes, not in git. Files 02 and 05 become
+two separate plans with the same name (picker shows the filename). Please
+confirm whether the file you uploaded is the same.
+
+Still open: the insurer-specific title regex (defect register, doc 04)
+remains; its brochure has no document-type heading, so no generic rule from
+this change covers it. Not changed.
+
+## Decision 3 — legacy sessions keep identities
+
+`read-back.ts`: if default re-verification yields different plans than stored,
+re-verify the stored identity set exactly as stored (`attestUnowned: false`;
+every source re-verified on its page; nothing new trusted). If equal, seal and
+issue as normal; documents today's rule could identify get inventory status
+`reanalysis-available` with a visible message. If a stored plan no longer
+verifies, identities are still withheld (tamper test).
+Tests: `tests/unit/legacy-read-back-identity.test.ts` (2 failed before, 3 pass).
+
+## Real-fixture runs
+
+`REAL_PDFS_DIR=<main checkout> REAL_FIXTURES_DIR=<main checkout>/real-fixtures npm test`:
+all real suites pass except `real-pdf-evidence.test.ts`, which needs two
+other brochures (named in that test) not present on this
+machine (fails identically at `04fd36d`; fixture gap, not a regression).
+Doc 03's local file name differs from the uploaded name (identity with upload unconfirmed).

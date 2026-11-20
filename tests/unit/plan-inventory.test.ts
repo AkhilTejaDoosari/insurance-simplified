@@ -134,8 +134,8 @@ describe("plan inventory (P0-01)", () => {
   });
 
   it("pins the known legacy edge: an LLM-path result stored before P0-01 that omitted an attestable document re-derives an extra plan", () => {
-    // Fail-closed by design: read-back sees different plans and withholds
-    // plan identities instead of trusting the stale list. Recorded in the P0 ledger.
+    // Default re-verification differs from the stored list; read-back then
+    // re-verifies the stored identities as stored (legacy-read-back-identity.test.ts).
     const legacyStored: ComparisonTable = {
       ...modelTable(),
       plans: [proposed("p-alpha", "Alpha", "doc-1")],

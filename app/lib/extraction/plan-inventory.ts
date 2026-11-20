@@ -13,25 +13,23 @@ export const UNRESOLVED_PLAN_REASON: Record<Exclude<PlanInventoryEntry["status"]
     "No plan name could be verified on this document's pages, so it can't be compared as a plan. You can still read it on its own.",
   "plan-source-unverified":
     "A plan name was proposed for this document, but it could not be found on the cited page, so it can't be compared as a plan. You can still read it on its own.",
+  "reanalysis-available":
+    "This saved review was made with an earlier version that could not identify this document's plan. Analyse your documents again to compare it as a plan; until then you can still read it on its own.",
 };
+
+type UnresolvedStatus = Exclude<PlanInventoryEntry["status"], "verified-plan">;
 
 export function buildPlanInventory(
   documents: readonly { documentId: string }[],
   plans: readonly ProvenPlan[] | undefined,
-  unverifiedSourceDocumentIds: ReadonlySet<string> = new Set(),
+  unresolvedStatus: ReadonlyMap<string, UnresolvedStatus> = new Map(),
 ): PlanInventoryEntry[] {
   return documents.map(({ documentId }) => {
     const planIds = (plans ?? [])
       .filter((plan) => plan.sources.some((source) => source.documentId === documentId))
       .map((plan) => plan.planId);
     if (planIds.length > 0) return { documentId, planIds, status: "verified-plan" as const };
-    return {
-      documentId,
-      planIds: [],
-      status: unverifiedSourceDocumentIds.has(documentId)
-        ? ("plan-source-unverified" as const)
-        : ("no-verified-plan-name" as const),
-    };
+    return { documentId, planIds: [], status: unresolvedStatus.get(documentId) ?? ("no-verified-plan-name" as const) };
   });
 }
 
@@ -40,10 +38,9 @@ export function buildPlanInventory(
  *  for legacy or restored results; the server record only contributes the
  *  unresolved reason for documents that still have no plan. */
 export function planInventoryOf(table: Pick<ComparisonTable, "documents" | "plans" | "planInventory">): PlanInventoryEntry[] {
-  const unverified = new Set(
-    (table.planInventory ?? [])
-      .filter((entry) => entry.status === "plan-source-unverified")
-      .map((entry) => entry.documentId),
-  );
-  return buildPlanInventory(table.documents, table.plans, unverified);
+  const reasons = new Map<string, UnresolvedStatus>();
+  for (const entry of table.planInventory ?? []) {
+    if (entry.status !== "verified-plan") reasons.set(entry.documentId, entry.status);
+  }
+  return buildPlanInventory(table.documents, table.plans, reasons);
 }
