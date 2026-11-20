@@ -113,3 +113,20 @@ describe("Stage E path A: same-scope contradictions among structural claims", ()
     expect(ids[cells.findIndex((c) => c.qualifiers.planTier === "BASIC")]).toBe(table.plans![0].planId);
   });
 });
+
+describe("table-cell scope comes only from its own column heading (EC-3/EC-4)", () => {
+  it("ELITE cells under different neighbouring headings (BASIC vs PLUS) are one scope: a conflict", () => {
+    const doc = tableDocument("d1", [
+      page([["Deductible", "$0", "$250"], ["Copay", "$10", "$20"], ["Lab", "$1", "$2"]]),
+      { ...page([["Deductible", "$100", "$300"], ["Copay", "$10", "$20"], ["Lab", "$1", "$2"]], ["Schedule continued"]), headings: ["ELITE", "PLUS"] },
+    ]);
+    const docs = [doc];
+    const table = verifyComparisonTable(validateTable(extractFallback(docs, {})), docs);
+    const planId = table.plans![0].planId;
+    const elite = deductibles(table).filter((v) => v.anchor && v.qualifiers.planTier === "ELITE");
+    expect(elite.map((v) => v.display)).toEqual(["Deductible (ELITE): $0", "Deductible (ELITE): $100"]);
+    expect(elite.every((v) => v.planId === planId)).toBe(true);
+    expect(hasSameScopeContradiction(elite)).toBe(true);
+    expect(table.rows.find((r) => r.factName === "annual-deductible")!.verdict).toBe("CONFLICTED");
+  });
+});
