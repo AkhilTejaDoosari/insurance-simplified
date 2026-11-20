@@ -31,6 +31,7 @@ import {
 } from "@/app/lib/comparison-result-db";
 import { sealVerifiedTable } from "@/app/lib/evidence/session-evidence";
 import { issueRows, renderIssuedRows } from "@/app/lib/evidence/row-resolution";
+import { surfaceQuotes, surfacesFor } from "@/app/lib/evidence/surfaces";
 
 export async function POST(request: NextRequest) {
   const requestId = newRequestId();
@@ -119,6 +120,9 @@ export async function POST(request: NextRequest) {
       sessionEvidence.provisionIdsByRow,
     );
     const rendered = renderIssuedRows(sessionEvidence.authority, session.sessionId, issuedRows);
+    // Exclusion inventories and authority views, issued under the same
+    // request authority and passed through their render gate.
+    const surfaces = timeSync("extract.surfaces", () => surfacesFor(sessionEvidence, session.sessionId));
     const resultFingerprint = resultFingerprintFor({
       documentFingerprint: documentFingerprint(session.documents),
       table: verified,
@@ -143,6 +147,8 @@ export async function POST(request: NextRequest) {
         quote: c.quote,
       })),
       ...(verified.plans?.flatMap((plan) => plan.sources) ?? []),
+      // Every quote a surface shows resolves in the viewer.
+      ...surfaceQuotes(surfaces),
       // Withheld source lines are shown verbatim with a page link.
       ...verified.rows.flatMap((row) =>
         (row.withheld ?? []).map(({ documentId, page, quote }) => ({ documentId, page, quote }))
@@ -176,6 +182,7 @@ export async function POST(request: NextRequest) {
             contacts,
             userContext: session.userContext,
             resultFingerprint,
+            surfaces,
           },
         })
       );
@@ -197,6 +204,7 @@ export async function POST(request: NextRequest) {
         ...(row.withheld ? { withheld: row.withheld.map(withEvidenceId) } : {}),
       })),
       contacts,
+      surfaces,
     });
   } catch (err) {
     logFailure(requestId, "extract", err);

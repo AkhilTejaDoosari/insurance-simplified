@@ -36,6 +36,11 @@ export interface ExclusionInventoryView {
   coverage: "complete" | "partial" | "unknown";
   /** 1-based pages not read or only partly read (named to the user). */
   pagesNotRead: number[];
+  /** Optional (agent H, additive): pages where an exclusion candidate could
+   *  not be sealed, so exclusions there may be missing. Also listed in
+   *  `pagesNotRead`; present only when `coverage` is "partial" for that
+   *  reason. */
+  itemsNotSealedPages?: number[];
   /** Every sealed exclusion provision of the document, verbatim. */
   exclusions: { provisionId: string; claim: string; evidence: SurfaceEvidence[] }[];
 }

@@ -17,6 +17,8 @@ import { clonePlain, deepFreeze } from "@/app/lib/evidence/canonical";
 import { allPagesRead } from "@/app/lib/evidence/page-coverage";
 import type { SealedProvision } from "@/app/lib/evidence/provision";
 import type { ProvisionStore } from "@/app/lib/evidence/provision-store";
+import type { RegisteredDocument } from "@/app/lib/evidence/registry";
+import { proposeExclusions } from "@/app/lib/evidence/proposer/exclusions";
 
 export type ExclusionCoverageState = "complete" | "partial" | "unknown";
 
@@ -29,6 +31,23 @@ export interface ExclusionCoverage {
   unreadPages: number[];
 }
 
+/** Whether the inventory provably holds EVERY exclusion the document states
+ *  (EC-2 / EC-13). Derived only from the registered page text (the same
+ *  structural proposer that seals exclusions), the store's sealed exclusion
+ *  provisions and the page-coverage record — never from a caller.
+ *    complete — an exclusion section was found, every candidate item in it
+ *               is sealed in the store, and every page was read;
+ *    partial  — a section was found but a candidate was dropped or not
+ *               sealed, or a page was not fully read (`pages` names them);
+ *    unknown  — no verified plan, unknown coverage, a framed/unbound
+ *               document, or no exclusion section found. */
+export interface ExclusionCompleteness {
+  state: ExclusionCoverageState;
+  reason: string;
+  /** Pages where exclusions may be missing (partial only), sorted. */
+  pages: number[];
+}
+
 export interface ExclusionInventory {
   sessionId: string;
   documentId: string;
@@ -38,6 +57,7 @@ export interface ExclusionInventory {
   /** Every sealed exclusion provision of this document, ordered by id. */
   exclusions: SealedProvision[];
   coverage: ExclusionCoverage;
+  completeness: ExclusionCompleteness;
   /** "failed" when a listed provision no longer passes store admission. Such
    *  a provision is still listed (an exclusion is never dropped), and the
    *  resolver cannot conclude on this inventory. */
@@ -73,6 +93,7 @@ export function buildExclusionInventory(store: ProvisionStore, documentId: strin
     coverage = { state: allPagesRead(record) ? "complete" : "partial", readPages, unreadPages };
   }
 
+  const completeness = completenessOf(store, document, sealed, coverage);
   const inventory: ExclusionInventory = {
     sessionId: store.sessionId,
     documentId,
@@ -80,9 +101,38 @@ export function buildExclusionInventory(store: ProvisionStore, documentId: strin
     ...(document.plan ? { planId: document.plan.planId } : {}),
     exclusions,
     coverage,
+    completeness,
     integrity,
   };
   return { ok: true, inventory: deepFreeze(inventory) };
+}
+
+function completenessOf(
+  store: ProvisionStore,
+  document: RegisteredDocument,
+  sealed: readonly SealedProvision[],
+  coverage: ExclusionCoverage,
+): ExclusionCompleteness {
+  const unknown = (reason: string): ExclusionCompleteness => ({ state: "unknown", reason, pages: [] });
+  if (!document.plan) return unknown("no verified plan");
+  if (coverage.state === "unknown") return unknown("page coverage unknown");
+  // Re-derive the structural candidates from the registered page text.
+  const otherPlanNames = store.registry.list()
+    .filter((d) => d.documentId !== document.documentId && d.plan)
+    .map((d) => d.plan!.name.value);
+  const { proposals, report } = proposeExclusions(document, { sessionId: store.sessionId, otherPlanNames });
+  if (report.unbound) return unknown(`exclusion sections not bound: ${report.unbound}`); // G:completeness-unbound
+  if (report.sectionsFound === 0) return unknown("no exclusion section found"); // G:completeness-no-section
+  const held = new Set(sealed.flatMap((p) => p.evidence.map((e) => `${e.page}\u0000${e.quote}`)));
+  const pages = new Set<number>(report.droppedPages); // G:completeness-dropped
+  for (const p of proposals) {
+    for (const e of p.evidence) if (!held.has(`${e.page}\u0000${e.quote}`)) pages.add(e.page); // G:completeness-unsealed
+  }
+  for (const page of coverage.unreadPages) pages.add(page); // G:completeness-unread
+  if (pages.size > 0) {
+    return { state: "partial", reason: "exclusion candidates not sealed or pages not fully read", pages: [...pages].sort((a, b) => a - b) };
+  }
+  return { state: "complete", reason: "every exclusion candidate sealed and every page read", pages: [] };
 }
 
 /** Provision ids of an inventory (for resolutions and source-binding checks). */

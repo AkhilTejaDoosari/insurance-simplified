@@ -11,6 +11,7 @@
 // degradation. Retention: rows carry expires_at = now + 30d and are treated
 // as absent once expired (matches SESSION_LIFETIME_MS in the export route).
 
+import type { EvidenceSurfaces } from "@/app/lib/evidence/surface-types";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -51,6 +52,10 @@ export interface PersistedComparisonResultPayload {
   /** Server-derived reading coverage (EC-10) when the extraction produced
    *  one. Additive JSON field — no schema migration. */
   coverage?: TableCoverage;
+  /** Evidence surfaces as rendered at extraction (surface-types.ts). Never
+   *  authority on read-back: rederiveSurfaces re-derives them. Additive
+   *  JSON field — no schema migration. */
+  surfaces?: EvidenceSurfaces;
 }
 
 export interface ComparisonResultRecord {

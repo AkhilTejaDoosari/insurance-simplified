@@ -7,11 +7,13 @@ import { createHash } from "node:crypto";
 import { EvidenceAuthority } from "@/app/lib/evidence/canonical";
 import { sealProvision, type ProvisionContent, type ProvisionKind, type ScopeQualifier } from "@/app/lib/evidence/provision";
 import { ProvisionStore } from "@/app/lib/evidence/provision-store";
-import { SessionDocumentRegistry, type VerifiedPlanIdentity } from "@/app/lib/evidence/registry";
+import { readabilityCoverageSource, SessionDocumentRegistry, type VerifiedPlanIdentity } from "@/app/lib/evidence/registry";
+import { sealExclusionProposals, type ExclusionProposalReport } from "@/app/lib/evidence/proposer/exclusions";
+import type { PageReadability } from "@/app/lib/pdf/page-readability";
 import { literallyStates, type EvidenceQuote } from "@/app/lib/evidence/source-span";
 import type { PageCoverageSource } from "@/app/lib/evidence/page-coverage";
 import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
-import type { CellValue, ComparisonTable, ProvenPlan } from "@/app/lib/extraction/types";
+import type { CellValue, ComparisonTable, ProvenPlan, TableRow } from "@/app/lib/extraction/types";
 
 export interface RegistrableDocument {
   documentId: string;
@@ -19,6 +21,8 @@ export interface RegistrableDocument {
   pages: readonly string[];
   /** Hex sha256 of the original bytes when known (durable uploads). */
   sha256?: string;
+  /** Per-page readability record (feeds the registry's page coverage). */
+  readability?: readonly PageReadability[];
 }
 
 /** Adapter data (health domain): which fact rows are which provision kind. */
@@ -137,6 +141,13 @@ export interface SessionEvidence {
   store: ProvisionStore;
   /** Admitted provision ids per row (same order as `table.rows`). */
   provisionIdsByRow: string[][];
+  /** The verified rows the provisions were sealed from. */
+  rows: readonly TableRow[];
+  /** Table-cell subject (row label) of each admitted row provision, used to
+   *  name authority scopes; only labels literally stated by the anchor. */
+  provisionSubjects: Record<string, string>;
+  /** C1 exclusion proposer outcome per registered document (counts only). */
+  exclusionProposals: ExclusionProposalReport[];
 }
 
 /** Seal every provable verified value of a verified table and admit it.
@@ -148,17 +159,34 @@ export function sealVerifiedTable(
   options: { authority?: EvidenceAuthority; coverageSource?: PageCoverageSource } = {},
 ): SessionEvidence {
   const authority = options.authority ?? new EvidenceAuthority();
-  const registry = registryForSession(sessionId, documents, table.plans ?? [], { coverageSource: options.coverageSource });
+  const coverageSource = options.coverageSource ?? readabilityCoverageSource(documents);
+  const registry = registryForSession(sessionId, documents, table.plans ?? [], { coverageSource });
   const store = new ProvisionStore(sessionId, registry, authority);
+  const provisionSubjects: Record<string, string> = {};
+  const scopeTerms = new Map<string, Set<string>>();
   const provisionIdsByRow = table.rows.map((row) => {
     const ids: string[] = [];
     for (const value of row.values) {
+      if (value.planId && value.qualifiers?.planTier) {
+        const terms = scopeTerms.get(value.documentId) ?? new Set<string>();
+        terms.add(value.qualifiers.planTier);
+        scopeTerms.set(value.documentId, terms);
+      }
       const content = provisionContentFor(sessionId, registry, row.factName, value);
       if (!content) continue;
       const res = store.accept(sealProvision(authority, content));
-      if (res.ok && !ids.includes(res.provision.provisionId)) ids.push(res.provision.provisionId);
+      if (!res.ok) continue;
+      if (!ids.includes(res.provision.provisionId)) ids.push(res.provision.provisionId);
+      const label = value.anchor?.kind === "table-cell" ? value.anchor.label : undefined;
+      if (typeof label === "string" && label.trim()) provisionSubjects[res.provision.provisionId] = label.trim();
     }
     return ids;
   });
-  return { authority, registry, store, provisionIdsByRow };
+  // C1 proposer: exclusion sections by document structure, sealed and
+  // admitted through the same store gate.
+  const exclusionProposals = sealExclusionProposals(store, authority, {
+    otherPlanNames: (table.plans ?? []).map((p) => p.name),
+    scopeTermsFor: (documentId) => [...(scopeTerms.get(documentId) ?? [])],
+  });
+  return { authority, registry, store, provisionIdsByRow, rows: table.rows, provisionSubjects, exclusionProposals };
 }
