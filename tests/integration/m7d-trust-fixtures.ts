@@ -13,7 +13,7 @@ const BYTES = new TextEncoder().encode("%PDF-synthetic-m7d");
 export const M7D_PAGES = [
   "Plan name: Sample Care Bronze\nPlan year: January 1, 2026 through December 31, 2026",
   "Covered services\nAcupuncture visits: $25 copay.\nChiropractic visits: $30 copay.\nHearing aids: $40 copay.",
-  "Exclusions\nAcupuncture is not covered.\nCosmetic surgery is not covered.\nServices that are not medically necessary are not covered.",
+  "Exclusions\nAcupuncture is not covered.\nCosmetic surgery is not covered.\nMedical Necessity\nServices that are not medically necessary are not covered.",
 ] as const;
 
 export type CoverageMode = "complete" | "partial" | "none";

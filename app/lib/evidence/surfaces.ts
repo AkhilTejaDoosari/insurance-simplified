@@ -67,13 +67,20 @@ export function exclusionInventoryViews(evidence: SessionEvidence): (ExclusionIn
     const inv = built.inventory;
     if (inv.exclusions.length === 0) continue;
     if (inv.integrity !== "intact") { out.push(cannotBeConfirmed("exclusion-inventory")); continue; }
+    const unread = new Set(inv.coverage.unreadPages);
+    const itemPages = inv.completeness.state === "partial" ? inv.completeness.pages.filter((p) => !unread.has(p)) : [];
     out.push({
       kind: "exclusion-inventory",
       documentId: doc.documentId,
       planId: doc.plan.planId,
       planName: doc.plan.name.value,
-      coverage: inv.coverage.state,
-      pagesNotRead: inv.coverage.state === "unknown" ? [] : [...inv.coverage.unreadPages],
+      // "complete" only when the inventory provably holds every exclusion
+      // the document states AND every page was read (completeness).
+      coverage: inv.completeness.state,
+      pagesNotRead: inv.completeness.state === "partial"
+        ? [...inv.completeness.pages]
+        : inv.coverage.state === "unknown" ? [] : [...inv.coverage.unreadPages],
+      ...(itemPages.length ? { itemsNotSealedPages: itemPages } : {}),
       exclusions: inv.exclusions.map((p) => ({
         provisionId: p.provisionId,
         claim: p.claim,
@@ -198,6 +205,8 @@ function selfConsistent(view: unknown, of: ViewKind): boolean {
     if (!["complete", "partial", "unknown"].includes(inv.coverage) || !Array.isArray(inv.pagesNotRead) || !Array.isArray(inv.exclusions)) return false;
     if (inv.coverage === "complete" && inv.pagesNotRead.length > 0) return false;
     if (inv.coverage === "partial" && inv.pagesNotRead.length === 0) return false;
+    if (inv.itemsNotSealedPages !== undefined &&
+      (inv.coverage !== "partial" || !inv.itemsNotSealedPages.every((p) => inv.pagesNotRead.includes(p)))) return false;
     return inv.exclusions.every((e) => typeof e?.claim === "string" && Array.isArray(e.evidence) && e.evidence.length > 0);
   }
   const a = view as AuthorityView;

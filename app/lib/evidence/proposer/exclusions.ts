@@ -33,6 +33,9 @@ export interface ExclusionProposalReport {
   refused: number;
   /** Items dropped before proposal, by reason (ambiguity is never proposed). */
   dropped: Partial<Record<DropReason | "other-plan" | "scoped" | "duplicate", number>>;
+  /** 1-based pages holding an exclusion candidate that was not proposed
+   *  (every drop except an exact duplicate), sorted. */
+  droppedPages: number[];
 }
 
 /** Same "Policy/Plan name:" declaration shape plan-identity attests from. */
@@ -74,11 +77,15 @@ export function proposeExclusions(
     accepted: 0,
     refused: 0,
     dropped: {},
+    droppedPages: [],
   };
-  const drop = (reason: keyof ExclusionProposalReport["dropped"], n = 1) => {
-    report.dropped[reason] = (report.dropped[reason] ?? 0) + n;
+  const pages = new Set<number>();
+  const drop = (reason: keyof ExclusionProposalReport["dropped"], page?: number) => {
+    report.dropped[reason] = (report.dropped[reason] ?? 0) + 1;
+    if (page !== undefined && reason !== "duplicate") pages.add(page);
+    report.droppedPages = [...pages].sort((a, b) => a - b);
   };
-  for (const d of scan.dropped) drop(d.reason);
+  for (const d of scan.dropped) drop(d.reason, d.page);
   if (scan.documentFramed) return { proposals: [], report: { ...report, unbound: "framed-document" } };
   if (scan.sections.length === 0) return { proposals: [], report };
   const plan = doc.plan;
@@ -103,10 +110,10 @@ export function proposeExclusions(
     const page = doc.pages[item.page - 1];
     const text = page.slice(item.start, item.end);
     const claim = collapse(text);
-    if (!/[A-Za-z]{2}/.test(claim)) { drop("no-text"); continue; }
-    if (otherPlanSections.has(item.section)) { drop("other-plan"); continue; }
-    if (FRAMING.test(claim)) { drop("framing"); continue; }
-    if (scopeTerms.some((t) => literallyStates(claim, t))) { drop("scoped"); continue; }
+    if (!/[A-Za-z]{2}/.test(claim)) { drop("no-text", item.page); continue; }
+    if (otherPlanSections.has(item.section)) { drop("other-plan", item.page); continue; }
+    if (FRAMING.test(claim)) { drop("framing", item.page); continue; }
+    if (scopeTerms.some((t) => literallyStates(claim, t))) { drop("scoped", item.page); continue; }
     // Quote: the item text, or with its marker when the bare text is not a
     // unique span of the page. The store re-verifies either way.
     const withMarker = page.slice(item.markerStart, item.end);

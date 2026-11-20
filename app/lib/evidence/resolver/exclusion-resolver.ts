@@ -277,6 +277,10 @@ export function resolveServiceQuestion(ctx: ResolverContext, question: ServiceQu
     [outcome, reason, cited] = ["undetermined", `exclusion coverage ${inventory.coverage.state}`, []];
   } else if (benefits.length === 0) {
     [outcome, reason, cited] = ["not_found_in_read_pages", "benefit naming the service not found in read pages", []];
+  } else if (inventory.completeness.state !== "complete") {
+    // EC-2/EC-13: an exclusion may be missing from the inventory; never
+    // conclude coverage past it.
+    [outcome, reason, cited] = ["undetermined", `exclusion inventory ${inventory.completeness.state}`, []]; // G:resolver-completeness
   } else if (conditional.length > 0 || benefits.every((b) => benefitIsConditional(map, b))) {
     [outcome, reason, cited] = ["conditional", "applies under stated conditions", [...benefitProvisionIds, ...conditional]];
   } else {
