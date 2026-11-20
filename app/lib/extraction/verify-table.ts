@@ -82,7 +82,11 @@ export function verifyComparisonTable(table: ComparisonTable, documents: Verifia
       const candidate = { ...value, evidence };
       if (value.anchor && !verifyClaimAnchor(row.factName, candidate, documents)) continue;
       const grounding = timeSync("extract.checkDisplayGrounding", () =>
-        checkDisplayGrounding(value.display, row.factName, evidence.map((e) => e.quote))
+        checkDisplayGrounding(value.display, row.factName, evidence.map((e) => e.quote), {
+          qualifiers: value.qualifiers as unknown as Record<string, unknown>,
+          // The anchor re-derived above: the display is verbatim by construction.
+          structural: !!value.anchor,
+        })
       );
       verifiedValues.push({
         value: candidate,
