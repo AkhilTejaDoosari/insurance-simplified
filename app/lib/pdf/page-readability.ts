@@ -27,6 +27,9 @@ export interface PageReadability {
   textChars: number;
   /** True when the page paints at least one image; absent when unknown. */
   hasImages?: boolean;
+  /** "failed" when the image check was attempted for this page but could not
+   *  be completed: the page is then never reported as fully read. */
+  imageCheck?: "failed";
 }
 
 export interface DocumentReadability {
@@ -47,13 +50,21 @@ export function textCharCount(text: string): number {
 }
 
 /** Classify one page from its extracted text and (when known) whether it
- *  paints images. Pure. */
-export function classifyPage(page: number, text: string, hasImages?: boolean): PageReadability {
+ *  paints images. Pure. When `imageCheck` is "failed" (the check was needed
+ *  and could not be completed), a sparse page is reported as partly
+ *  unreadable and a text-less one as unreadable — never as fully read. */
+export function classifyPage(page: number, text: string, hasImages?: boolean, imageCheck?: "failed"): PageReadability {
   const textChars = textCharCount(text);
+  const failed = imageCheck === "failed" && hasImages === undefined;
+  const sparse = textChars < PARTLY_READ_MAX_CHARS;
   const status: PageReadabilityStatus = textChars === 0
-    ? (hasImages ? "unreadable" : "empty")
-    : hasImages && textChars < PARTLY_READ_MAX_CHARS ? "partly-unreadable" : "read";
-  return { page, status, textChars, ...(hasImages === undefined ? {} : { hasImages }) };
+    ? (hasImages || failed ? "unreadable" : "empty")
+    : (hasImages || failed) && sparse ? "partly-unreadable" : "read";
+  return {
+    page, status, textChars,
+    ...(hasImages === undefined ? {} : { hasImages }),
+    ...(failed && sparse ? { imageCheck: "failed" as const } : {}),
+  };
 }
 
 /** Readability for every page of a document. `imagePages` lists the 1-based
