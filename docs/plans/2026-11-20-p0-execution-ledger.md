@@ -422,11 +422,13 @@ brochure gap) / 42 skipped; `tsc` clean; `build` green; `test:e2e` 57 passed /
    benefit/coverage" aliases); one benefit-specific geographic line; one doc 01
    annual-deductible sentence fragment. Recall gap: no geographic restriction
    captured for docs 03/04.
-4. Pre-existing: the PDF export's ASCII font prints "•" (and other
-   non-Latin-1 marks) as "?" in verbatim wording.
-5. Pre-existing: "Your purchased option is unknown" appears on a table cell
-   whose label notes carry two dollar amounts (e.g. a copayment and a $0
-   deductible condition) although the cell is not an option list.
+4. Fixed (owner-requested, `tests/unit/p0-preexisting-display-bugs.test.tsx`,
+   both red before): the PDF export keeps every character its font can draw
+   ("•", "®", "™", accented letters), uses a compatibility form otherwise,
+   "?" only as a last resort; the "purchased option unknown" note counts
+   dollar amounts in a table cell's own cell, not in its label/governing
+   notes (`valueText` in `presentation/claim.ts`). The overview path was
+   checked and never raised this note for table cells (unchanged).
 6. Labelled-scorecard fixtures are not on this machine; `eval:extraction`
    is SKIPPED in effect.
 

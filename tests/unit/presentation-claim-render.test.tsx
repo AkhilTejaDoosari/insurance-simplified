@@ -87,10 +87,7 @@ describe("claim-first presentation (P0-05)", () => {
     }
     const wordingAt = pdf.indexOf("Source wording:", claimAt);
     expect(wordingAt).toBeGreaterThan(claimAt);
-    // The export's ASCII font prints "•" as "?" (pre-existing, ledger item);
-    // the wording is otherwise verbatim.
-    expect(pdf.slice(wordingAt)).toContain(`(${HEADING}): 90%`);
-    expect(pdf.slice(wordingAt)).toContain("Walk-in Clinic");
+    expect(pdf.slice(wordingAt)).toContain(`${LABEL} (${HEADING}): 90%`);
   });
 
   it("PDF export: a value without a verified claim keeps its verbatim display and lists no split conditions", async () => {

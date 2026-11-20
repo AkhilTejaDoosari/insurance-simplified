@@ -6,7 +6,7 @@ import { moneyAmounts, conditionBindingKnown } from "@/app/lib/extraction/condit
 import { summarizeNetworkDisplay } from "@/app/lib/extraction/network-display";
 import { documentUrl } from "@/app/lib/document-url";
 import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
-import { describeFact } from "@/app/lib/presentation/claim";
+import { describeFact, valueText } from "@/app/lib/presentation/claim";
 
 /** V1.1 M2 task 6: one material value, rendered with the conditions needed to
  *  understand it beside the amount, its original-page citation intact, and an
@@ -67,6 +67,9 @@ function networkPercentages(value: RegisteredCellValue): string[] {
  *  network cell renders only its scope: everything else on that source line
  *  belongs to the evidence, not to the network identity. */
 function conditionNotes(
+  /** The value's own text (a table cell's cell): several dollar amounts here
+   *  are options; amounts in label or governing notes are conditions. */
+  optionText: string,
   rawDisplay: string,
   displayText: string,
   q: Qualifiers,
@@ -114,7 +117,7 @@ function conditionNotes(
     notes.push({
       text: "Available options — your purchased option is not stated.",
     });
-  } else if (moneyAmounts(`${rawDisplay} ${displayText}`) >= 2) {
+  } else if (moneyAmounts(optionText) >= 2) {
     // Several dollar figures and no attested choice: the document lists
     // amounts without proving which one the member bought (spec I).
     notes.push({
@@ -173,7 +176,7 @@ export default function ConditionalValue({
 
   const known = conditionBindingKnown({ ...value, qualifiers: q });
   const networkNotes = known ? networkPercentages(value) : [];
-  const notes = conditionNotes(value.display, displayText,
+  const notes = conditionNotes(valueText(value), value.display, displayText,
     known && networkNotes.length === 0 ? q : { ...q, networkTier: undefined, ageBand: known ? q.ageBand : undefined }, userContext?.age, concise, showTierQualifier);
 
   return (

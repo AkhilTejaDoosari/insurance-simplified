@@ -91,13 +91,30 @@ const KEY_COST_FACTS = [
   "coinsurance",
 ] as const;
 
+/** Characters the standard PDF fonts (WinAnsi encoding) can draw beyond
+ *  printable ASCII and Latin-1. */
+const WIN_ANSI_EXTRA = new Set("€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ");
+const encodable = (char: string) => /^[\x20-\x7e\xa0-\xff]$/.test(char) || WIN_ANSI_EXTRA.has(char);
+
+/** Verbatim text in the export: every character the font can draw is kept
+ *  ("•", "®", "™", "é"); another character becomes its compatibility form
+ *  when that is drawable ("ﬁ" → "fi", "℠" → "SM"), else "?". */
 function printable(text: string): string {
-  return text
+  const normalized = text
     .replace(/[\u2010-\u2015]/g, "-")
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201c\u201d]/g, '"')
-    .normalize("NFKD")
-    .replace(/[^\x20-\x7e]/g, "?");
+    .replace(/\s/g, (space) => (space === "\n" ? space : " "))
+    .normalize("NFC");
+  let out = "";
+  for (const char of normalized) {
+    if (char === "\n" || encodable(char)) out += char;
+    else {
+      const compatible = char.normalize("NFKC");
+      out += [...compatible].every(encodable) ? compatible : "?";
+    }
+  }
+  return out;
 }
 
 function wrap(

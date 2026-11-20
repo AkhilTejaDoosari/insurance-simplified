@@ -37,9 +37,16 @@ interface Parts {
   conditions: string[];
 }
 
+interface TableShape {
+  heading: string;
+  cell: string;
+  lines: string[];
+}
+
 /** Table-cell display, built by table-facts.ts as
- *  `${label} (${heading}): ${cell}` + "\n" + each governing note. */
-function tableParts(display: string, label: string): Parts | null {
+ *  `${label} (${heading}): ${cell}` + "\n" + each governing note. Null when
+ *  the pieces do not rebuild the display exactly. */
+function tableShape(display: string, label: string): TableShape | null {
   const [first, ...lines] = display.split("\n");
   const prefix = `${label} (`;
   if (!first.startsWith(prefix)) return null;
@@ -48,8 +55,22 @@ function tableParts(display: string, label: string): Parts | null {
   const heading = first.slice(prefix.length, close);
   const cell = first.slice(close + 3);
   if (!heading.trim() || !cell.trim()) return null;
-  // The pieces must rebuild the display exactly, or nothing is split.
   if ([`${label} (${heading}): ${cell}`, ...lines].join("\n") !== display) return null;
+  return { heading, cell, lines };
+}
+
+/** The text that states the value itself: a table cell's own cell (not its
+ *  label notes or governing notes), else the whole display. Used to tell a
+ *  list of amounts to choose from apart from amounts in conditions. */
+export function valueText(value: CellValue): string {
+  if (value.anchor?.kind !== "table-cell") return value.display;
+  return tableShape(value.display, value.anchor.label)?.cell ?? value.display;
+}
+
+function tableParts(display: string, label: string): Parts | null {
+  const shape = tableShape(display, label);
+  if (!shape) return null;
+  const { heading, cell, lines } = shape;
   const notes = lines.map((line) => line.trim()).filter(Boolean);
   const [head, ...subNotes] = label.split(LABEL_NOTE_SEPARATOR).map((part) => part.trim());
   const labelNotes = subNotes.filter(Boolean);
