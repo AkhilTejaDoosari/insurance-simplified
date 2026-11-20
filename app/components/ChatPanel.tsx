@@ -269,8 +269,9 @@ export default function ChatPanel({
     }
   }
 
-  const isHistorical = (t: Turn) =>
-    t.scopeLabel !== undefined && t.selectionKey !== undefined && t.selectionKey !== effectiveKey;
+  // A turn asked under another selection, or before any selection while one
+  // is now active, is historical (P0-04).
+  const isHistorical = (t: Turn) => t.selectionKey !== effectiveKey;
   const citationLink = (c: { documentId: string; page: number; evidenceId: string }) => (
     <a href={documentUrl(sessionId, c.documentId, filename(c.documentId), c.page, c.evidenceId)} target="_blank" rel="noopener">
       page {c.page}
@@ -280,7 +281,7 @@ export default function ChatPanel({
     <div key={i}>
       <p className="chat__q">{t.question}</p>
       {isHistorical(t) && (
-        <p className="text-muted chat__scope-note">Answered earlier for: {t.scopeLabel}</p>
+        <p className="text-muted chat__scope-note">Answered earlier for: {t.scopeLabel ?? "All documents"}</p>
       )}
       {t.response.kind === "answer" ? (
         <div className="chat__a">
@@ -295,7 +296,7 @@ export default function ChatPanel({
           <ul className="list">
             {t.response.citations.map((c, j) => (
               <li key={j}>
-                {c.documentId}, {citationLink(c)}: “{c.quote}”
+                {filename(c.documentId)}, {citationLink(c)}: “{c.quote}”
               </li>
             ))}
           </ul>

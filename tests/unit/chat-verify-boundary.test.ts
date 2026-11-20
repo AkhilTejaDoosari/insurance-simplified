@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { createSession, deleteSession, getEvidenceRecord, SESSION_CAPABILITY_COOKIE } from "@/app/lib/session";
-import { REFUSAL_TEXT } from "@/app/lib/rag/answer";
+import { REFUSAL_TEXT, UNCERTAIN_TEXT } from "@/app/lib/rag/answer";
 
 const created: string[] = [];
 afterEach(() => {
@@ -94,6 +94,37 @@ describe("POST /api/chat evidence verification boundary", () => {
       documentId: "doc-1",
       page: 1,
       quote: canonical,
+    });
+  });
+
+  // P0-02 review: "cannot be confirmed" passages are sources, verified one by one.
+  const uncertain = (citations: unknown[]) => ({ schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT, citations });
+
+  it("drops an unverifiable passage and registers the verified one", async () => {
+    const { session, capability } = seedSession();
+    mockedAnswer.mockReturnValue(
+      uncertain([
+        { documentId: "doc-1", page: 1, quote: "Fabricated passage here." },
+        { documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network." },
+      ]) as never
+    );
+    const body = await (await post(session.sessionId, capability)).json();
+    expect(body.kind).toBe("refusal");
+    expect(body.refusalText).toBe(UNCERTAIN_TEXT);
+    expect(body.citations).toHaveLength(1);
+    expect(body.citations[0].quote).toBe("Annual deductible: $250 in-network.");
+    expect(getEvidenceRecord(session.sessionId, body.citations[0].evidenceId)?.page).toBe(1);
+  });
+
+  it("returns the plain refusal when no passage verifies", async () => {
+    const { session, capability } = seedSession();
+    mockedAnswer.mockReturnValue(
+      uncertain([{ documentId: "doc-1", page: 1, quote: "Fabricated passage here." }, { documentId: "other", page: 1, quote: "Annual deductible: $250 in-network." }]) as never
+    );
+    expect(await (await post(session.sessionId, capability)).json()).toEqual({
+      schemaVersion: "v1",
+      kind: "refusal",
+      refusalText: REFUSAL_TEXT,
     });
   });
 });

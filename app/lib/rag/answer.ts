@@ -89,25 +89,49 @@ export const UNCERTAIN_TEXT =
 
 /** Question words that carry no topic ("What should I verify about …"). */
 const QUESTION_FILLER = new Set(
-  "should,verify,about,know,tell,need,please,there,any,will,would,can,could,get,have,has,explain,mean,means,apply,applies,check,does,much,really".split(","),
+  "should,verify,about,know,tell,need,please,there,any,will,would,can,could,get,have,has,explain,mean,means,apply,applie,applies,check,does,much,really".split(","),
 );
-/** A contents/index line: a title followed by dot leaders and a page number. */
-const LEADER_LINE = /\.{5,}\s*\d*\s*$/;
+/** A line that qualifies the line before it; narrowing never cuts it off. */
+const CONTINUES_QUALIFICATION = /^\s*(?:except|unless|excluding|other than|however|but|provided|only if|not\b|no\b)/i;
+const MAX_QUALIFICATION_LINES = 3;
+/** A contents/index line: a title with no figure, dot leaders, and at most a
+ *  bare page number ("ELIGIBILITY ........ 3"). A fee schedule line
+ *  ("Annual Deductible ........ $500") is evidence, never navigation. */
+const LEADER_LINE = /^(.*?)\.{5,}\s*(?:\d{1,3})?\s*$/;
 const CONTENTS_HEADING = /^\s*(?:table of )?contents\s*$/i;
+const MIN_CONTENTS_LINES = 3;
+
+function isLeaderLine(line: string): boolean {
+  const m = LEADER_LINE.exec(line);
+  return !!m && !/[\d$%]/.test(m[1]);
+}
+
+/** A passage reads as navigation when it has a contents heading or at least
+ *  three leader lines; only then are its leader lines navigation. */
+function isContentsPassage(lines: readonly string[]): boolean {
+  return lines.some((line) => CONTENTS_HEADING.test(line)) ||
+    lines.filter(isLeaderLine).length >= MIN_CONTENTS_LINES;
+}
 const MAX_UNCERTAIN_PASSAGES = 3;
 
 function conceptStems(question: string): string[] {
-  return [...tokens(question)].filter((w) => !QUESTION_FILLER.has(w)).map((w) => w.slice(0, 6));
+  return [...tokens(question)].filter((w) => !QUESTION_FILLER.has(w)).map((w) => w.slice(0, 5));
 }
 
-function lineHasConcept(line: string, stems: readonly string[]): boolean {
-  if (LEADER_LINE.test(line) || CONTENTS_HEADING.test(line)) return false;
+/** A word states a concept when it shares the 5-letter stem ("excluded" /
+ *  "Exclusions"), or is a shorter form of it ("wait" / "waiting"). */
+function wordMatches(word: string, stem: string): boolean {
+  return word.startsWith(stem) || (word.length >= 4 && stem.startsWith(word));
+}
+
+function lineHasConcept(line: string, stems: readonly string[], contents = false): boolean {
+  if (CONTENTS_HEADING.test(line) || (contents && isLeaderLine(line))) return false;
   const words = line.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/);
-  return stems.some((stem) => words.some((word) => word.startsWith(stem)));
+  return stems.some((stem) => words.some((word) => wordMatches(word, stem)));
 }
 
-function stemsIn(line: string, stems: readonly string[]): string[] {
-  return stems.filter((stem) => lineHasConcept(line, [stem]));
+function stemsIn(line: string, stems: readonly string[], contents: boolean): string[] {
+  return stems.filter((stem) => lineHasConcept(line, [stem], contents));
 }
 
 /** Short passages (a lexical ±3-line window) are shown whole. */
@@ -125,7 +149,9 @@ function focus(quote: string, lines: readonly string[], hits: readonly string[][
     const score = found.reduce((sum, stem) => sum + 1 / (frequency.get(stem) ?? 1), 0);
     if (score > bestScore) { best = index; bestScore = score; }
   });
-  const window = lines.slice(Math.max(0, best - 1), best + 3).join("\n").trim();
+  let end = best + 3;
+  while (end < lines.length && end < best + 3 + MAX_QUALIFICATION_LINES && CONTINUES_QUALIFICATION.test(lines[end])) end++;
+  const window = lines.slice(Math.max(0, best - 1), end).join("\n").trim();
   return window && quote.includes(window) ? window : lines[best].trim();
 }
 
@@ -143,7 +169,8 @@ export function relevantPassages(
   const out: ChatCitation[] = [];
   for (const { documentId, page, quote } of passages) {
     const lines = quote.split("\n");
-    const hits = lines.map((line) => stemsIn(line, stems));
+    const contents = isContentsPassage(lines);
+    const hits = lines.map((line) => stemsIn(line, stems, contents));
     if (!hits.some((found) => found.length > 0)) continue;
     const shown = quote.length <= MAX_WHOLE_PASSAGE ? quote : focus(quote, lines, hits);
     // The same text twice (or a window inside another) is one passage.
@@ -742,10 +769,7 @@ export async function answerViaLlm(
     );
   }
   // Contents/index passages are navigation, not evidence (P0-02).
-  const evidencePassages = passages.filter(
-    (p) => !p.quote.split("\n").some((line) => CONTENTS_HEADING.test(line)) &&
-      p.quote.split("\n").filter((line) => LEADER_LINE.test(line)).length < 2,
-  );
+  const evidencePassages = passages.filter((p) => !isContentsPassage(p.quote.split("\n")));
   if (evidencePassages.length === 0) return uncertainOutcome(passages, question);
   passages = evidencePassages;
   // Build prompt from top-K retrieved chunks with budget enforcement

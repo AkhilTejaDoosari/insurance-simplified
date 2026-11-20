@@ -57,4 +57,11 @@ describe("cover-title plan identity", () => {
     const pages = ["Northwind Voyager\nCertificate of Insurance\nIMPORTANT NOTICE", "the Northwind Voyager insurance plan"];
     expect(names(pages)).toEqual(["Northwind Voyager"]);
   });
+
+  it.each([
+    "Unlike the Northwind Scholar plan offered by another insurer, this policy pays more.",
+    "Compare it with the Northwind Scholar plan before you buy.",
+  ])("abstains when the plan sentence compares with another offer: %s", (sentence) => {
+    expect(names([COVER, sentence])).toEqual([]);
+  });
 });

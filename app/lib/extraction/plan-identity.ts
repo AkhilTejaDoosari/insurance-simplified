@@ -292,6 +292,8 @@ function productTitle(line: string, maxWords: number): string | undefined {
 }
 
 const MAX_COVER_TITLE_WORDS = 6;
+/** A sentence comparing with another offer never corroborates a title. */
+const COMPARISON_CONTEXT = /\b(?:unlike|compar\w*|versus|vs\.|other|another|instead|rather than|competitor\w*)\b/i;
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Brochure-cover identity (P0-01, owner decision 2): the first line of
@@ -306,7 +308,8 @@ function coverTitle(line: string, pages: readonly string[]): string | undefined 
   if (!title) return undefined;
   const declared = new RegExp(`\\bthe ${escapeRegExp(title)}(?: insurance)? (?:plan|program|policy)\\b`, "i");
   const corroborated = pages.some((text) =>
-    pageLines(text).some((sentence) => declared.test(sentence) && !ILLUSTRATIVE_CONTEXT.test(sentence)),
+    pageLines(text).some((sentence) =>
+      declared.test(sentence) && !ILLUSTRATIVE_CONTEXT.test(sentence) && !COMPARISON_CONTEXT.test(sentence)),
   );
   return corroborated ? title : undefined;
 }

@@ -30,7 +30,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | 1 Inventory and selection | 1–2 | Checkpoint `04fd36d`; owner accepted as engineering checkpoint; e2e assertion change approved |
 | 2 Semantic correctness | 3–6 | Checkpoint `e3375b2`; owner accepted as engineering checkpoint |
 | 3 Presentation contract | 7 | Checkpoints `5c6efdd`, `1af706d`; owner accepted as engineering checkpoint |
-| 4 Chatbot correction | 8–10 | Authorized 2026-11-20; local Ollama model for development ($0); see "Phase 4" |
+| 4 Chatbot correction | 8–10 | Implemented, Tested; independent review done, findings fixed; owner review pending |
 | 5 Real-document acceptance | 11 | Not started — the five files are confirmed (doc 02 replaced, doc 03 confirmed) |
 
 ## Audit validation (at `de4efe4`)
@@ -496,6 +496,45 @@ Checks: `npm test` 1681 passed / 22 skipped / 0 failed; with real fixtures
 1803 passed / 1 failed (pre-existing missing-brochure gap) / 42 skipped;
 `tsc` clean; `build` green; `test:e2e` 57 passed / 1 skipped.
 
+## Phase 4 independent review (read-only reviewer, range `10ebe07..c57db34`)
+
+Verdict before fixes: request changes. Fixed test-first (new cases red
+before the fix unless noted):
+
+- R1 (required): the contents filter treated dot-leader fee schedules
+  ("Annual Deductible ........ 500") as navigation, which could hide a
+  material figure behind a false "no supporting evidence". Now a leader line
+  is navigation only when its title has no figure, it ends in at most a bare
+  page number, and its passage has a contents heading or at least three such
+  lines (the bare-number case was red; the `$` case already passed).
+- Word forms: 5-letter stems plus shorter forms ("excluded"/"Exclusions",
+  "waiting"/"wait"); "applies" is filler; narrowing keeps up to three
+  following "except/unless/…" lines.
+- Cover title: a "the <title> plan" sentence with comparison wording
+  ("unlike", "compare", "other", "another", …) never corroborates.
+- Chat panel: a turn asked before any selection is grouped and labelled "All
+  documents" once a selection exists; answer citations show the filename.
+- Tests: `persistence-cutover` now requires passages before checking them;
+  route tests for a dropped unverifiable passage and the all-dropped plain
+  refusal (`chat-verify-boundary.test.ts`; these passed on first run — the
+  route was already correct).
+- **Owner question (not changed):** A-026 says a provider outage is a
+  retryable technical error. When the generation model fails, the route has
+  always degraded to the retrieval engine; that now reads "cannot be
+  confirmed" with passages (before: raw passages as an answer). Options:
+  keep, or return the retryable `CHAT_FAILED` error when the model fails.
+- Not changed (recorded): the trust-boundary test no longer exercises a
+  verified model answer with altered related results at integration level
+  (the fallback engine cannot answer); the same attachment code serves both
+  outcomes and is covered through the "cannot be confirmed" path.
+
+Real-PDF effect after the fixes: identities 5/5; doc 02 chat outcomes
+unchanged from the table above.
+
+Checks (after review fixes): `npm test` 1692 passed / 22 skipped / 0 failed;
+with real fixtures 1814 passed / 1 failed (pre-existing missing-brochure gap)
+/ 42 skipped; `tsc` clean; `build` green; `test:e2e` 57 passed / 1 skipped.
+
 ## Open items (after Phase 3)
 
 1. Doc 02 recall gaps: footnote-marked deductible labels and "annual
@@ -521,6 +560,7 @@ Checks: `npm test` 1681 passed / 22 skipped / 0 failed; with real fixtures
 
 ## Next atomic step
 
-Phase 4 independent review (read-only), fixes test-first, screenshots of the
-chat panel, then the owner report. Phase 5 (real-document acceptance) only
-after owner authorization.
+Owner review of Phase 4 (this ledger, chat screenshots, the A-026 question,
+the doc 02 recall gaps). Phase 5 (Task 11, real-document acceptance) only
+after owner authorization; it needs `qwen3:8b` running locally for the
+generated-answer path.

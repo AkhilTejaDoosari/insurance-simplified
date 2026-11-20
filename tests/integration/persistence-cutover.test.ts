@@ -90,6 +90,7 @@ describe.skipIf(!configured)("persistence cutover (live application services)", 
       // P0-02: retrieval alone returns "cannot be confirmed" with the cited
       // passages; the citation checks below are unchanged.
       expect(answer.kind).toBe("refusal");
+      expect(answer.kind === "refusal" && answer.citations?.length).toBeGreaterThan(0);
       if (answer.kind === "refusal" && answer.citations) {
         expect(answer.citations.length).toBeGreaterThan(0);
         expect(answer.citations[0].documentId).toBe("doc-1");

@@ -132,4 +132,45 @@ describe("chat-api v1 additive refusal passages", () => {
     expect(validateChatResponse({ schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT, citations: [{ documentId: "d", page: 2, quote: "q" }] }).kind).toBe("refusal");
     expect(() => validateChatResponse({ schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT, citations: [{ documentId: "d", page: 0, quote: "q" }] })).toThrow();
   });
+
+// Phase 4 review regressions.
+describe("review fixes (Phase 4)", () => {
+  const passage = (page: number, quote: string) => ({ documentId: "doc-1", page, quote });
+
+  it("R1: a dot-leader fee schedule is evidence, not a contents page", () => {
+    const schedule = "SCHEDULE OF BENEFITS\nAnnual Deductible .............. $500\nOut-of-pocket maximum .......... $3,000";
+    expect(relevantPassages([passage(3, schedule)], "What is the deductible?").map((p) => p.page)).toEqual([3]);
+    const bare = "SCHEDULE OF BENEFITS\nAnnual Deductible .............. 500\nOffice visit copay ............. 25";
+    expect(relevantPassages([passage(3, bare)], "What is the deductible?").map((p) => p.page)).toEqual([3]);
+    const docs = [{ documentId: "doc-1", filename: "plan.pdf", pageCount: 1, pages: [schedule] }];
+    const r = answerQuestion(docs, "What is the deductible?");
+    expect(r).toMatchObject({ kind: "refusal", refusalText: UNCERTAIN_TEXT });
+  });
+
+  it.each([
+    ["What is excluded?", "Exclusions: cosmetic surgery."],
+    ["Is there a waiting period?", "You must wait 30 days before benefits begin."],
+  ])("R3: word forms match (%s)", (question, quote) => {
+    expect(relevantPassages([passage(4, quote)], question)).toHaveLength(1);
+  });
+
+  it("R4: 'applies' is not a topic word", () => {
+    expect(relevantPassages([passage(4, "The rule applies to everyone.")], "What applies?")).toEqual([]);
+  });
+
+  it("R5: narrowing keeps an exception line that follows the concept line", () => {
+    const long = [
+      ...Array.from({ length: 30 }, (_, i) => `General provision line ${i} about the plan.`),
+      "Physiotherapy is payable up to 20 visits.",
+      "Visits must be prescribed by a physician.",
+      "Visits are paid per session",
+      "unless the visits are for a work injury.",
+      "More text.",
+    ].join("\n");
+    const [out] = relevantPassages([passage(5, long)], "Is physiotherapy covered?");
+    expect(out.quote).toContain("Physiotherapy is payable up to 20 visits.");
+    expect(out.quote).toContain("unless the visits are for a work injury.");
+    expect(long).toContain(out.quote);
+  });
+});
 });

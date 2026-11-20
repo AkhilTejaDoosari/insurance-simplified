@@ -69,4 +69,22 @@ describe("chat panel (P0-02, P0-04)", () => {
     expect(html.indexOf("Under B?")).toBeGreaterThan(html.indexOf("Under A?"));
     expect(html).not.toContain("/doc-a?page=3");
   });
+
+  it("a turn asked before any selection is grouped and labelled once a selection exists", () => {
+    const html = render([
+      { question: "Before selecting?", response: answerB },
+      { question: "Under B?", response: answerB, selectionKey: "key-b", scopeLabel: "Plan B" },
+    ]);
+    const start = html.indexOf('<details class="chat__history">');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const history = html.slice(start, html.indexOf("Under B?"));
+    expect(history).toContain("Before selecting?");
+    expect(history).toContain("Answered earlier for: All documents");
+  });
+
+  it("answer citations name the document by filename, not by id", () => {
+    const html = render([{ question: "Under B?", response: answerB, selectionKey: "key-b", scopeLabel: "Plan B" }]);
+    expect(html).toContain("plan-b.pdf, <a");
+    expect(html).not.toContain("doc-b, <a");
+  });
 });
