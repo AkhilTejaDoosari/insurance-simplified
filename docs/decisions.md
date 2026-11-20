@@ -426,3 +426,22 @@ plans; history lives in `docs/archive/` and is not authoritative. Health V1
 is finished before auto, pet or home.
 **Revisit when:** a document grows past what one reader can hold, or a second
 insurance domain is approved.
+
+# D-032 — Per-session storage keys for PDF bytes
+
+**Status: Accepted (owner, 2026-11-20)**
+
+**Decision:** original PDF bytes are stored under a session-scoped key
+`sessions/<sessionId>/documents/<documentId>/<aa>/<sha256>.pdf`
+(`app/lib/storage/objects.ts` `sessionObjectKeyFor`), never a shared
+content-addressed key. Legacy `docs/<aa>/<sha256>.pdf` keys are read-only.
+
+**Why:** object-level authorization (operations.md SEC-2, SEC-5): deleting one
+session must never remove another session's copy of the same PDF, and a key
+must carry its session scope so access checks cannot be bypassed.
+
+**Evidence:** `tests/integration/persistence-cutover.test.ts` asserts the key
+contains the session id, that two sessions uploading byte-identical content get
+different keys, and that deleting one session leaves the other's bytes intact
+(stricter than the previous shared-key assertion). It runs only with durable
+persistence and embeddings configured.

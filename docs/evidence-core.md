@@ -149,7 +149,7 @@ in the app until an application test fails.
 | Partly scanned PDFs may lose pages silently | Now reported, not silent: per-page readability (incl. Node 20 image probe) marks unreadable/partly read pages and absence names them. OCR of those pages remains | M10 |
 | Fixed 48-fact vocabulary drives rows and absence | `extraction/fact-list.ts` | M8 |
 | Row verdicts shared across documents | An unstructured line in one PDF can mark another PDF's claims needs-verification (conservative) | M8 |
-| Stale object-key contract | `docs/architecture.md` (PDF bytes row) and `tests/integration/persistence-cutover.test.ts:63,121` still describe the legacy shared key `docs/<aa>/<sha>.pdf`; code uses the session-scoped key (`sessions/<sid>/documents/<doc>/…`, SEC-2/SEC-5). Test skips unless live embeddings are configured; changing its assertion needs owner approval | M7 |
+| ~~Stale object-key contract~~ | Closed (owner-approved 2026-11-20, D-032): test and architecture use per-session keys | M7 ✓ |
 | Insurer-specific plan-title rule | `extraction/plan-identity.ts` attests a plan from one named insurer's title line (`namedInsurerTitle`); no general rule covers "<carrier> <product>" titles, and generalizing it risks attesting carrier or competitor mentions. Its test lives in `REAL_FIXTURES_DIR` (`plan-identity-insurer-title`). | M8 |
 
 Open owner adjudications (from the 2026-11-14 recovery; documents named in

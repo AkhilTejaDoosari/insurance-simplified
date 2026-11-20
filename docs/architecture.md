@@ -70,7 +70,7 @@ authoritative for anything a later request needs (D-018).
 
 | State | Owner |
 | --- | --- |
-| PDF bytes | Storage (object key `docs/<aa>/<sha256>.pdf`) |
+| PDF bytes | Storage (per-session object key `sessions/<sessionId>/documents/<documentId>/<aa>/<sha256>.pdf`, D-032; legacy `docs/…` keys are read-only) |
 | Session, capability hash, context, lifecycle | `sessions` (0004) |
 | Document metadata, page text | `documents`, `pages` (0001) |
 | Chunks, FTS vector, embedding | `chunks` (0001) |

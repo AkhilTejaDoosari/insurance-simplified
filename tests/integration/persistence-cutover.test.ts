@@ -21,7 +21,7 @@ import { isEmbeddingConfigured } from "@/app/lib/rag/embeddings";
 import { deleteSession } from "@/app/lib/session";
 import {
   SupabaseStorageAdapter,
-  objectKeyFor,
+  sessionObjectKeyFor,
   sha256Hex,
 } from "@/app/lib/storage/objects";
 
@@ -60,7 +60,9 @@ describe.skipIf(!configured)("persistence cutover (live application services)", 
       const store = new SupabaseStorageAdapter();
       for (const meta of persisted) {
         const original = docs.find((d) => d.documentId === meta.documentId)!.bytes;
-        expect(meta.objectKey).toBe(objectKeyFor(meta.sha256));
+        // Per-session key (D-032): derived from this session, document and content.
+        expect(meta.objectKey).toBe(sessionObjectKeyFor(sessionId, meta.documentId, meta.sha256));
+        expect(meta.objectKey).toContain(`sessions/${sessionId}/`);
         expect(meta.sha256).toBe(sha256Hex(original));
         expect(await store.get(meta.objectKey)).toEqual(original);
       }
@@ -101,25 +103,41 @@ describe.skipIf(!configured)("persistence cutover (live application services)", 
       }
 
       // Session isolation at the service level: B's chunks never leak into A.
+      // B uploads BYTE-IDENTICAL content under the same documentId, so a
+      // content-addressed shared key would collide; per-session keys must not.
       const otherDocs = [
         {
           documentId: "doc-1",
           filename: "other.pdf",
           pages: ["Unrelated lighthouse maintenance schedule for harbor beacons."],
-          bytes: new TextEncoder().encode(`%PDF-cutover-other-${ts}`),
+          bytes: docs[0].bytes,
         },
       ];
-      await persistSessionUpload(otherId, otherDocs);
+      const otherPersisted = await persistSessionUpload(otherId, otherDocs);
+      const otherKeys = otherPersisted.map((p) => p.objectKey);
       try {
+        // Two sessions never share a key, even for identical bytes.
+        expect(otherPersisted[0].sha256).toBe(persisted.find((p) => p.documentId === "doc-1")!.sha256);
+        for (const key of otherKeys) {
+          expect(key).toContain(`sessions/${otherId}/`);
+          expect(persisted.map((p) => p.objectKey)).not.toContain(key);
+        }
+        expect(await store.get(otherKeys[0])).toEqual(otherDocs[0].bytes);
         const aHits = await retrievePersistentSemantic("deductible", sessionId, 10);
         expect(aHits!.length).toBeGreaterThan(0);
         expect(aHits!.find((h) => h.quote.includes("lighthouse"))).toBeUndefined();
       } finally {
         await deleteDurableVectors(otherId);
-        await deleteDurableObjects(
-          otherId,
-          [objectKeyFor(sha256Hex(otherDocs[0].bytes))],
-        );
+        await deleteDurableObjects(otherId, otherKeys);
+      }
+      // Deleting the other session removed only its own objects: A's files
+      // are still intact and byte-identical.
+      for (const key of otherKeys) {
+        expect(await store.get(key)).toBeUndefined();
+      }
+      for (const meta of persisted) {
+        const original = docs.find((d) => d.documentId === meta.documentId)!.bytes;
+        expect(await store.get(meta.objectKey)).toEqual(original);
       }
 
       // Deletion in route order removes durable state and stays retry-safe.
