@@ -19,7 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { registerEvidence } from "@/app/lib/session";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
-import { REFUSAL_TEXT } from "@/app/lib/rag/answer";
+import { REFUSAL_TEXT, type ChatCitation } from "@/app/lib/rag/answer";
 import {
   answerQuestion,
   answerQuestionSemantic,
@@ -215,6 +215,52 @@ export async function POST(request: NextRequest) {
     }
   };
 
+  // Verified evidence attached to chat outcomes that cite passages (answers
+  // and "cannot be confirmed" passages): the citations' evidence ids,
+  // comparison results they relate to, and exclusion outcomes for services
+  // the question names — every one re-derived, never read as stored.
+  const attachVerified = async (canonical: ChatCitation[]) => {
+    registerEvidence(session.sessionId, canonical);
+    // Comparison results this answer's citations relate to, each re-derived
+    // first; an altered one is labelled "cannot be confirmed" (TB-3).
+    const stored = await loadStored();
+    const current =
+      stored && stored.documentFingerprint === documentFingerprint(session.documents)
+        ? confirmStored(stored)
+        : null;
+    const related = current ? resolutionsForCitations(current, canonical) : [];
+    // Exclusion/applicability outcomes for services the question names,
+    // resolved over the re-derived store and shown only through
+    // displayIssuedResolution (exclusion-outcomes.ts).
+    const exclusionOutcomes = current?.evidence
+      ? exclusionOutcomeViews(
+          current.evidence.authority,
+          session.sessionId,
+          resolveExclusionOutcomes(current.evidence.store, current.evidence.authority, question, {
+            documentIds: scopedDocuments.map((d) => d.documentId),
+          }),
+        )
+      : [];
+    // When the answer touches a service, link each named plan's exclusion
+    // inventory state if it may be incomplete (partial / unknown / cannot
+    // be confirmed). Surfaces are re-derived, never read from storage.
+    const exclusionCoverage =
+      current && stored && exclusionOutcomes.length
+        ? exclusionCoverageNotes(
+            current.table,
+            surfacesForReadBack({ sessionId: session.sessionId, documents: session.documents, record: stored, confirmed: current }),
+            exclusionOutcomes.some((o) => !o.documentId)
+              ? scopedDocuments.map((d) => d.documentId)
+              : [...new Set(exclusionOutcomes.flatMap((o) => (o.documentId ? [o.documentId] : [])))],
+          )
+        : [];
+    return {
+      ...(related.length ? { resolutions: related } : {}),
+      ...(exclusionOutcomes.length ? { exclusionOutcomes } : {}),
+      ...(exclusionCoverage.length ? { exclusionCoverage } : {}),
+    };
+  };
+
   try {
     let response;
     if (useLlm) {
@@ -291,38 +337,6 @@ export async function POST(request: NextRequest) {
           refusalText: REFUSAL_TEXT,
         });
       }
-      registerEvidence(session.sessionId, canonical);
-      // Comparison results this answer's citations relate to, each re-derived
-      // first; an altered one is labelled "cannot be confirmed" (TB-3).
-      const stored = await loadStored();
-      const current =
-        stored && stored.documentFingerprint === documentFingerprint(session.documents)
-          ? confirmStored(stored)
-          : null;
-      const related = current ? resolutionsForCitations(current, canonical) : [];
-      // Exclusion/applicability outcomes for services the question names,
-      // resolved over the re-derived store and shown only through
-      // displayIssuedResolution (exclusion-outcomes.ts).
-      const exclusionOutcomes = current?.evidence
-        ? exclusionOutcomeViews(
-            current.evidence.authority,
-            session.sessionId,
-            resolveExclusionOutcomes(current.evidence.store, current.evidence.authority, question),
-          )
-        : [];
-      // When the answer touches a service, link each named plan's exclusion
-      // inventory state if it may be incomplete (partial / unknown / cannot
-      // be confirmed). Surfaces are re-derived, never read from storage.
-      const exclusionCoverage =
-        current && stored && exclusionOutcomes.length
-          ? exclusionCoverageNotes(
-              current.table,
-              surfacesForReadBack({ sessionId: session.sessionId, documents: session.documents, record: stored, confirmed: current }),
-              exclusionOutcomes.some((o) => !o.documentId)
-                ? scopedDocuments.map((d) => d.documentId)
-                : [...new Set(exclusionOutcomes.flatMap((o) => (o.documentId ? [o.documentId] : [])))],
-            )
-          : [];
       trace({
         candidateCount: canonical.length,
         topK: canonical.map((c) => ({
@@ -335,9 +349,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ...validated,
         citations: canonical.map(withEvidenceId),
-        ...(related.length ? { resolutions: related } : {}),
-        ...(exclusionOutcomes.length ? { exclusionOutcomes } : {}),
-        ...(exclusionCoverage.length ? { exclusionCoverage } : {}),
+        ...(await attachVerified(canonical)),
+      });
+    }
+    if (validated.citations?.length) {
+      // P0-02 "cannot be confirmed": the passages are sources to check, not an
+      // answer. Each one is verified on its page and in the chat scope on its
+      // own; an unverifiable passage is dropped, and with none left the
+      // plain refusal is returned.
+      const canonical = validated.citations.flatMap((citation) => {
+        const verified = verifyEvidenceCitation(session.documents, citation);
+        const inScope = verifyEvidenceCitation(scopedDocuments, citation);
+        return verified.ok && inScope.ok ? [{ ...citation, quote: verified.quote }] : [];
+      });
+      trace({
+        candidateCount: validated.citations.length,
+        topK: canonical.map((c) => ({ documentId: c.documentId, page: c.page })),
+        citationCount: canonical.length,
+        refusalReason: "cannot-be-confirmed",
+      });
+      if (canonical.length === 0) {
+        return NextResponse.json({ schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT });
+      }
+      return NextResponse.json({
+        ...validated,
+        citations: canonical.map(withEvidenceId),
+        ...(await attachVerified(canonical)),
       });
     }
     trace({

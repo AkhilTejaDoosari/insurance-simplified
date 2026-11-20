@@ -70,15 +70,19 @@ describe("M5 over-fetch per leg", () => {
       ),
       passage("own", "Selected deductible 250", 0.9),
     ];
-    // No lexical overlap with the page, so only the semantic leg can answer.
+    // Only the semantic leg is consulted (it is useful); the passage shown
+    // must name the question's topic (P0-02), so the question says
+    // "deductible". With a 16-deep fetch only stale chunks are seen and the
+    // outcome is a plain refusal without passages.
     const result = await answerQuestionSemantic(
       docs,
-      "how much before coverage starts",
+      "which deductible applies before coverage starts",
       {
         sessionId: "session-x",
       },
     );
-    expect(result.kind).toBe("answer");
+    expect(result.kind).toBe("refusal");
+    expect(result.kind === "refusal" && result.citations?.length).toBeGreaterThan(0);
     const text = JSON.stringify(result);
     expect(text).toContain("Selected deductible 250");
     expect(text).not.toContain("stale text");

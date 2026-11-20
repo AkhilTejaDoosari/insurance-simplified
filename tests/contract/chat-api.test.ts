@@ -73,13 +73,18 @@ describe("chat-api v1 contract", () => {
     ).toThrow();
   });
 
-  it("deterministic answers carry explicit grounding", async () => {
-    const { answerQuestion } = await import("@/app/lib/rag/answer");
+  // P0-02 (owner-authorized Phase 4): retrieval alone never answers. The
+  // deterministic engine returns "cannot be confirmed" with the cited passage.
+  it("deterministic retrieval returns cannot-be-confirmed with the cited passage, never an answer", async () => {
+    const { answerQuestion, UNCERTAIN_TEXT } = await import("@/app/lib/rag/answer");
     const res = answerQuestion(
       [{ documentId: "doc-1", filename: "a.pdf", pageCount: 1, pages: ["Annual deductible: $250 in-network."] }],
       "What is the deductible?",
     );
-    expect(res.kind).toBe("answer");
-    if (res.kind === "answer") expect(res.grounding).toBe("explicit");
+    expect(res.kind).toBe("refusal");
+    if (res.kind === "refusal") {
+      expect(res.refusalText).toBe(UNCERTAIN_TEXT);
+      expect(res.citations?.[0]).toEqual({ documentId: "doc-1", page: 1, quote: "Annual deductible: $250 in-network." });
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerQuestion } from "@/app/lib/rag/answer";
+import { answerQuestion, UNCERTAIN_TEXT } from "@/app/lib/rag/answer";
 
 const DOCS = [
   {
@@ -11,11 +11,12 @@ const DOCS = [
 ];
 
 describe("retrieval-gated refusal (constitution principle IV)", () => {
-  it("answers when passages support the question", () => {
+  it("cites the supporting passages (cannot be confirmed without a verified answer) when passages support the question", () => {
     const res = answerQuestion(DOCS, "What is the deductible?");
-    expect(res.kind).toBe("answer");
-    if (res.kind === "answer") {
-      expect(res.citations.length).toBeGreaterThanOrEqual(1);
+    expect(res.kind).toBe("refusal");
+    if (res.kind === "refusal") {
+      expect(res.refusalText).toBe(UNCERTAIN_TEXT);
+      expect(res.citations?.length).toBeGreaterThanOrEqual(1);
     }
   });
 

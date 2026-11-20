@@ -24,19 +24,21 @@ export function servicesNamedIn(text: string): string[] {
 }
 
 /** Resolve every named service against every registered document that has a
- *  verified plan. Refuses to issue under an authority the store does not
- *  seal with. */
+ *  verified plan and is in the caller's scope (P0-04: the chat selection —
+ *  a document outside it never contributes an outcome). Refuses to issue
+ *  under an authority the store does not seal with. */
 export function resolveExclusionOutcomes(
   store: ProvisionStore,
   authority: EvidenceAuthority,
   question: string,
+  scope: { documentIds: readonly string[] },
 ): Issued<ExclusionResolution>[] {
   if (!store.issuesUnder(authority)) throw new Error("exclusion outcomes: authority is not the store's authority");
   const services = servicesNamedIn(question);
   if (services.length === 0) return [];
   return store.registry
     .list()
-    .filter((doc) => doc.plan)
+    .filter((doc) => doc.plan && scope.documentIds.includes(doc.documentId))
     .flatMap((doc) => services.map((service) => resolveServiceQuestion({ store, authority }, { documentId: doc.documentId, service })));
 }
 

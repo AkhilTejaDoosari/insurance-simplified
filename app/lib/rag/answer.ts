@@ -48,7 +48,14 @@ export type ChatResponse =
       citations: ChatCitation[];
       grounding?: AnswerGrounding;
     }
-  | { schemaVersion: "v1"; kind: "refusal"; refusalText: string };
+  | {
+      schemaVersion: "v1";
+      kind: "refusal";
+      refusalText: string;
+      /** P0-02 (additive): passages that may be relevant when no answer could
+       *  be confirmed. Never an answer; shown as sources to check. */
+      citations?: ChatCitation[];
+    };
 
 /** Presentation-time citation: core citation plus its session-bound opaque
  *  evidence ID (`ev-...`), assigned at the chat API boundary (never by the
@@ -65,10 +72,100 @@ export type RegisteredChatResponse =
       citations: RegisteredChatCitation[];
       grounding?: AnswerGrounding;
     }
-  | { schemaVersion: "v1"; kind: "refusal"; refusalText: string };
+  | {
+      schemaVersion: "v1";
+      kind: "refusal";
+      refusalText: string;
+      citations?: RegisteredChatCitation[];
+    };
 
 export const REFUSAL_TEXT =
   "The uploaded documents contain no supporting evidence for this question.";
+
+/** P0-02: relevant passages exist but no answer could be confirmed from them
+ *  (no generation model, or the generated answer failed verification). */
+export const UNCERTAIN_TEXT =
+  "This cannot be confirmed from your documents. The passages below may be relevant: check them on the original pages.";
+
+/** Question words that carry no topic ("What should I verify about …"). */
+const QUESTION_FILLER = new Set(
+  "should,verify,about,know,tell,need,please,there,any,will,would,can,could,get,have,has,explain,mean,means,apply,applies,check,does,much,really".split(","),
+);
+/** A contents/index line: a title followed by dot leaders and a page number. */
+const LEADER_LINE = /\.{5,}\s*\d*\s*$/;
+const CONTENTS_HEADING = /^\s*(?:table of )?contents\s*$/i;
+const MAX_UNCERTAIN_PASSAGES = 3;
+
+function conceptStems(question: string): string[] {
+  return [...tokens(question)].filter((w) => !QUESTION_FILLER.has(w)).map((w) => w.slice(0, 6));
+}
+
+function lineHasConcept(line: string, stems: readonly string[]): boolean {
+  if (LEADER_LINE.test(line) || CONTENTS_HEADING.test(line)) return false;
+  const words = line.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/);
+  return stems.some((stem) => words.some((word) => word.startsWith(stem)));
+}
+
+function stemsIn(line: string, stems: readonly string[]): string[] {
+  return stems.filter((stem) => lineHasConcept(line, [stem]));
+}
+
+/** Short passages (a lexical ±3-line window) are shown whole. */
+const MAX_WHOLE_PASSAGE = 600;
+
+/** Narrow a long passage to the verbatim lines around its most specific
+ *  concept line: a concept repeated on many lines (a product name) weighs
+ *  less than one stated once (the row the question is about). */
+function focus(quote: string, lines: readonly string[], hits: readonly string[][]): string {
+  const frequency = new Map<string, number>();
+  for (const found of hits) for (const stem of found) frequency.set(stem, (frequency.get(stem) ?? 0) + 1);
+  let best = -1;
+  let bestScore = 0;
+  hits.forEach((found, index) => {
+    const score = found.reduce((sum, stem) => sum + 1 / (frequency.get(stem) ?? 1), 0);
+    if (score > bestScore) { best = index; bestScore = score; }
+  });
+  const window = lines.slice(Math.max(0, best - 1), best + 3).join("\n").trim();
+  return window && quote.includes(window) ? window : lines[best].trim();
+}
+
+/** Retrieval hygiene for passages shown to the user (P0-02): keep only
+ *  passages with a line that states a concept of the question (contents
+ *  lines and cover/title pages without the concept never qualify); long
+ *  passages are narrowed to the verbatim lines around their most specific
+ *  concept line; duplicates dropped, at most three, in the given (ranked) order. Quotes stay exact page substrings. */
+export function relevantPassages(
+  passages: readonly { documentId: string; page: number; quote: string }[],
+  question: string,
+): ChatCitation[] {
+  const stems = conceptStems(question);
+  if (stems.length === 0) return [];
+  const out: ChatCitation[] = [];
+  for (const { documentId, page, quote } of passages) {
+    const lines = quote.split("\n");
+    const hits = lines.map((line) => stemsIn(line, stems));
+    if (!hits.some((found) => found.length > 0)) continue;
+    const shown = quote.length <= MAX_WHOLE_PASSAGE ? quote : focus(quote, lines, hits);
+    // The same text twice (or a window inside another) is one passage.
+    if (out.some((c) => c.documentId === documentId && c.page === page && (c.quote.includes(shown) || shown.includes(c.quote)))) continue;
+    out.push({ documentId, page, quote: shown });
+    if (out.length === MAX_UNCERTAIN_PASSAGES) break;
+  }
+  return out;
+}
+
+/** The outcome when no answer is confirmed: "cannot be confirmed" with the
+ *  relevant passages, or the plain refusal when none is relevant. Never an
+ *  answer built from passages. */
+export function uncertainOutcome(
+  passages: readonly { documentId: string; page: number; quote: string }[],
+  question: string,
+): ChatResponse {
+  const citations = relevantPassages(passages, question);
+  return citations.length > 0
+    ? { schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT, citations }
+    : { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+}
 
 const STOPWORDS = new Set(
   "a,an,the,of,in,on,for,to,is,are,was,were,be,been,do,does,did,what,which,who,how,much,many,my,our,your,this,that,these,those,and,or,with,by,at,from,as,it,its,plan,coverage,cover,covered,four,between,compare".split(
@@ -315,27 +412,8 @@ export function answerQuestion(
   documents: RagDocument[],
   question: string,
 ): ChatResponse {
-  const passages = retrieve(documents, question);
-  if (passages.length === 0) {
-    return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
-  }
-  const citations: ChatCitation[] = passages.map(
-    ({ documentId, page, quote }) => ({
-      documentId,
-      page,
-      quote,
-    }),
-  );
-  const answerText = passages
-    .map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`)
-    .join(" ");
-  return {
-    schemaVersion: "v1",
-    kind: "answer",
-    answerText,
-    citations,
-    grounding: "explicit",
-  };
+  // P0-02: retrieval alone never answers; it can only point to passages.
+  return uncertainOutcome(retrieve(documents, question), question);
 }
 
 /** Hybrid answer: uses RRF-fused retrieval when embeddings are configured,
@@ -344,27 +422,7 @@ export async function answerQuestionHybrid(
   documents: RagDocument[],
   question: string,
 ): Promise<ChatResponse> {
-  const passages = await retrieveHybrid(documents, question, 5);
-  if (passages.length === 0) {
-    return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
-  }
-  const citations: ChatCitation[] = passages.map(
-    ({ documentId, page, quote }) => ({
-      documentId,
-      page,
-      quote,
-    }),
-  );
-  const answerText = passages
-    .map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`)
-    .join(" ");
-  return {
-    schemaVersion: "v1",
-    kind: "answer",
-    answerText,
-    citations,
-    grounding: "explicit",
-  };
+  return uncertainOutcome(await retrieveHybrid(documents, question, 5), question);
 }
 
 /** Semantic-USEFULNESS floor (top-1 cosine similarity) applied AFTER semantic
@@ -428,24 +486,7 @@ export async function answerQuestionSemantic(
       passages.length > 0 &&
       isSemanticUseful(documents, question, passages)
     ) {
-      const citations: ChatCitation[] = passages
-        .slice(0, 5)
-        .map(({ documentId, page, quote }) => ({
-          documentId,
-          page,
-          quote,
-        }));
-      const answerText = passages
-        .slice(0, 5)
-        .map((p) => `(${p.documentId}, page ${p.page}) ${p.quote}`)
-        .join(" ");
-      return {
-        schemaVersion: "v1",
-        kind: "answer",
-        answerText,
-        citations,
-        grounding: "explicit",
-      };
+      return uncertainOutcome(passages, question);
     }
     // Semantic healthy but empty, or ranked but not useful (below-floor
     // similarity with zero lexical overlap, e.g. nonsense queries that pure
@@ -700,6 +741,13 @@ export async function answerViaLlm(
       `[chat-retrieval] leg=${leg}${legReason ? ` reason=${legReason}` : ""} passages=${passages.length} pages=${pages.join(",")}`,
     );
   }
+  // Contents/index passages are navigation, not evidence (P0-02).
+  const evidencePassages = passages.filter(
+    (p) => !p.quote.split("\n").some((line) => CONTENTS_HEADING.test(line)) &&
+      p.quote.split("\n").filter((line) => LEADER_LINE.test(line)).length < 2,
+  );
+  if (evidencePassages.length === 0) return uncertainOutcome(passages, question);
+  passages = evidencePassages;
   // Build prompt from top-K retrieved chunks with budget enforcement
   const prompt = buildRetrievalPrompt(documents, passages, question);
   const raw = stripNullProperties(
@@ -710,7 +758,7 @@ export async function answerViaLlm(
 
   if (raw.cantAnswer === true) {
     console.warn(`[chat-refusal] stage=llm-cantAnswer`);
-    return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+    return uncertainOutcome(passages, question);
   }
 
   // cantAnswer is a model-side flag, not part of chat-api v1.
@@ -750,8 +798,9 @@ export async function answerViaLlm(
     console.warn(
       `[chat-refusal] stage=verifyAnswerClaims category=${verification.rationale?.split(":")[0] ?? "unknown"} failedPage=${failedCitation?.[1] ?? "n/a"} citationCount=${answerResponse.citations.length}`,
     );
-    // ANY failure -> fixed refusal. NO repair.
-    return { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
+    // ANY failure -> no answer (NO repair): "cannot be confirmed" with the
+    // relevant passages, never the unverified text.
+    return uncertainOutcome(passages, question);
   }
 
   return {
@@ -761,6 +810,35 @@ export async function answerViaLlm(
       answerResponse.citations.map((c) => c.quote),
     ),
   };
+}
+
+/** One chat citation (answers and refusal passages): document id, a page
+ *  number (numeric strings coerced) and a non-empty quote. Throws otherwise. */
+function validateCitation(c: Record<string, unknown>): void {
+  if (typeof c !== "object" || c === null) {
+    throw new Error(
+      `Invalid chat response: malformed citation entry type=${typeof c}`,
+    );
+  }
+  if (typeof c.documentId !== "string") {
+    throw new Error(
+      `Invalid chat response: malformed citation field=documentId type=${typeof c.documentId}`,
+    );
+  }
+  // Coerce LLM numeric-string pages ("3") to integers; non-numeric strings still fail below.
+  if (typeof c.page === "string" && /^\d+$/.test(c.page.trim())) {
+    c.page = Number(c.page.trim());
+  }
+  if (typeof c.page !== "number" || c.page < 1) {
+    throw new Error(
+      `Invalid chat response: malformed citation field=page type=${typeof c.page}`,
+    );
+  }
+  if (typeof c.quote !== "string" || !c.quote.trim()) {
+    throw new Error(
+      `Invalid chat response: malformed citation field=quote type=${typeof c.quote}`,
+    );
+  }
 }
 
 /** Validate a payload against chat-api v1. Throws on violation. */
@@ -774,6 +852,10 @@ export function validateChatResponse(payload: unknown): ChatResponse {
   if (r.kind === "refusal") {
     if (typeof r.refusalText !== "string" || !r.refusalText.trim()) {
       throw new Error("Invalid chat response: refusalText required");
+    }
+    if (r.citations !== undefined) {
+      if (!Array.isArray(r.citations)) throw new Error("Invalid chat response: refusal citations must be an array");
+      for (const c of r.citations as Record<string, unknown>[]) validateCitation(c);
     }
     return payload as ChatResponse;
   }
@@ -789,30 +871,7 @@ export function validateChatResponse(payload: unknown): ChatResponse {
       );
     }
     for (const c of r.citations as Record<string, unknown>[]) {
-      if (typeof c !== "object" || c === null) {
-        throw new Error(
-          `Invalid chat response: malformed citation entry type=${typeof c}`,
-        );
-      }
-      if (typeof c.documentId !== "string") {
-        throw new Error(
-          `Invalid chat response: malformed citation field=documentId type=${typeof c.documentId}`,
-        );
-      }
-      // Coerce LLM numeric-string pages ("3") to integers; non-numeric strings still fail below.
-      if (typeof c.page === "string" && /^\d+$/.test(c.page.trim())) {
-        c.page = Number(c.page.trim());
-      }
-      if (typeof c.page !== "number" || c.page < 1) {
-        throw new Error(
-          `Invalid chat response: malformed citation field=page type=${typeof c.page}`,
-        );
-      }
-      if (typeof c.quote !== "string" || !c.quote.trim()) {
-        throw new Error(
-          `Invalid chat response: malformed citation field=quote type=${typeof c.quote}`,
-        );
-      }
+      validateCitation(c);
     }
     if (
       r.grounding !== undefined &&

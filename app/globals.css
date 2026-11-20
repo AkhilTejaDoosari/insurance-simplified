@@ -2061,6 +2061,25 @@ button {
 .chat__scope-note {
   font-size: 11px;
 }
+/* P0-02 / P0-04: passages to check under a "cannot be confirmed" reply, and
+   questions asked under an earlier selection, collapsed and labelled. */
+.chat__passages,
+.chat__history {
+  margin-top: 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.chat__passages summary,
+.chat__history summary {
+  cursor: pointer;
+  color: var(--action);
+}
+.chat__history {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+}
 .dockSuggestions {
   display: flex;
   flex-wrap: wrap;

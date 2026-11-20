@@ -180,6 +180,10 @@ test("historical turns keep their scope and evidence links when the selection ch
   // Selection changes: the retained turn is labelled with its former scope but
   // keeps its evidence citation (same URL semantics as live turns).
   await page.getByLabel("Tier shown for Alpha").selectOption("Choice");
+  // P0-04: the earlier turn no longer leads; it is grouped under a collapsed,
+  // labelled "Earlier questions — different selection".
+  await expect(page.getByText("Alpha Basic deductible is $250.")).toBeHidden();
+  await page.getByText(/Earlier questions — different selection/).click();
   await expect(page.getByText(/Answered earlier for:/)).toBeVisible();
   const link = page.getByRole("link", { name: "page 1", exact: true }).first();
   await expect(link).toBeVisible();

@@ -45,7 +45,9 @@ describe("active-view persistent retrieval boundary", () => {
     const result = await answerQuestionSemantic(docs, "deductible", {
       sessionId: "session",
     });
-    expect(result.kind).toBe("answer");
+    // P0-02: retrieval alone returns "cannot be confirmed" with the passages.
+    expect(result.kind).toBe("refusal");
+    expect(result.kind === "refusal" && result.citations?.length).toBeGreaterThan(0);
     expect(JSON.stringify(result)).toContain("Selected deductible 250");
     expect(JSON.stringify(result)).not.toContain("secret");
   });

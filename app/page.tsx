@@ -678,6 +678,7 @@ export default function Home() {
                 documents={table.documents.filter((d) =>
                   viewDocumentIds(table, activeView).includes(d.documentId),
                 )}
+                allDocuments={table.documents}
                 selection={
                   selection
                     ? selectionPayload(selection, activeView)

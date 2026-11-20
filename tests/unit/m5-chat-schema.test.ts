@@ -16,7 +16,7 @@ vi.mock("@/app/lib/rag/embeddings", async (importOriginal) => {
 import {
   answerViaLlm,
   CHAT_ANSWER_SCHEMA,
-  REFUSAL_TEXT,
+  UNCERTAIN_TEXT,
 } from "@/app/lib/rag/answer";
 import { completeJson } from "@/app/lib/llm/client";
 import {
@@ -84,17 +84,19 @@ describe("M5 chat call uses strict structured output", () => {
     expect(JSON.stringify(result)).not.toContain("cantAnswer");
   });
 
-  it("cantAnswer with null fields is a refusal", async () => {
+  it("cantAnswer with null fields is a refusal (cannot be confirmed, with the relevant passage)", async () => {
     vi.mocked(completeJson).mockResolvedValueOnce({
       cantAnswer: true,
       answerText: null,
       citations: null,
     });
     const result = await answerViaLlm(DOCS, "What is the annual deductible?");
+    // P0-02: the model gave no answer but a relevant passage was retrieved.
     expect(result).toEqual({
       schemaVersion: "v1",
       kind: "refusal",
-      refusalText: REFUSAL_TEXT,
+      refusalText: UNCERTAIN_TEXT,
+      citations: [{ documentId: "doc-1", page: 1, quote: QUOTE }],
     });
   });
 

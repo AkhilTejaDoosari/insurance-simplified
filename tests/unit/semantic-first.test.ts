@@ -66,10 +66,10 @@ describe("P2 semantic-first correction", () => {
     mockHealthyEmbeddings();
     const result = await answerQuestionSemantic(SEMANTIC_ONLY_DOCS, QUESTION);
     expect(mockedEmbed).toHaveBeenCalled();
-    expect(result.kind).toBe("answer");
-    if (result.kind === "answer") {
-      expect(result.citations.length).toBeGreaterThan(0);
-    }
+    // P0-02: semantic retrieval is consulted, but retrieval alone never
+    // answers; with no topic word shared with the question no passage is
+    // shown to the user (the model path, (1b), still answers from it).
+    expect(result.kind).toBe("refusal");
   });
 
   it("(1b) lexical-empty + semantic-useful -> answerViaLlm succeeds via semantic with one LLM call", async () => {
@@ -88,10 +88,10 @@ describe("P2 semantic-first correction", () => {
     mockedConfigured.mockReturnValue(true);
     mockedEmbed.mockRejectedValueOnce(new Error("Ollama down"));
     const result = await answerQuestionSemantic(LEXICAL_DOCS, QUESTION);
-    expect(result.kind).toBe("answer");
-    if (result.kind === "answer") {
-      expect(result.citations.length).toBeGreaterThan(0);
-    }
+    // P0-02: the lexical fallback is used and returns its cited passages as
+    // "cannot be confirmed", never as an answer.
+    expect(result.kind).toBe("refusal");
+    expect(result.kind === "refusal" && result.citations?.length).toBeGreaterThan(0);
   });
 
   it("(2b) semantic failure + lexical-useful -> answerViaLlm falls back to lexical evidence", async () => {

@@ -87,14 +87,18 @@ test("upload → document reading → evidence → chat → export (quickstart F
   ).toBeVisible();
   await expect(viewer.getByTestId("evidence-highlight")).toHaveCount(0);
 
-  // Flow 3: cited answer, then explicit refusal.
+  // Flow 3: cited passages, then explicit refusal. P0-02 (owner-authorized
+  // Phase 4): with no generation model the reply is "cannot be confirmed"
+  // with the cited passages to check, never retrieved text as the answer.
   await page
     .getByRole("button", { name: "Ask a question", exact: true })
     .first()
     .click();
   await page.getByLabel("Your question").fill("What is the emergency copay?");
   await page.getByRole("button", { name: "Ask", exact: true }).click();
-  await expect(page.getByText("doc-1, page 1:").first()).toBeVisible();
+  await expect(page.getByText("This cannot be confirmed from your documents.")).toBeVisible();
+  await page.getByText(/Passages to check/).first().click();
+  await expect(page.getByRole("link", { name: "page 1", exact: true }).first()).toBeVisible();
   await page.getByLabel("Your question").fill("Does this cover space tourism?");
   await page.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(page.getByText("no supporting evidence")).toBeVisible();

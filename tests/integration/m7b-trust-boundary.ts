@@ -149,7 +149,7 @@ export async function runTb3(): Promise<void> {
     // (exclusion-outcomes.ts → displayIssuedResolution): altered after issue
     // → "cannot be confirmed"; unaltered → confirmed.
     const scenario = exclusionScenario({ coverage: "complete" });
-    const outcomes = resolveExclusionOutcomes(scenario.store, scenario.authority, "Is acupuncture covered?");
+    const outcomes = resolveExclusionOutcomes(scenario.store, scenario.authority, "Is acupuncture covered?", { documentIds: [scenario.documentId] });
     expect(outcomes.length).toBeGreaterThan(0);
     expect(exclusionOutcomeViews(scenario.authority, scenario.sessionId, outcomes).every((v) => v.status === "confirmed")).toBe(true);
     const alteredOutcomes = outcomes.map((o) => ({ ...o, resolution: { ...o.resolution, outcome: "verified" } }));
@@ -166,7 +166,10 @@ export async function runTb3(): Promise<void> {
     const chatRes = await chat(post("/api/chat", { sessionId, question: "What is the annual deductible?", engine: "fallback" }, capability));
     expect(chatRes.status).toBe(200);
     const answer = await chatRes.json();
-    expect(answer.kind).toBe("answer");
+    // P0-02: without a generation model chat returns "cannot be confirmed"
+    // with verified passages; related results are still attached.
+    expect(answer.kind).toBe("refusal");
+    expect(answer.citations?.length).toBeGreaterThan(0);
     const related = (answer.resolutions ?? []).find((r: { factName: string }) => r.factName === target);
     expect(related?.status).toBe(CBC);
     expect(JSON.stringify(answer)).not.toContain(altered);

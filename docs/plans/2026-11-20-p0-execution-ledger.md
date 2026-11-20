@@ -409,6 +409,93 @@ brochure gap) / 42 skipped; `tsc` clean; `build` green; `test:e2e` 57 passed /
     holds a mention ("… exclusion and waiting period"); one age-limits value
     is a sentence fragment.
 
+## Phase 4 — chat correction (Tasks 8–10, P0-02, P0-04)
+
+Reproduction (local probe, doc 02, no generation model, local embeddings):
+every reply was retrieved passages joined as `answerText` with
+`grounding: "explicit"` (658–12,768 characters); the semantic leg cited the
+cover page and the table of contents for "geographic restrictions" and
+"deductible"; "space tourism" got five passages. Exclusion outcomes were
+resolved over every registered plan regardless of the chat selection; turns
+from an earlier selection stayed inline and lost their filename in evidence
+links once that document left the scope.
+
+Implementation:
+
+- `rag/answer.ts`: retrieval never answers. `uncertainOutcome` returns the
+  additive chat-api v1 refusal `{ refusalText: UNCERTAIN_TEXT, citations }`
+  ("This cannot be confirmed from your documents …") when relevant passages
+  exist, else the plain refusal. Used by the deterministic, hybrid and
+  semantic engines, by `answerViaLlm` when the model cannot answer, and when
+  `verifyAnswerClaims` rejects the model's answer (no repair, unverified text
+  never shown). `relevantPassages`: a passage must have a line stating a
+  concept of the question (question filler words ignored; contents lines never
+  count); long passages are narrowed to the verbatim lines around their most
+  specific concept line; duplicates dropped; at most three. Contents/index
+  passages are kept out of the model prompt. `validateChatResponse` accepts
+  refusal citations (validated like answer citations).
+- `api/chat/route.ts`: refusal passages are each verified on their page and
+  in the chat scope (an unverifiable one is dropped; none left → plain
+  refusal), registered with evidence ids, and carry the same re-derived
+  related results and exclusion outcomes as answers (TB-3 still holds:
+  an altered stored result shows "cannot be confirmed").
+- `evidence/exclusion-outcomes.ts`: `resolveExclusionOutcomes` takes a
+  required `{ documentIds }` scope; the route passes the chat's scoped
+  documents (P0-04).
+- `ChatPanel.tsx`: "cannot be confirmed" shows the message and the passages
+  collapsed under "Passages to check (N)" with page links; turns from an
+  earlier selection are grouped, collapsed and labelled under "Earlier
+  questions — different selection (N)" ahead of the current turns; evidence
+  links use every session document's filename (`allDocuments`, from
+  `page.tsx`).
+- Not done (recorded): readability metadata was not carried into
+  `RagDocument` — no failing passage came from an unread page; a route-level
+  P0-04 test (the scope filter is unit-tested and the route passes the scoped
+  ids); a claims array / paraphrase validator (the owner decision keeps
+  `verifyAnswerClaims` as the gate).
+
+Tests (red before): `tests/unit/chat-answer-contract.test.ts` (11),
+`tests/unit/chat-exclusion-scope.test.ts` (1 of 2),
+`tests/unit/chat-panel-p0.test.tsx` (2).
+
+**Acceptance changes (owner-authorized P0-02/P0-04 behaviour; listed for
+review):** existing assertions that the deterministic engine returns
+`kind: "answer"` now assert the "cannot be confirmed" refusal with the same
+citation checks — `tests/contract/chat-api.test.ts` (deterministic grounding),
+`tests/unit/refusal.test.ts`, `tests/unit/chat-lexical-questions.test.ts` (3),
+`tests/unit/adaptive-retrieval.test.ts`, `tests/unit/semantic-first.test.ts`
+(1: semantic-only paraphrase now shows no passage without a model; 2: lexical
+fallback passages), `tests/unit/m5-overfetch.test.ts` (question gains the
+topic word "deductible"; over-fetch discrimination unchanged),
+`tests/unit/m5-chat-schema.test.ts` (cantAnswer with a relevant passage),
+`tests/integration/m7b-read-back.test.ts`, `tests/integration/m7b-trust-boundary.ts`
+(TB-3: the `kind` line only; the "cannot be confirmed" and no-altered-text
+checks are unchanged), `tests/integration/persistence-cutover.test.ts`; two
+call sites pass the new required scope (`m7b-trust-boundary.ts`,
+`m7b-trust-notices.test.ts`); e2e `flows.spec.ts` (expand "Passages to
+check" instead of an inline citation) and `v1-1-consistency.spec.ts` (expand
+the earlier-questions group; added: the old answer is hidden after the
+selection changes).
+
+Real-PDF effect (doc 02, no model): no raw-passage answers; no cover or
+contents passages; "space tourism" → plain refusal; at most three passages of
+145–554 characters. Lexical retrieval still misses the footnote-marked
+"Deductible<digit>" line (same tokenization gap as extraction); the semantic
+leg finds it.
+
+Local generation model (owner decision 3, $0): `qwen3:8b` via Ollama
+(`LLM_BASE_URL=http://localhost:11434/v1`, any `LLM_API_KEY`,
+`LLM_MODEL=qwen3:8b`; values are local, nothing leaves the machine). Smoke
+test on doc 02 (4 questions): 2 verified answers, 1 "cannot be confirmed"
+(the model cited a passage it was not given; the gate caught it), 1 refusal
+(nonsense); 90–138 s per question, 7.4 GB resident. `llama3.2` 3B: 36–54 s,
+but 0 verified answers. Latency is from qwen3's built-in reasoning; turning
+it off needs a prompt/adapter change (not made).
+
+Checks: `npm test` 1681 passed / 22 skipped / 0 failed; with real fixtures
+1803 passed / 1 failed (pre-existing missing-brochure gap) / 42 skipped;
+`tsc` clean; `build` green; `test:e2e` 57 passed / 1 skipped.
+
 ## Open items (after Phase 3)
 
 1. Doc 02 recall gaps: footnote-marked deductible labels and "annual
@@ -434,7 +521,6 @@ brochure gap) / 42 skipped; `tsc` clean; `build` green; `test:e2e` 57 passed /
 
 ## Next atomic step
 
-Owner review of Phase 3 (screenshots, this ledger) and of the $0
-chat-generation proposal in the Phase 3 report. Phase 4 (Tasks 8–10) starts
-only after the owner authorizes it; first step then: a failing retrieval
-hygiene test (blank/definition pages excluded, per-passage ranking).
+Phase 4 independent review (read-only), fixes test-first, screenshots of the
+chat panel, then the owner report. Phase 5 (real-document acceptance) only
+after owner authorization.

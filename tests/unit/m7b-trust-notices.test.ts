@@ -83,6 +83,6 @@ describe("m7b exclusion outcomes", () => {
   it("names services from the materiality map and refuses a foreign authority", () => {
     expect(servicesNamedIn("Is acupuncture covered?")).toContain("acupuncture");
     const store = new ProvisionStore("s", new SessionDocumentRegistry("s"), new EvidenceAuthority());
-    expect(() => resolveExclusionOutcomes(store, new EvidenceAuthority(), "acupuncture")).toThrow();
+    expect(() => resolveExclusionOutcomes(store, new EvidenceAuthority(), "acupuncture", { documentIds: [] })).toThrow();
   });
 });

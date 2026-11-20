@@ -108,6 +108,7 @@ export interface ChatSelectionPayload {
 export default function ChatPanel({
   sessionId,
   documents,
+  allDocuments,
   selection,
   scopeLabel,
   initialTurns,
@@ -117,6 +118,9 @@ export default function ChatPanel({
 }: {
   sessionId: string;
   documents: { documentId: string; filename: string }[];
+  /** Every session document, for the filenames in evidence links of turns
+   *  asked under an earlier selection (retrieval stays scoped server-side). */
+  allDocuments?: { documentId: string; filename: string }[];
   /** Active plan/tier selection for scope-consistent answers. */
   selection?: ChatSelectionPayload;
   /** Human label of the current effective scope (plan names × tiers). */
@@ -128,7 +132,7 @@ export default function ChatPanel({
   draft?: { text: string; key: number };
 }) {
   const filename = (documentId: string) =>
-    documents.find((d) => d.documentId === documentId)?.filename ?? documentId;
+    (allDocuments ?? documents).find((d) => d.documentId === documentId)?.filename ?? documentId;
   const effectiveKey = selection?.selectionKey;
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState<Turn[]>(initialTurns ?? []);
@@ -265,6 +269,64 @@ export default function ChatPanel({
     }
   }
 
+  const isHistorical = (t: Turn) =>
+    t.scopeLabel !== undefined && t.selectionKey !== undefined && t.selectionKey !== effectiveKey;
+  const citationLink = (c: { documentId: string; page: number; evidenceId: string }) => (
+    <a href={documentUrl(sessionId, c.documentId, filename(c.documentId), c.page, c.evidenceId)} target="_blank" rel="noopener">
+      page {c.page}
+    </a>
+  );
+  const renderTurn = (t: Turn, i: number) => (
+    <div key={i}>
+      <p className="chat__q">{t.question}</p>
+      {isHistorical(t) && (
+        <p className="text-muted chat__scope-note">Answered earlier for: {t.scopeLabel}</p>
+      )}
+      {t.response.kind === "answer" ? (
+        <div className="chat__a">
+          {(t.response.grounding === "related" || t.response.grounding === "needs-external") && (
+            <p className="text-muted">
+              {t.response.grounding === "related"
+                ? "Related passages — indirectly answered."
+                : "Needs an outside source — verify before enrolling."}
+            </p>
+          )}
+          <p>{t.response.answerText}</p>
+          <ul className="list">
+            {t.response.citations.map((c, j) => (
+              <li key={j}>
+                {c.documentId}, {citationLink(c)}: “{c.quote}”
+              </li>
+            ))}
+          </ul>
+          <AnswerResolutions response={t.response} />
+          <ExclusionOutcomes response={t.response} />
+          <ExclusionCoverage response={t.response} />
+        </div>
+      ) : (
+        <div className="chat__uncertain">
+          <p className="chat__refusal">{t.response.refusalText}</p>
+          {/* P0-02: passages to check, never presented as the answer. */}
+          {t.response.citations && t.response.citations.length > 0 && (
+            <details className="chat__passages">
+              <summary>Passages to check ({t.response.citations.length})</summary>
+              <ul className="list">
+                {t.response.citations.map((c, j) => (
+                  <li key={j}>
+                    {filename(c.documentId)}, {citationLink(c)}: “{c.quote}”
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          <AnswerResolutions response={t.response} />
+          <ExclusionOutcomes response={t.response} />
+          <ExclusionCoverage response={t.response} />
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div
       ref={panelRef}
@@ -319,61 +381,17 @@ export default function ChatPanel({
         )}
         {turns.length > 0 && (
           <div className="chat__turns">
-            {turns.map((t, i) => {
-              const historical =
-                t.scopeLabel !== undefined &&
-                t.selectionKey !== undefined &&
-                t.selectionKey !== effectiveKey;
-              return (
-                <div key={i}>
-                  <p className="chat__q">{t.question}</p>
-                  {historical && (
-                    <p className="text-muted chat__scope-note">
-                      Answered earlier for: {t.scopeLabel}
-                    </p>
-                  )}
-                  {t.response.kind === "answer" ? (
-                    <div className="chat__a">
-                      {(t.response.grounding === "related" ||
-                        t.response.grounding === "needs-external") && (
-                        <p className="text-muted">
-                          {t.response.grounding === "related"
-                            ? "Related passages — indirectly answered."
-                            : "Needs an outside source — verify before enrolling."}
-                        </p>
-                      )}
-                      <p>{t.response.answerText}</p>
-                      <ul className="list">
-                        {t.response.citations.map((c, j) => (
-                          <li key={j}>
-                            {c.documentId},{" "}
-                            <a
-                              href={documentUrl(
-                                sessionId,
-                                c.documentId,
-                                filename(c.documentId),
-                                c.page,
-                                c.evidenceId,
-                              )}
-                              target="_blank"
-                              rel="noopener"
-                            >
-                              page {c.page}
-                            </a>
-                            : “{c.quote}”
-                          </li>
-                        ))}
-                      </ul>
-                      <AnswerResolutions response={t.response} />
-                      <ExclusionOutcomes response={t.response} />
-                      <ExclusionCoverage response={t.response} />
-                    </div>
-                  ) : (
-                    <p className="chat__refusal">{t.response.refusalText}</p>
-                  )}
-                </div>
-              );
-            })}
+            {/* P0-04: turns asked under another selection never lead. They
+                are grouped, collapsed and labelled with their scope. */}
+            {turns.some(isHistorical) && (
+              <details className="chat__history">
+                <summary>
+                  Earlier questions — different selection ({turns.filter(isHistorical).length})
+                </summary>
+                {turns.map((t, i) => (isHistorical(t) ? renderTurn(t, i) : null))}
+              </details>
+            )}
+            {turns.map((t, i) => (isHistorical(t) ? null : renderTurn(t, i)))}
           </div>
         )}
       </div>

@@ -116,7 +116,9 @@ describe("m7b extract → store → read-back", () => {
     const res = await chat(post("/api/chat", { sessionId, question: "What is the annual deductible?", engine: "fallback" }, capability));
     expect(res.status).toBe(200);
     const body = await res.json();
-    if (body.kind !== "answer") throw new Error("expected an answer from the synthetic document");
+    // P0-02: without a generation model the outcome is "cannot be confirmed"
+    // with verified passages, which carry the related results.
+    if (!body.citations?.length) throw new Error("expected cited passages from the synthetic document");
     const deductible = (body.resolutions ?? []).find((r: { factName: string }) => r.factName === "annual-deductible");
     expect(deductible?.status).toBe("confirmed");
   });
