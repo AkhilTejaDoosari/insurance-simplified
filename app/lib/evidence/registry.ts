@@ -9,7 +9,13 @@
 // Fail closed: a registration that does not prove itself stores nothing.
 
 import { deepFreeze, sha256Hex } from "@/app/lib/evidence/canonical";
-import { checkCoverageRecord, type PageCoverageRecord, type PageCoverageSource } from "@/app/lib/evidence/page-coverage";
+import {
+  checkCoverageRecord,
+  type PageCoverageEntry,
+  type PageCoverageRecord,
+  type PageCoverageSource,
+} from "@/app/lib/evidence/page-coverage";
+import { readabilityFor, type PageReadability } from "@/app/lib/pdf/page-readability";
 import { literallyStates, spanIsBound, type SourceSpan } from "@/app/lib/evidence/source-span";
 
 /** A plan-identity field and the exact span that states it. */
@@ -173,4 +179,40 @@ export class SessionDocumentRegistry {
   coverage(documentId: string): Readonly<PageCoverageRecord> | undefined {
     return this.#documents.get(documentId)?.coverage;
   }
+}
+
+export const READABILITY_COVERAGE_PRODUCER = "ingestion.page-readability@1";
+
+/** PageCoverageSource adapter over the per-page readability record
+ *  (pdf/page-readability.ts, session document `readability`). The record is
+ *  first validated against the stored page text (`readabilityFor`: an
+ *  inconsistent or missing record is re-derived from the text). Mapping:
+ *  read → read; partly-unreadable → unreadable (partly read is never fully
+ *  read); unreadable → unreadable; empty → not_read. So "complete" is
+ *  possible only when every page was read. A document whose stored pages
+ *  differ from the registered ones gets no record (unknown). */
+export function readabilityCoverageSource(
+  documents: readonly { documentId: string; pages: readonly string[]; readability?: readonly PageReadability[] }[],
+): PageCoverageSource {
+  return {
+    coverageFor(input) {
+      const doc = documents.find((d) => d.documentId === input.documentId);
+      if (!doc || doc.pages.length !== input.pageCount || doc.pages.some((p, i) => p !== input.pages[i])) return undefined;
+      const records = readabilityFor({ pages: doc.pages, readability: doc.readability ? [...doc.readability] : undefined });
+      const pages: PageCoverageEntry[] = records.map((r) =>
+        r.status === "read"
+          ? { page: r.page, status: "read" }
+          : r.status === "empty"
+            ? { page: r.page, status: "not_read", reason: "no-text" }
+            : { page: r.page, status: "unreadable", reason: r.status === "partly-unreadable" ? "partly-read" : "image-only" });
+      return {
+        sessionId: input.sessionId,
+        documentId: input.documentId,
+        documentSha256: input.documentSha256,
+        pageCount: input.pageCount,
+        pages,
+        producer: READABILITY_COVERAGE_PRODUCER,
+      };
+    },
+  };
 }

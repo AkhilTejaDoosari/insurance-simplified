@@ -25,6 +25,9 @@ import { withEvidenceId } from "@/app/lib/evidence-ids";
 import { verifyComparisonTable, type VerifiableDocument } from "@/app/lib/extraction/verify-table";
 import type { ComparisonTable, RegisteredComparisonTable, TableRow } from "@/app/lib/extraction/types";
 
+/** Surfaces re-derivation for read-back (same rule as rows). */
+export { rederiveSurfaces } from "@/app/lib/evidence/surfaces";
+
 export interface ReadBackDocument extends VerifiableDocument {
   sha256?: string;
 }
