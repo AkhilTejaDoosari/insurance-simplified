@@ -35,25 +35,37 @@ export function scopeSignature(qualifiers: unknown): string {
   }).join("|");
 }
 
-function evidenceQuotes(value: { evidence?: readonly unknown[] }): string {
+function quoteList(value: { evidence?: readonly unknown[] }): string[] {
   const e = value.evidence;
-  if (!Array.isArray(e)) return "";
-  return e
-    .map((entry) => {
-      if (typeof entry === "object" && entry !== null) {
-        const q = entry as Record<string, unknown>;
-        return typeof q.quote === "string" ? q.quote : "";
-      }
-      return "";
-    })
-    .join(" ");
+  if (!Array.isArray(e)) return [];
+  return e.map((entry) => {
+    if (typeof entry === "object" && entry !== null) {
+      const q = entry as Record<string, unknown>;
+      return typeof q.quote === "string" ? q.quote : "";
+    }
+    return "";
+  });
+}
+
+function isTableCell(value: { anchor?: unknown }): boolean {
+  return (value.anchor as { kind?: unknown } | undefined)?.kind === "table-cell";
 }
 
 /** Derive an implicit applicability scope from the value display and its
  *  evidence. This catches scope differences that extraction did not turn into
  *  explicit qualifiers (e.g. emergency vs routine dental). */
-export function benefitScope(value: { display?: unknown; evidence?: readonly unknown[] }): string {
-  const text = `${String(value.display ?? "")} ${evidenceQuotes(value)}`;
+export function benefitScope(
+  value: { display?: unknown; evidence?: readonly unknown[]; anchor?: unknown },
+  structuralQuotes: ReadonlySet<string> = new Set(),
+): string {
+  // A table cell's scope is structural (EC-3/EC-4): its own column heading
+  // and governing notes, which its display already carries. Its evidence also
+  // cites the whole header line, whose NEIGHBOURING headings are other
+  // columns' scopes — never this cell's. For any other value, quotes that
+  // are a compared table cell's own evidence (e.g. that header line) are that
+  // table's structure, not the value's stated scope.
+  const quotes = isTableCell(value) ? [] : quoteList(value).filter((q) => !structuralQuotes.has(q));
+  const text = `${String(value.display ?? "")} ${quotes.join(" ")}`;
   const found = APPLICABILITY_SCOPE_TERMS
     .filter((term) => term.pattern.test(text))
     .map((term) => term.label);
@@ -62,9 +74,15 @@ export function benefitScope(value: { display?: unknown; evidence?: readonly unk
 
 /** Full scope key used for contradiction and disagreement grouping. */
 export function applicabilityScopeKey(
-  value: { qualifiers: unknown; display?: unknown; evidence?: readonly unknown[] },
+  value: { qualifiers: unknown; display?: unknown; evidence?: readonly unknown[]; anchor?: unknown },
+  structuralQuotes?: ReadonlySet<string>,
 ): string {
-  return `${scopeSignature(value.qualifiers)}|${benefitScope(value)}`;
+  return `${scopeSignature(value.qualifiers)}|${benefitScope(value, structuralQuotes)}`;
+}
+
+/** Evidence quotes of the table cells in a compared pair. */
+function pairStructuralQuotes(a: { evidence?: readonly unknown[]; anchor?: unknown }, b: { evidence?: readonly unknown[]; anchor?: unknown }): Set<string> {
+  return new Set([a, b].filter(isTableCell).flatMap(quoteList).filter(Boolean));
 }
 
 function tableLabel(value: { anchor?: unknown }): string | undefined {
@@ -92,7 +110,8 @@ export function hasSameScopeContradiction(
       const la = tableLabel(a);
       const lb = tableLabel(b);
       if (la !== undefined && lb !== undefined && la !== lb) continue;
-      if (applicabilityScopeKey(a) !== applicabilityScopeKey(b)) continue;
+      const structural = pairStructuralQuotes(a, b);
+      if (applicabilityScopeKey(a, structural) !== applicabilityScopeKey(b, structural)) continue;
       if (typeof a.display !== "string" || typeof b.display !== "string") continue;
       if (normalize(a.display) !== normalize(b.display)) return true;
     }
