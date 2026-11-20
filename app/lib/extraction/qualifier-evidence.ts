@@ -151,3 +151,35 @@ export function attestedQualifiers<T extends Pick<CellValue, "documentId" | "dis
   }
   return qualifiers;
 }
+
+const NETWORK_PHRASE = /\b(?:in[-\s]network|out[-\s]of[-\s]network|non[-\s]network)\b/gi;
+const FIGURE = /\$\s?[\d,]+(?:\.\d+)?|\d+(?:\.\d+)?\s*%/g;
+
+/** EC-4: the network scope a value's OWN cited clause literally states for
+ *  its figure, verbatim, or undefined. Only the clause (sentence) that states
+ *  every figure of the display counts — never a neighbouring line; in a
+ *  multi-figure clause only the "/"- or "and"-slice holding the figure. More
+ *  than one distinct scope, no figure in the display, or no lexical support
+ *  (qualifierHasEvidence) → undefined (nothing is guessed). */
+export function statedNetworkTier(value: Pick<CellValue, "display" | "evidence">): string | undefined {
+  const figures = value.display.match(FIGURE) ?? [];
+  if (figures.length === 0) return undefined;
+  const found = new Map<string, string>();
+  for (const e of value.evidence) {
+    for (const clause of e.quote.split(/\.(?!\d)|[!?;\n]+/)) {
+      if (!figures.every((f) => mentionsValue(clause, f))) continue;
+      const cited = clause.match(FIGURE) ?? [];
+      const parts = figures.length === 1 && cited.length > 1
+        ? clause.split(/\s*(?:\/|\band\b)\s*/i).filter((part) => mentionsValue(part, value.display))
+        : [clause];
+      for (const part of parts) {
+        for (const m of part.matchAll(NETWORK_PHRASE)) {
+          found.set(m[0].toLowerCase().replace(/[-\s]+/g, "-"), m[0]);
+        }
+      }
+    }
+  }
+  if (found.size !== 1) return undefined;
+  const tier = [...found.values()][0];
+  return qualifierHasEvidence(value, "networkTier", tier) ? tier : undefined;
+}
