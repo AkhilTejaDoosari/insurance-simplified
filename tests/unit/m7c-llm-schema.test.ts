@@ -125,6 +125,29 @@ describe("runtime JSON-schema validator", () => {
     expect(() => assertSupportedSchema(COMPARISON_TABLE_SCHEMA.schema)).not.toThrow();
   });
 
+  it.each([
+    ['{"a":1,"b":"x","__proto__":{"polluted":1}}'],
+    ['{"a":1,"b":"x","constructor":{"prototype":{}}}'],
+    ['{"a":1,"b":"x","toString":"y"}'],
+    ['{"a":1,"b":"x","prototype":1}'],
+  ])("rejects prototype-named or inherited keys in model output: %s", (json) => {
+    expect(validateJsonSchema(schema, JSON.parse(json)).length).toBeGreaterThan(0);
+  });
+
+  it("rejects a prototype-named key even where additional properties are allowed", () => {
+    const open: JsonSchema = { type: "object", additionalProperties: { type: "object" } };
+    expect(validateJsonSchema(open, JSON.parse('{"__proto__":{"x":1}}')).length).toBeGreaterThan(0);
+    expect(validateJsonSchema(open, JSON.parse('{"constructor":{}}')).length).toBeGreaterThan(0);
+  });
+
+  it("a copied output never gains a prototype or inherited fields", () => {
+    const copy = stripNullProperties(JSON.parse('{"__proto__":{"polluted":1},"a":{"__proto__":{"x":2}}}')) as Record<string, unknown>;
+    expect(Object.getPrototypeOf(copy)).toBe(Object.prototype);
+    expect((copy as { polluted?: unknown }).polluted).toBeUndefined();
+    expect(Object.getPrototypeOf(copy.a)).toBe(Object.prototype);
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+  });
+
   it("strips null properties only", () => {
     expect(stripNullProperties({ a: null, b: [null, { c: null, d: 1 }] })).toEqual({ b: [null, { d: 1 }] });
   });

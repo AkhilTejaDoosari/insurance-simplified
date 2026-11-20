@@ -32,6 +32,16 @@ export interface NamedJsonSchema {
   schema: JsonSchema;
 }
 
+/** Keys that address an object's prototype chain. Rejected in model output
+ *  outright (fail closed) and never declared by a schema. */
+const FORBIDDEN_KEYS: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
+
+/** Own-entry lookup only: an inherited member ("toString") is never a
+ *  declared property. */
+function ownProperty(map: Record<string, JsonSchema> | undefined, key: string): JsonSchema | undefined {
+  return map && Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
 const KNOWN_KEYWORDS = new Set([
   "type", "properties", "required", "additionalProperties", "items", "enum",
   "minItems", "minLength", "minimum", "maximum", "description",
@@ -42,7 +52,13 @@ export function assertSupportedSchema(schema: JsonSchema, path = "$"): void {
   for (const key of Object.keys(schema)) {
     if (!KNOWN_KEYWORDS.has(key)) throw new Error(`Unsupported JSON-schema keyword "${key}" at ${path}`);
   }
-  for (const [name, child] of Object.entries(schema.properties ?? {})) assertSupportedSchema(child, `${path}.${name}`);
+  for (const [name, child] of Object.entries(schema.properties ?? {})) {
+    if (FORBIDDEN_KEYS.has(name)) throw new Error(`Forbidden property name "${name}" at ${path}`);
+    assertSupportedSchema(child, `${path}.${name}`);
+  }
+  for (const name of schema.required ?? []) {
+    if (FORBIDDEN_KEYS.has(name)) throw new Error(`Forbidden property name "${name}" at ${path}`);
+  }
   if (typeof schema.additionalProperties === "object") assertSupportedSchema(schema.additionalProperties, `${path}.*`);
   if (schema.items) assertSupportedSchema(schema.items, `${path}[]`);
 }
@@ -95,7 +111,8 @@ export function validateJsonSchema(schema: JsonSchema, value: unknown, path = "$
       if (!Object.hasOwn(record, key)) errors.push(`${path}.${key}: required`);
     }
     for (const [key, child] of Object.entries(record)) {
-      const declared = schema.properties?.[key];
+      if (FORBIDDEN_KEYS.has(key)) { errors.push(`${path}: forbidden key`); continue; }
+      const declared = ownProperty(schema.properties, key);
       if (declared) errors.push(...validateJsonSchema(declared, child, `${path}.${key}`));
       else if (schema.additionalProperties === false) errors.push(`${path}.${key}: not allowed`);
       else if (typeof schema.additionalProperties === "object") errors.push(...validateJsonSchema(schema.additionalProperties, child, `${path}.${key}`));
@@ -112,8 +129,11 @@ export function stripNullProperties(value: unknown): unknown {
   if (typeof value !== "object" || value === null) return value;
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
-    if (child === null) continue;
-    out[key] = stripNullProperties(child);
+    // Prototype-addressing keys are dropped (the client already rejects them);
+    // every other key is defined as an own data property, never assigned, so
+    // an untrusted key can never reach a setter or the prototype chain.
+    if (child === null || FORBIDDEN_KEYS.has(key)) continue;
+    Object.defineProperty(out, key, { value: stripNullProperties(child), enumerable: true, writable: true, configurable: true });
   }
   return out;
 }
