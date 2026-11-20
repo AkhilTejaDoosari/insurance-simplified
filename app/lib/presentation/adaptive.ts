@@ -705,7 +705,7 @@ export function withheldNotices(table: Pick<Table, "rows">): WithheldNotice[] {
 
 export const EXCLUSIONS_HEADING = "Exclusions read";
 export const AUTHORITY_HEADING = "Which document governs";
-export const NO_EXCLUSION_SECTION_FOUND = "No exclusion section was found in the pages read.";
+export const NO_EXCLUSION_SECTION_FOUND = "An exclusion section was not found in the pages read.";
 
 export interface SurfaceLink {
   documentId: string;

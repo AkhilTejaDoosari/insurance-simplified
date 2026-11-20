@@ -75,7 +75,7 @@ describe("m7i export PDF text", () => {
 
   it("empty lists: complete says no exclusion section was found; unknown says exclusions may be missing", async () => {
     const text = await report(surfaces([completeEmpty, unknownEmpty]));
-    expect(text).toContain("No exclusion section was found in the pages read.");
+    expect(text).toContain("An exclusion section was not found in the pages read.");
     expect(text).toContain("It is not known whether every page was read - exclusions may be missing.");
   });
 
@@ -188,7 +188,7 @@ describe("m7i export route uses read-back re-derivation", () => {
     expect(text).not.toContain(FORGED_CLAIM);
     expect(text).toContain("Sample Plan A (plan-a.pdf)");
     expect(text).toContain("All 2 pages were read.");
-    expect(text).toContain("No exclusion section was found in the pages read.");
+    expect(text).toContain("An exclusion section was not found in the pages read.");
   });
 
   it("legacy stored results without surfaces print no section", async () => {

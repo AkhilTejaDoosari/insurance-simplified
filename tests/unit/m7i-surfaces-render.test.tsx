@@ -50,14 +50,14 @@ describe("m7i EvidenceSurfaces component", () => {
   it("unknown and empty: no empty-list wording, only the reading state", () => {
     const text = textOf(render(surfaces([unknownEmpty])));
     expect(text).toContain("It is not known whether every page was read — exclusions may be missing.");
-    expect(text).not.toContain("No exclusion section");
+    expect(text).not.toContain("exclusion section was not found");
     expect(forbiddenWording(text)).toEqual([]);
   });
 
-  it("complete and empty: 'No exclusion section was found in the pages read'", () => {
+  it("complete and empty: 'An exclusion section was not found in the pages read'", () => {
     const text = textOf(render(surfaces([completeEmpty])));
     expect(text).toContain("All 6 pages were read.");
-    expect(text).toContain("No exclusion section was found in the pages read.");
+    expect(text).toContain("An exclusion section was not found in the pages read.");
     expect(forbiddenWording(text)).toEqual([]);
   });
 

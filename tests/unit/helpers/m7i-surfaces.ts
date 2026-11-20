@@ -109,10 +109,9 @@ export function surfaces(
   return { schema: SURFACES_SCHEMA, exclusions, authority };
 }
 
-/** Words that must never describe a missing item (evidence-core §3). The
- *  one sanctioned "No …" sentence is the complete-empty wording. */
+/** Words that must never describe a missing item (evidence-core §3). */
 export function forbiddenWording(text: string): string[] {
-  const t = text.replace(/No exclusion section was found in the pages read\./g, "");
+  const t = text;
   const hits: string[] = [];
   if (/\bNo\b/.test(t)) hits.push("No");
   if (/no exclusions/i.test(t)) hits.push("No exclusions");

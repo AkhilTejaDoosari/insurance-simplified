@@ -66,7 +66,7 @@ describe("m7i exclusion inventories", () => {
     const [x] = surfacesDisplay(table, surfaces([completeEmpty])).exclusions;
     if (x.kind !== "exclusion-inventory") throw new Error("kind");
     expect(x.emptyText).toBe(NO_EXCLUSION_SECTION_FOUND);
-    expect(x.emptyText).toBe("No exclusion section was found in the pages read.");
+    expect(x.emptyText).toBe("An exclusion section was not found in the pages read.");
   });
 
   it("cannot be confirmed: the phrase and no values", () => {
