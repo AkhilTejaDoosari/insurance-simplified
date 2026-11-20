@@ -103,6 +103,52 @@ describe.skipIf(!configured)("postgres vector round-trip (live Supabase)", () =>
   });
 });
 
+describe.skipIf(!configured)("match_chunks session scope (M5, migration 0007)", () => {
+  it("rejects a NULL or blank filter_session instead of searching every owner", async () => {
+    const { url } = restConfig();
+    for (const filter_session of [null, "  "]) {
+      const res = await fetch(`${url}/rest/v1/rpc/match_chunks`, {
+        method: "POST",
+        headers: restHeaders(),
+        body: JSON.stringify({
+          query_embedding: unitVector(0),
+          match_count: 5,
+          filter_document_id: null,
+          filter_session,
+        }),
+      });
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it("ranks a session's chunks across all of its documents, never another session's", async () => {
+    const run = `it-m5-scope-${Date.now().toString(36)}`;
+    const mine = `${run}-mine`;
+    const other = `${run}-other`;
+    const docs = [`${mine}-d1`, `${mine}-d2`, `${other}-d1`];
+    await insertDocumentRow(docs[0], mine);
+    await insertDocumentRow(docs[1], mine);
+    await insertDocumentRow(docs[2], other);
+    try {
+      const store = new PostgresVectorStore();
+      const one = chunkDocument(docs[0], ["First plan page with a deductible line."]);
+      const two = chunkDocument(docs[1], ["Second plan page with a copay line."]);
+      const foreign = chunkDocument(docs[2], ["Other session page."]);
+      // The foreign chunk is the exact query direction: it must still never appear.
+      await store.upsertChunks(one, new Map(one.map((c) => [c.chunkId, unitVector(1)])), { sessionId: mine });
+      await store.upsertChunks(two, new Map(two.map((c) => [c.chunkId, unitVector(2)])), { sessionId: mine });
+      await store.upsertChunks(foreign, new Map(foreign.map((c) => [c.chunkId, unitVector(0)])), {
+        sessionId: other,
+      });
+      const hits = await store.queryTopK(unitVector(0), 40, { sessionId: mine });
+      expect(hits.map((h) => h.documentId).sort()).toEqual([docs[0], docs[1]]);
+    } finally {
+      for (const doc of docs) await deleteDocumentRow(doc);
+    }
+  });
+});
+
 describe.skipIf(configured)("postgres vector round-trip (no credentials)", () => {
   it("SKIPS honestly without SUPABASE_URL/SUPABASE_SECRET_KEY", () => {
     expect(configured).toBe(false);
