@@ -24,6 +24,13 @@
 // document_unreadable with copy that says so explicitly. Never claim
 // scanned-PDF support anywhere in this path.
 
+import {
+  assessPageReadability,
+  summarizeReadability,
+  type DocumentReadability,
+  type PageReadability,
+} from "@/app/lib/pdf/page-readability";
+
 export type QualityGateReason =
   | "document_unreadable"
   | "extraction_failed"
@@ -65,6 +72,22 @@ export function checkExtraction(pages: unknown): QualityGateResult {
     };
   }
   return { ok: true };
+}
+
+/**
+ * Per-page coverage of an extraction that passed checkExtraction(). The gate
+ * accepts a document on its total text, so a partly scanned PDF passes on its
+ * readable pages; this names the pages that were not (or only partly) read so
+ * they are reported instead of silently lost (EC-10). Uses the extractor's
+ * readability record when given, else derives it from the page texts.
+ */
+export function pageCoverage(
+  pages: readonly string[],
+  readability?: readonly PageReadability[],
+): DocumentReadability & { complete: boolean } {
+  const records = readability && readability.length === pages.length ? readability : assessPageReadability(pages);
+  const summary = summarizeReadability(records);
+  return { ...summary, complete: summary.pagesNotRead.length === 0 && summary.pagesPartlyRead.length === 0 };
 }
 
 const UNSUPPORTED_SIGNALS = [

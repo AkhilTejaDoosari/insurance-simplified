@@ -13,7 +13,10 @@
 //      display grounding failures make the row NEEDS VERIFICATION;
 //   2. Stage E plan attribution (resolveRowPlanIds);
 //   3. unattributed TOC/glossary-shaped values are not displayed;
-//   4. rows left empty flip to NOT STATED.
+//   4. rows left empty flip to NOT STATED — unless a statement of the fact
+//      was withheld (kept NEEDS VERIFICATION with its source line); every
+//      NOT STATED row carries a server-derived absence record (EC-10) saying
+//      whether nothing was found in the pages read or candidates were withheld.
 
 import { verifyEvidenceCitation, checkDisplayGrounding } from "@/app/lib/evidence-verification";
 import type { CellValue, ComparisonTable, EvidenceCitation } from "@/app/lib/extraction/types";
@@ -22,6 +25,9 @@ import { isGlossaryDefinitionLine, isTocEntryLine } from "@/app/lib/extraction/n
 import { verifyClaimAnchor } from "@/app/lib/extraction/claim-anchors";
 import { timeSync } from "@/app/lib/observability/timing";
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
+import type { PageReadability } from "@/app/lib/pdf/page-readability";
+import type { AbsenceReason, WithheldClaim } from "@/app/lib/extraction/types";
+import { annotateAbsence, WITHHELD_ROW_RATIONALE } from "@/app/lib/extraction/absence";
 
 export interface VerifiableDocument {
   documentId: string;
@@ -29,6 +35,17 @@ export interface VerifiableDocument {
   pageCount: number;
   pages: string[];
   tables?: LayoutTable[];
+  readability?: PageReadability[];
+}
+
+/** A withheld record survives only when its quote is literally on its page
+ *  of a session document (it is a pointer, never a value). */
+function verifiedWithheld(withheld: readonly WithheldClaim[] | undefined, documents: VerifiableDocument[]): WithheldClaim[] {
+  return (withheld ?? []).filter((w) => {
+    const doc = documents.find((d) => d.documentId === w.documentId);
+    const page = doc && Number.isInteger(w.page) ? doc.pages[w.page - 1] : undefined;
+    return typeof page === "string" && typeof w.quote === "string" && !!w.quote.trim() && page.includes(w.quote);
+  });
 }
 
 export function verifyComparisonTable(table: ComparisonTable, documents: VerifiableDocument[]): ComparisonTable {
@@ -49,7 +66,10 @@ export function verifyComparisonTable(table: ComparisonTable, documents: Verifia
   const scoped = plans.length > 0 ? attributePlanScope({ ...table, plans }, documents) : table;
 
   const rows: ComparisonTable["rows"] = [];
+  const absenceReasons = new Map<string, AbsenceReason>();
   for (const row of scoped.rows) {
+    const withheld = verifiedWithheld(row.withheld, documents);
+    const withheldField = withheld.length > 0 ? { withheld } : {};
     // Step 1 — citations and structure.
     const verifiedValues: { value: CellValue; evidence: EvidenceCitation[]; groundingRationale?: string }[] = [];
     for (const value of row.values) {
@@ -62,7 +82,11 @@ export function verifyComparisonTable(table: ComparisonTable, documents: Verifia
       const candidate = { ...value, evidence };
       if (value.anchor && !verifyClaimAnchor(row.factName, candidate, documents)) continue;
       const grounding = timeSync("extract.checkDisplayGrounding", () =>
-        checkDisplayGrounding(value.display, row.factName, evidence.map((e) => e.quote))
+        checkDisplayGrounding(value.display, row.factName, evidence.map((e) => e.quote), {
+          qualifiers: value.qualifiers as unknown as Record<string, unknown>,
+          // The anchor re-derived above: the display is verbatim by construction.
+          structural: !!value.anchor,
+        })
       );
       verifiedValues.push({
         value: candidate,
@@ -89,19 +113,31 @@ export function verifyComparisonTable(table: ComparisonTable, documents: Verifia
       return { ...unscoped, ...(planId ? { planId } : {}), evidence: entry.evidence };
     });
     // Step 4 — verdicts.
-    if (values.length === 0) {
+    const { withheld: _untrusted, ...base } = row;
+    if (values.length === 0 && withheld.length > 0) {
+      rows.push({ factName: row.factName, verdict: "NEEDS VERIFICATION", rationale: WITHHELD_ROW_RATIONALE, values: [], withheld });
+    } else if (values.length === 0 && row.values.length === 0 && row.verdict === "NEEDS VERIFICATION") {
+      // An unresolved row with no values (e.g. a matching passage that was
+      // not unique enough to cite) stays unresolved: it is not an absence.
+      rows.push({ ...base, values: [] });
+    } else if (values.length === 0) {
+      // Candidates proposed but none survived verification are withheld,
+      // not "not found" (EC-10).
+      if (row.values.length > 0) absenceReasons.set(row.factName, "candidates-withheld");
       rows.push({ factName: row.factName, verdict: "NOT STATED", values: [] });
     } else if (groundingRationales.length > 0) {
       const prior = typeof row.rationale === "string" ? `${row.rationale} ` : "";
       rows.push({
-        ...row,
+        ...base,
         verdict: "NEEDS VERIFICATION",
         rationale: `${prior}${[...new Set(groundingRationales)].join(" ")}`.trim(),
         values,
+        ...withheldField,
       });
     } else {
-      rows.push({ ...row, values });
+      rows.push({ ...base, values, ...withheldField });
     }
   }
-  return { ...table, ...(plans.length ? { plans } : { plans: undefined }), rows };
+  const scopedDocs = documents.filter((doc) => table.documents.some((entry) => entry.documentId === doc.documentId));
+  return annotateAbsence({ ...table, ...(plans.length ? { plans } : { plans: undefined }), rows }, scopedDocs, absenceReasons);
 }

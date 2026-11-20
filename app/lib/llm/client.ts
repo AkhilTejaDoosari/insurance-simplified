@@ -1,6 +1,24 @@
 // Provider-agnostic LLM client (OpenAI-compatible chat completions).
 // Configured via LLM_BASE_URL, LLM_API_KEY, LLM_MODEL. No vendor SDK is
 // bundled; any endpoint speaking the chat-completions shape works.
+//
+// Structured output (EC-9, defect "No schema enforcement on LLM output"):
+// a caller that passes `schema` gets a strict `json_schema` response format
+// (OpenAI-compatible; Ollama and other local runtimes honour the same field)
+// AND a runtime check of the parsed output against that schema. Off-schema
+// output is rejected as a whole — never repaired or partially used.
+
+import { assertSupportedSchema, validateJsonSchema, type NamedJsonSchema } from "@/app/lib/llm/json-schema";
+
+export class LlmSchemaError extends Error {
+  readonly violations: readonly string[];
+  constructor(name: string, violations: readonly string[]) {
+    // Paths and rule names only: never the model output (may echo documents).
+    super(`LLM output failed schema "${name}" (${violations.length} violation(s): ${violations.slice(0, 3).join("; ")})`);
+    this.name = "LlmSchemaError";
+    this.violations = violations;
+  }
+}
 
 export interface LlmMessage {
   role: "system" | "user";
@@ -20,7 +38,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function completeJson(
   messages: LlmMessage[],
   model = process.env.LLM_MODEL ?? "default",
-  opts: { baseDelayMs?: number; maxAttempts?: number; maxTokens?: number } = {}
+  opts: { baseDelayMs?: number; maxAttempts?: number; maxTokens?: number; schema?: NamedJsonSchema } = {}
 ): Promise<unknown> {
   const baseUrl = process.env.LLM_BASE_URL;
   const apiKey = process.env.LLM_API_KEY;
@@ -34,6 +52,13 @@ export async function completeJson(
   if (opts.maxTokens !== undefined && (!Number.isInteger(opts.maxTokens) || opts.maxTokens < 1)) {
     throw new RangeError("LLM maxTokens must be a positive integer");
   }
+  if (opts.schema) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(opts.schema.name)) throw new RangeError("LLM schema name must match [A-Za-z0-9_-]{1,64}");
+    assertSupportedSchema(opts.schema.schema);
+  }
+  const responseFormat = opts.schema
+    ? { type: "json_schema", json_schema: { name: opts.schema.name, strict: true, schema: opts.schema.schema } }
+    : { type: "json_object" };
   const baseDelayMs = opts.baseDelayMs ?? 1500;
   let res: Response | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -46,7 +71,7 @@ export async function completeJson(
       body: JSON.stringify({
         model,
         messages,
-        response_format: { type: "json_object" },
+        response_format: responseFormat,
         temperature: 0,
         ...(opts.maxTokens === undefined ? {} : { max_tokens: opts.maxTokens }),
       }),
@@ -79,6 +104,13 @@ export async function completeJson(
     parsed = JSON.parse(jsonText);
   } catch {
     throw new Error("LLM returned malformed JSON");
+  }
+  if (opts.schema) {
+    // Strict path: the parsed output itself must satisfy the schema. No
+    // envelope unwrapping, no coercion, no partial acceptance.
+    const violations = validateJsonSchema(opts.schema.schema, parsed);
+    if (violations.length > 0) throw new LlmSchemaError(opts.schema.name, violations);
+    return parsed;
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return parsed;
 
