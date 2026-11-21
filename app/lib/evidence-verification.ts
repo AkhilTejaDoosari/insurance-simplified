@@ -427,6 +427,11 @@ function splitSentences(text: string): string[] {
 }
 
 /** Count whitespace-separated tokens in a segment. */
+/** Whole figures a text states ("$1,000,000" → "1000000", "80%" → "80"). */
+function figuresOf(text: string): string[] {
+  return [...text.matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((m) => m[0].replace(/,/g, "").replace(/\.0+$/, ""));
+}
+
 function countTokens(segment: string): number {
   return segment.split(/\s+/).filter(Boolean).length;
 }
@@ -528,9 +533,18 @@ export function verifyAnswerClaims(
     canonicalQuotes.push(strict.quote);
   }
 
-  // (a) Every substantive generated sentence must be covered by >=1 citation
+  // (a) Every substantive generated sentence must be covered by >=1 citation.
+  // A sentence that states a figure is always checked, whatever its length,
+  // and each figure must equal (whole value) a figure of a cited passage:
+  // "Annual maximum $2,000,000" against "$1,000,000" fails; token substring
+  // coverage alone would accept "100" inside "1000000" (2026-11-21).
+  const citedFigures = new Set(canonicalQuotes.flatMap(figuresOf));
   const sentences = splitSentences(answerText);
   for (const sentence of sentences) {
+    const figures = figuresOf(sentence);
+    if (figures.some((f) => !citedFigures.has(f))) {
+      return { ok: false, rationale: `Unsupported claim: figure not in cited passages` };
+    }
     if (countTokens(sentence) < 4) continue; // non-substantive
     if (!isSentenceCovered(sentence, canonicalQuotes)) {
       return { ok: false, rationale: `Unsupported claim: "${sentence}"` };

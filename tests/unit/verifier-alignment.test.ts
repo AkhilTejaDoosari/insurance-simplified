@@ -72,3 +72,26 @@ describe("a route-level citation rejection is 'cannot be confirmed' with the pas
     expect(JSON.stringify(body)).not.toContain("Home-country treatment");
   });
 });
+
+describe("a short sentence that states a figure is always checked", () => {
+  const P = "SCHEDULE\nAnnual maximum $1,000,000\nDeductible elsewhere $100";
+  const D = [{ documentId: "doc-1", pages: [P] }];
+  const C = [{ documentId: "doc-1", page: 1, quote: P }];
+  const cite = [{ documentId: "doc-1", page: 1, quote: "Annual maximum $1,000,000" }];
+
+  it("a changed figure in a short sentence is rejected", () => {
+    const r = verifyAnswerClaims("Annual maximum $2,000,000", cite, C, D);
+    expect(r.ok).toBe(false);
+    expect(r.rationale).toMatch(/Unsupported claim/);
+  });
+
+  it("a bare figure answer must be in a cited passage", () => {
+    expect(verifyAnswerClaims("$2,000,000.", cite, C, D).ok).toBe(false);
+    expect(verifyAnswerClaims("$1,000,000.", cite, C, D).ok).toBe(true);
+  });
+
+  it("the stated figure from the citation passes; a short sentence without figures is still skipped", () => {
+    expect(verifyAnswerClaims("Annual maximum $1,000,000", cite, C, D).ok).toBe(true);
+    expect(verifyAnswerClaims("Yes, it does.\nAnnual maximum $1,000,000", cite, C, D).ok).toBe(true);
+  });
+});
