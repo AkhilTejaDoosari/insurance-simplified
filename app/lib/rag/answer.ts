@@ -582,6 +582,9 @@ const CHAT_INSTRUCTIONS = [
  *  Under-budgeting still drops a whole document block (missing plan tiers) or
  *  cuts a page tail (missing eligibility evidence). */
 export const MAX_CONTEXT_CHARS = 48000;
+/** Per-request output cap for chat (owner decision 2026-11-21). A reply cut
+ *  at the cap fails closed (finish_reason=length → CHAT_FAILED). */
+export const CHAT_MAX_OUTPUT_TOKENS = 1024;
 
 /** Build LLM prompt from top-K retrieved chunks with budget enforcement.
  *  Truncates lowest-rank chunks first while keeping page tags intact. */
@@ -777,6 +780,7 @@ export async function answerViaLlm(
   const raw = stripNullProperties(
     await completeJson([{ role: "user", content: prompt }], undefined, {
       schema: CHAT_ANSWER_SCHEMA,
+      maxTokens: CHAT_MAX_OUTPUT_TOKENS,
     }),
   ) as Record<string, unknown>;
 

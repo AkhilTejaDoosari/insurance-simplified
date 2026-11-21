@@ -75,6 +75,7 @@ export async function completeJson(
   const baseDelayMs = opts.baseDelayMs ?? 1500;
   let res: Response | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const startedAt = Date.now();
     res = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
@@ -90,6 +91,17 @@ export async function completeJson(
         ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       }),
     });
+    // Usage log (owner decision 2026-11-21): counts and timings only —
+    // never the prompt, document text, output or key.
+    const usage = res.ok ? ((await res.clone().json().catch(() => ({}))) as { usage?: { prompt_tokens?: unknown; completion_tokens?: unknown } }).usage : undefined;
+    console.info(`[llm-usage] ${JSON.stringify({
+      model,
+      status: res.status,
+      promptTokens: typeof usage?.prompt_tokens === "number" ? usage.prompt_tokens : null,
+      completionTokens: typeof usage?.completion_tokens === "number" ? usage.completion_tokens : null,
+      ms: Date.now() - startedAt,
+      attempt,
+    })}`);
     if (res.ok || !RETRYABLE.has(res.status) || attempt === maxAttempts) break;
     const retryAfter = Number(res.headers.get("retry-after"));
     const delay = Number.isFinite(retryAfter) && retryAfter > 0

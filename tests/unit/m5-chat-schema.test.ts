@@ -15,7 +15,7 @@ vi.mock("@/app/lib/rag/embeddings", async (importOriginal) => {
 
 import {
   answerViaLlm,
-  CHAT_ANSWER_SCHEMA,
+  CHAT_ANSWER_SCHEMA, CHAT_MAX_OUTPUT_TOKENS,
   UNCERTAIN_TEXT,
 } from "@/app/lib/rag/answer";
 import { completeJson } from "@/app/lib/llm/client";
@@ -77,8 +77,10 @@ describe("M5 chat call uses strict structured output", () => {
       citations: [{ documentId: "doc-1", page: 1, quote: QUOTE }],
     });
     const result = await answerViaLlm(DOCS, "What is the annual deductible?");
+    // Owner decision 2026-11-21: chat requests also carry the output cap.
     expect(vi.mocked(completeJson).mock.calls[0][2]).toEqual({
       schema: CHAT_ANSWER_SCHEMA,
+      maxTokens: CHAT_MAX_OUTPUT_TOKENS,
     });
     expect(result.kind).toBe("answer");
     expect(JSON.stringify(result)).not.toContain("cantAnswer");
