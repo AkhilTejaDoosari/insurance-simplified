@@ -34,6 +34,7 @@ const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 3;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const REASONING_EFFORTS: ReadonlySet<string> = new Set(["none", "minimal", "low", "medium", "high"]);
 
 export async function completeJson(
   messages: LlmMessage[],
@@ -59,6 +60,13 @@ export async function completeJson(
   const responseFormat = opts.schema
     ? { type: "json_schema", json_schema: { name: opts.schema.name, strict: true, schema: opts.schema.schema } }
     : { type: "json_object" };
+  // Opt-in reasoning control for providers that accept the OpenAI-style
+  // field (owner decision 2026-11-21: local qwen3 via Ollama, "none" turns
+  // its reasoning step off). Unset: the body is unchanged. Closed set only.
+  const reasoningEffort = process.env.LLM_REASONING_EFFORT?.trim();
+  if (reasoningEffort && !REASONING_EFFORTS.has(reasoningEffort)) {
+    throw new RangeError("LLM_REASONING_EFFORT must be one of none, minimal, low, medium, high");
+  }
   const baseDelayMs = opts.baseDelayMs ?? 1500;
   let res: Response | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -74,6 +82,7 @@ export async function completeJson(
         response_format: responseFormat,
         temperature: 0,
         ...(opts.maxTokens === undefined ? {} : { max_tokens: opts.maxTokens }),
+        ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       }),
     });
     if (res.ok || !RETRYABLE.has(res.status) || attempt === maxAttempts) break;
