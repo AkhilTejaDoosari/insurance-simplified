@@ -30,7 +30,8 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | 1 Inventory and selection | 1–2 | Checkpoint `04fd36d`; owner accepted as engineering checkpoint; e2e assertion change approved |
 | 2 Semantic correctness | 3–6 | Checkpoint `e3375b2`; owner accepted as engineering checkpoint |
 | 3 Presentation contract | 7 | Checkpoints `5c6efdd`, `1af706d`; owner accepted as engineering checkpoint |
-| 4 Chatbot correction | 8–10 | Implemented, Tested; independent review done, findings fixed; owner review pending |
+| 4 Chatbot correction | 8–10 | Checkpoints `c57db34`, `2ae2d63`; owner accepted as engineering checkpoint (2026-11-21) |
+| 4b Pre-Phase-5 fixes | A-026, doc 02 fixes 1–3, chat speed | Checkpoints `435fca1` … (see "Pre-Phase-5 fixes"); owner review pending |
 | 5 Real-document acceptance | 11 | Not started — the five files are confirmed (doc 02 replaced, doc 03 confirmed) |
 
 ## Audit validation (at `de4efe4`)
@@ -558,9 +559,250 @@ with real fixtures 1814 passed / 1 failed (pre-existing missing-brochure gap)
 6. Labelled-scorecard fixtures are not on this machine; `eval:extraction`
    is SKIPPED in effect.
 
+## Owner decisions after Phase 4 (2026-11-21)
+
+1. Phase 4 accepted as an engineering checkpoint; product acceptance BLOCKED.
+2. A-026: separate the cases. Model/provider failure (timeout, error,
+   unparseable output) → retryable `CHAT_FAILED`. Model answered but
+   `verifyAnswerClaims` rejected it → "cannot be confirmed" with the cited
+   passages. Regression tests for both.
+3. Doc 02 fixes before Phase 5, regression-first, general rules only:
+   (1) numbered exclusion-list items never filed as benefit values (first);
+   (2) deductible and annual maximum missed behind a glued footnote digit;
+   (3) smaller items — fix where a general rule handles them, otherwise
+   record here with reasons.
+4. Chat speed: turn off qwen3's reasoning step in the local adapter if the
+   endpoint supports it; keep it off only if the verified-answer pass rate
+   does not drop materially.
+5. Record the new doc 02 finding (below).
+
+## New doc 02 finding (verification pass, 2026-11-21)
+
+An independent re-run of the inventory and fact probe on the replaced doc 02
+(5/5 identities verified, doc 02 "verified-plan", 118 values — matching the
+Phase 4 record) found a class the earlier list did not name: **four items of
+the numbered exclusions list (page 9) were filed as benefit values** under
+emergency care, prescriptions, maternity and dental. Smaller items found at
+the same time: a section heading and disclaimers in the exclusions row,
+"… means …" definition lines as values, four value-less schedule labels
+(primary care, specialist, urgent care, emergency), a legal-assistance line
+under referrals, and 14 per-network coinsurance lines duplicated into
+network rules. The old duplicate file's counts equal doc 05's on every row.
+
+## Pre-Phase-5 fixes (2026-11-21)
+
+Each unit: failing test first (synthetic text), then the change, then the
+five-document probe diffed against the previous unit; every removed or
+added value was inspected locally (document text stays outside git).
+
+| Unit | Commit | Rule (general, no insurer/document code) | Tests (red before) |
+| --- | --- | --- | --- |
+| A-026 | `435fca1` | The route no longer degrades to the retrieval engine when the model call throws; it returns the retryable `CHAT_FAILED`. A rejected answer stays "cannot be confirmed" with passages (already so; now pinned at route level). | `chat-a026-failure.test.ts` (4 of 5 red; the rejection path already passed) |
+| Fix 1 | `f5088dc` | A source line inside an enumerated item of an exclusion section (found by the shared C1 scanner `scanExclusionSections`) is never a value of a Coverage or My Costs fact, except the pre-existing-condition rule. Limits & Risks facts and the exclusion inventory are unchanged. | `p0-exclusion-items-not-benefits.test.ts` (5 of 8 red; 3 controls) |
+| Fix 2 | `253a6e5`, `2155ec8` | Matchers ignore a footnote marker glued to a label word; quotes/displays stay verbatim. A marker resolves to a later same-page footnote line with the same marker (exactly one), whose text joins the label's meaning, and the value cites that footnote line as a second verified citation. "Deductible <scope> $amount" at line start is a deductible (per-incident/per-visit bases, waivers, credits excluded); "Annual/Overall/… maximum $amount" at line start is the overall limit. | `p0-footnote-labels.test.ts` (8 red) |
+| Fix 3 | `c8f3040` | A value-less label/heading (≤5 words, no figure, no "label: value", no stating word) is never a value; a "<Term> means …" line is not a Coverage/My Costs value. Either is **withheld** for verification when it is the document's only statement of the fact (new withheld reasons `label-without-value`, `definition-line`), dropped otherwise. Name-valued facts (`network`) exempt. Exclusion references as contract terms are not exclusions; legal/consular referrals are not referrals; paired in-/out-of-network percentages and coinsurance lines are not network rules. | `p0-doc02-small-items.test.ts` (7 of 10 red; controls) |
+| Fix 3 (follow-up) | `47c0837` | Limit wording (maximum, limit, up to, same as, usual, customary, reasonable) states a value; no change on the five documents. | `p0-doc02-small-items.test.ts` (1 red) |
+| Truncation guard | `8439fb4`, `c98a209` | The adapter compares the provider's `usage.prompt_tokens` with the prompt length (whitespace collapsed); a long prompt reported at > 8 characters per token was cut and fails closed → `CHAT_FAILED` (A-026). Catches severe front truncation only. | `llm-prompt-truncation.test.ts` (1 red; then 1 red for whitespace), route case in `chat-a026-failure.test.ts` |
+| Review fixes | `685f2fc` | See "Pre-Phase-5 independent review". | `p0-review-findings.test.ts` (25 red of 34) |
+| Chat speed | `b0e56c9` | Opt-in `LLM_REASONING_EFFORT` (closed set) sent as `reasoning_effort`; unset → body unchanged. Probed locally: Ollama's OpenAI-compatible endpoint honours `"none"` for qwen3 (0 reasoning characters, 10 vs 317 tokens on a trivial prompt); `think: false` is ignored there. | `llm-reasoning-effort.test.ts` (5 of 6 red) |
+
+**Correction recorded:** the first fix-2 commit filed doc 02's two
+"Deductible1 …" lines under the annual deductible. The page's footnote 1
+reads "Per injury or sickness", so they are per-illness deductibles; the
+second fix-2 commit resolves footnotes and files them correctly.
+
+**Owner-directed acceptance change:** two tests in
+`tests/unit/chat-route-engine.test.ts` asserted the old "provider failure
+degrades to lexical, never a 500" contract; they now assert `CHAT_FAILED`
+(retryable) and that the retrieval engine is not consulted. The explicit
+`engine: "llm"` request with no model configured is treated the same way.
+
+### Five-document probe, before → after (values per document)
+
+| Doc | Identity | Before | After | Change |
+| --- | --- | --- | --- | --- |
+| 01 | verified | 471 | 415 | −20 exclusion items (fix 1), −36 headings/labels/fragments/contact lines (fix 3); 1 cell emptied by fix 1 (telehealth: its only mention was exclusion item 9) |
+| 02 | verified | 118 | 84 | targets below |
+| 03 | verified | 132 | 113 | −20 headings/labels/fragments (fix 3); network name kept; +1 restored by the review fix S2 ("requires …") |
+| 04 | verified | 52 | 50 | −2 headings (fix 3) |
+| 05 | verified | 505 | 476 | −29 headings/labels/contact lines (fix 3) |
+
+Doc 02, per fact (changed rows): per-illness-deductible 0→2 (both cite
+footnote 1), policy-limit 4→5 (annual maximum added), network-rules 14→1,
+material-exclusions 8→4, surgery 10→7, emergency-care 5→3, dental 3→2,
+maternity 5→4, prescriptions 2→1, specialist 1→0 and urgent care 1→0
+(their label lines are withheld for verification), referral 1→0, and
+heading/definition lines dropped from AD&D, coverage dates, eligibility,
+evacuation, physical therapy, pre-existing, primary care, repatriation and
+student health center. No value was added to docs 01, 03, 04, 05. Real
+fixture suites: unchanged (only the pre-existing missing-brochure gap).
+
+**Totals:** 1,278 → 1,138 values (baseline `435fca1`, final `685f2fc`;
+regenerated after the 2026-11-21 reboot wiped the scratch dumps; the
+baseline reproduced exactly). Gross: 144 removed, 4 added (two per-illness
+deductibles citing footnote 1, the annual maximum, and one doc 03 line
+restored by review fix S2 — net 1,138).
+
+**Audit of the 144 removed values** (every line read locally; attribution
+by probing each commit): 27 enumerated exclusion-list items (fix 1; doc 01:
+20, doc 02: 7); 95 value-less labels, headings, list sub-headings, contact
+lines and wrapped-line fragments; 13 per-network cost-share lines
+duplicated from coinsurance; 7 references to exclusions as contract terms;
+1 "… means …" definition; 1 legal-assistance referral. None stated an
+amount, a coverage status or a condition; 0 unattributed. Cells left with
+no value: 4 withheld for verification (`label-without-value`), doc 01
+telehealth (only mention was an exclusion item), doc 02 referral (legal
+referral; absence correct), doc 01 student-health-center (label dropped
+while an unverified structural candidate existed; the row reports
+`candidates-withheld`, "a possible source passage was found but could not
+be verified").
+
+### Recorded, not fixed (with reasons)
+
+- "exclusions, including a new pre-existing condition exclusion and waiting
+  period." (doc 02) stays in material-exclusions, pre-existing and
+  waiting-period: a mention of exclusions as a topic in a gap-in-coverage
+  warning. No general line rule separates it from a stated exclusion without
+  reading the previous line; not changed.
+- The schedule's copay column (four labels, then four amounts on separate
+  lines) is not paired: pairing by position would infer a table the layout
+  reader did not detect. The labels are withheld for verification instead.
+- Fix 1: when an exclusion item is a document's only mention of a benefit
+  (doc 01 telehealth), the benefit cell has no value; the item stays listed
+  under "Exclusions read". No new absence reason was added.
+- Fix 2 covers the line engine; table-label matching (`factsForLabel`) does
+  not resolve footnotes (no reproduced failure; doc 02's page has no
+  detected table). Chat lexical retrieval still tokenizes "Deductible1" as
+  one word (semantic leg finds it).
+- Residuals from earlier lists: policy-limit "maximum benefit" fragments and
+  the newborn "$500" sentence; premium newborn notice clause.
+- The withheld rationale text says "a table line"; label/definition lines
+  reuse it.
+
+### Pre-Phase-5 independent review (read-only reviewer, range `2ae2d63..8439fb4`)
+
+Verdict before fixes: request changes. A-026 judged faithful to the owner
+decision (no weakened assertion). Fixed test-first in `685f2fc`/`c98a209`:
+
+- B1 (blocking): "Deductible for emergency room $250", "Deductible
+  (prescription drugs) $50", "Deductible per sickness $100" matched the new
+  schedule shape and would have shown as the annual deductible. Now only a
+  plan-level scope may sit between label and amount; "sickness" is a
+  per-incident basis. **Own assertion corrected** (this session's fix-2
+  test): a place-specific "Deductible1 at the student health center" line is
+  not the annual deductible.
+- S6: any later "2 …" line could resolve as a footnote; now a footnote is a
+  line of a note block numbered from 1 without amounts; lookahead values cite
+  the footnote; the values check reads the marker-free line.
+- S8: read-back kept a per-illness value whose footnote citation failed.
+  First tried as general all-or-nothing citations — that broke three
+  existing contract tests (`extract-verify-boundary` 12, two plan-binding
+  cases), so it was narrowed: `verifyComparisonTable` re-derives a footnoted
+  label's footnote from the page and withholds the value unless it is among
+  the verified citations.
+- S3: "This/That means you pay $300" and definitions carrying a figure are
+  kept. S2: figures read on the raw line; more stating words.
+- S1: whitespace collapsed before the truncation ratio.
+- Recorded, not fixed: S4 (exclusion-reference / per-network excludes drop
+  silently instead of withholding), S5 (exclusion spans include
+  sentence-mode items and match any occurrence of a quote; no withholding),
+  S7 (overall maximum not checked against the heading above it), S1
+  partial-cut miss and CJK ratios, nits (legal guardian, docs for the new
+  variable). None changed a value on the five documents.
+
+Follow-up review of `685f2fc` (same reviewer): B1, S1 (whitespace), S3 and
+S8 confirmed fixed with non-vacuous tests. New findings, fixed test-first
+in `b46da71` (9 red before):
+
+- N1 (blocking): the note-block rule rejected notes containing amounts, so
+  a marked deductible whose footnote was not recognised fell back to its
+  marker-free text and showed as a SUPPORTED annual deductible. Now a
+  basis-dependent fact (deductibles, plan limit, out-of-pocket maximum)
+  withholds such a line (`footnote-unresolved`); notes may state amounts.
+- N2: a numbered run directly under a heading is a list, not a note block.
+- N3: the label check strips a marker only when it resolved to a footnote.
+- N4: ALL-CAPS lines are headings unless they state coverage; number words,
+  "full" and "before" count only in value phrases.
+- S7 (reviewer: block Phase 5 otherwise): an overall-maximum line directly
+  under a value-less line naming a Coverage benefit is that benefit's
+  sub-limit.
+- Patterns match the marker-free or the footnote-substituted reading;
+  guards always read the footnote-substituted line.
+- **Own assertions updated (this session's fix-2 tests, per N1):** a marked
+  deductible or annual maximum with no footnote on the page is now asserted
+  withheld instead of filed.
+
+No change on the five documents (1,138 values; withheld 1/2/2/0/4).
+Reviewer's residual assessment: S4/S5 (silent drops) do not block, but
+Phase 5 should record every NOT STATED row with its source page; S1
+partial cut / CJK do not block for five English documents.
+
+### Chat benchmark — local qwen3:8b (historical; superseded by the cloud-only decision)
+
+Same eight questions on doc 02 (deductible, geographic restrictions,
+nonsense "space tourism", annual maximum, out-of-network coinsurance,
+pre-existing, ER copay, maternity), `answerViaLlm` with local embeddings and
+in-memory retrieval.
+
+1. **Context-truncation finding (root cause).** Ollama served qwen3:8b with
+   a 4,096-token context; every ≈7,500-token chat prompt was cut to 2,050
+   tokens from the front (`truncating input prompt limit=2050 prompt≈7,500
+   keep=4`, 8 of 8 calls). The model never saw the instructions or the
+   question; result 0/8 verified, every failure `stage=llm-cantAnswer`;
+   `verifyAnswerClaims` never ran. Evidence of the earlier 2-of-4 smoke test
+   is unreliable for the same reason. This motivated the truncation guard.
+2. **16k context, reasoning ON (partial, interrupted by a reboot, then
+   stopped by the owner's cloud-only decision; OFF never ran):** prompts
+   intact (7,500–7,514 tokens, 0 truncation warnings). Deductible: verified
+   (76 s; verbatim "Deductible1 … $50 / … $100", omits that footnote 1 makes
+   them per-illness). Geographic: verified by `verifyAnswerClaims` (233 s)
+   but one citation misquotes the page (";" → ".") and fails
+   `verifyEvidenceCitation`; the route would fail it closed to a plain
+   refusal **without passages**. Space tourism: refusal (6.5 s, no model
+   call). Annual maximum: verified (161 s). Out-of-network coinsurance:
+   verified (167 s). Pre-existing: "cannot be confirmed" (168 s; the model
+   stated the right schedule line, then added an unsupported paraphrase;
+   `verifyAnswerClaims` rejected it; the fallback passages missed the page 3
+   line). ER copay: verified (120 s). Maternity: verified (155 s).
+   Latencies of questions 2 and 4–5 are inflated by concurrent test runs.
+3. **Findings kept for the cloud provider:** `verifyAnswerClaims` accepts a
+   punctuation-level misquote that `verifyEvidenceCitation` rejects; a
+   route-level citation failure returns a plain refusal instead of "cannot
+   be confirmed" with passages; the reasoning-effort decision is moot.
+
+## Owner decision (2026-11-21, after the benchmark): cloud-only inference
+
+Ollama/local models are no longer used by the app (supersedes the
+local-model chat decision). LLM: NVIDIA Nemotron 3 Ultra via
+build.nvidia.com's free OpenAI-compatible endpoint through the existing
+adapter (40 requests/min; public test brochures only — the free endpoint
+logs usage). Embeddings: D-012, Cloudflare Workers AI, same
+Qwen3-Embedding-0.6B 1024-d model, identity and dimension verified before
+switching. No silent local fallback (A-026). Per-request token limits and a
+usage log. $0; any paid run needs approval. Then the eight-question
+benchmark on Nemotron and, if supported by the diagnosis, the grid-first
+path; then cleanup (Ollama out of docker-compose and docs, CI check).
+Step 2 (audit, report before changing anything) is the current step.
+
+### Checkpoint commits (pre-Phase-5, all local, none pushed)
+
+`435fca1` A-026 · `f5088dc` fix 1 · `253a6e5`, `2155ec8` fix 2 · `c8f3040`,
+`47c0837` fix 3 · `b0e56c9` reasoning-effort option (now moot) · `8439fb4`,
+`c98a209` truncation guard · `685f2fc` review fixes · `b46da71` follow-up
+review fixes · this ledger update.
+
+### Gates at `b46da71`
+
+| Check | Result |
+| --- | --- |
+| `npx tsc --noEmit` | clean |
+| `npm test` | 1,791 passed / 22 skipped / 0 failed |
+| real-PDF (`REAL_PDFS_DIR`, `REAL_FIXTURES_DIR` = owner's local corpus) | 1,913 passed / **1 failed** / 42 skipped — the failure is the documented gap: `real-pdf-evidence.test.ts` needs two brochures not on this machine (unchanged since `04fd36d`) |
+| `npm run build` | exit 0 (ESLint "failed to patch" warning, not a failure) |
+| `npm run test:e2e` (local Supabase stack, port 3344) | 57 passed / 1 skipped (baseline 57/1) |
+| private-data guard | ok on every commit |
+
 ## Next atomic step
 
-Owner review of Phase 4 (this ledger, chat screenshots, the A-026 question,
-the doc 02 recall gaps). Phase 5 (Task 11, real-document acceptance) only
-after owner authorization; it needs `qwen3:8b` running locally for the
-generated-answer path.
+Owner review of the dependency audit (session report). No provider switch
+has been made. Phase 5 is NO-GO.
