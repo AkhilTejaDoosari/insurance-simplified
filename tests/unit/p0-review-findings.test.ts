@@ -144,3 +144,20 @@ describe("S7: a maximum directly under a benefit label is that benefit's sub-lim
     expect(shown(["SCHEDULE OF BENEFITS", "Policy number 12345", "Annual maximum $1,000,000"], "policy-limit")).toEqual(["Annual maximum $1,000,000"]);
   });
 });
+
+// Residual (owner list after Phase 2, surfaced by grid-first 2026-11-21): a
+// plan-limit line that opens mid-sentence is the tail of a wrapped sentence,
+// not the plan's limit ("…birth. Maximum coverage is $500." is a newborn cap).
+describe("policy-limit takes no wrapped-sentence fragments", () => {
+  it.each([
+    "payable for all covered medical expenses will be no more than the maximum benefit limit per coverage maximum.",
+    "is in effect at the moment of birth. Maximum coverage is $500. You must give us notice within 31 days",
+    "reasonable and customary charges for medically necessary covered medical expenses, subject to the maximum benefit",
+  ])("fragment %# is not the policy limit", (line) => {
+    expect(shown(["COVERAGE", line], "policy-limit")).toEqual([]);
+  });
+  it("a schedule line and a sentence opening the line are still read", () => {
+    expect(shown(["SCHEDULE", "Annual maximum $1,000,000"], "policy-limit")).toEqual(["Annual maximum $1,000,000"]);
+    expect(shown(["COVERAGE", "The maximum benefit is $250,000 per policy year."], "policy-limit")).toEqual(["The maximum benefit is $250,000 per policy year."]);
+  });
+});
