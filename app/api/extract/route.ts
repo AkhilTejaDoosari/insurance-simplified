@@ -1,7 +1,9 @@
 // Extraction endpoint: session documents + context → comparison table v1.
-// Picks the best available engine: the LLM whenever LLM_BASE_URL and
-// LLM_API_KEY are set, else the deterministic fallback. `engine` in the body
-// ("llm" | "fallback") is an explicit override for testing only.
+// Owner decision 2026-11-21: extraction and plan grouping are DETERMINISTIC.
+// LLM_* configures the chat model only and never sends document text from
+// here. The LLM extraction path runs only on an explicit server-side opt-in
+// (EXTRACTION_ENGINE=llm, for evaluation/tests) with a configured provider;
+// a client's `engine` field can only force the deterministic reader.
 // Output always validated (contracts/comparison-schema.md).
 //
 // Requires valid session capability (cookie / Authorization: Bearer / x-session-capability).
@@ -90,7 +92,7 @@ export async function POST(request: NextRequest) {
   }
 
   const useLlm =
-    body.engine === "llm" || (body.engine !== "fallback" && isLlmConfigured());
+    process.env.EXTRACTION_ENGINE === "llm" && body.engine !== "fallback" && isLlmConfigured();
 
   try {
     const raw = useLlm

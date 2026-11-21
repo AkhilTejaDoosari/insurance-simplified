@@ -53,12 +53,26 @@ describe("POST /api/extract engine selection", () => {
     for (const id of created.splice(0)) deleteSession(id);
   });
 
-  it("uses the LLM engine automatically when configured, with no engine field", async () => {
+  // Owner decision 2026-11-21 replaced "uses the LLM engine automatically
+  // when configured": LLM_* configures chat only; extraction is pinned to
+  // the deterministic reader unless EXTRACTION_ENGINE=llm opts in.
+  it("stays deterministic when an LLM is configured, with no engine field", async () => {
     process.env.LLM_BASE_URL = "https://llm.example";
     process.env.LLM_API_KEY = "key";
+    delete process.env.EXTRACTION_ENGINE;
     const { session, capability } = seedSession();
     const res = await post(session.sessionId, capability);
     expect(res.status).toBe(200);
+    expect((await res.json()).factListVersion).toBe("fallback");
+    expect(extractViaLlm).not.toHaveBeenCalled();
+  });
+
+  it("uses the LLM engine only on the explicit server opt-in EXTRACTION_ENGINE=llm", async () => {
+    process.env.LLM_BASE_URL = "https://llm.example";
+    process.env.LLM_API_KEY = "key";
+    process.env.EXTRACTION_ENGINE = "llm";
+    const { session, capability } = seedSession();
+    const res = await post(session.sessionId, capability);
     expect((await res.json()).factListVersion).toBe("llm");
     expect(extractViaLlm).toHaveBeenCalledTimes(1);
     expect(extractFallback).not.toHaveBeenCalled();
@@ -73,21 +87,26 @@ describe("POST /api/extract engine selection", () => {
     expect(extractViaLlm).not.toHaveBeenCalled();
   });
 
-  it("honours an explicit engine override in either direction", async () => {
+  // Owner decision 2026-11-21 replaced "honours an explicit engine override
+  // in either direction": a client may force the deterministic reader, but a
+  // client's "llm" cannot turn a provider on.
+  it("a client override can force the deterministic reader but never the LLM", async () => {
     process.env.LLM_BASE_URL = "https://llm.example";
     process.env.LLM_API_KEY = "key";
+    process.env.EXTRACTION_ENGINE = "llm";
     const first = seedSession();
     expect((await (await post(first.session.sessionId, first.capability, { engine: "fallback" })).json()).factListVersion).toBe("fallback");
 
-    delete process.env.LLM_BASE_URL;
-    delete process.env.LLM_API_KEY;
+    delete process.env.EXTRACTION_ENGINE;
     const second = seedSession();
-    expect((await (await post(second.session.sessionId, second.capability, { engine: "llm" })).json()).factListVersion).toBe("llm");
+    expect((await (await post(second.session.sessionId, second.capability, { engine: "llm" })).json()).factListVersion).toBe("fallback");
+    expect(extractViaLlm).not.toHaveBeenCalled();
   });
 
   it("organizes only verified facts while preserving citations in the response", async () => {
     process.env.LLM_BASE_URL = "https://llm.example";
     process.env.LLM_API_KEY = "key";
+    process.env.EXTRACTION_ENGINE = "llm"; // the LLM path's verification boundary
     const document = {
       documentId: "doc-1",
       filename: "plan.pdf",
