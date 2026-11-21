@@ -37,7 +37,7 @@ export interface FactDefinition {
 export const FACT_LIST_VERSION = "v2";
 
 /** Deductible basis other than the plan period: per illness, injury, … */
-const INCIDENT_BASIS = "(?:covered\\s+)?(?:illness|injury|injuries|condition|accident|admission|incident|occurrence|disability|damage)";
+const INCIDENT_BASIS = "(?:covered\\s+)?(?:illness|illnesses|sickness|sicknesses|injury|injuries|condition|accident|admission|incident|occurrence|disability|damage)";
 /** Per-event bases (per visit, for each admission, …), up to 3 words in. */
 const EVENT_BASIS = "(?:[\\w-]+\\s+){0,3}(?:visits?|admissions?|trips?|occurrences?|confinements?|stays?)";
 /** The basis must sit next to "deductible" (review R3): "Deductible: $250 per
@@ -89,11 +89,22 @@ export interface FootnotedLine {
 }
 
 /** Resolve glued footnote markers on a page's lines. A marker resolves only
- *  to a LATER line on the same page that opens with the same marker and a
- *  space ("1 Per injury or sickness"), and only when exactly one such line
- *  exists; the footnote then belongs to the label's meaning. */
+ *  to a LATER note-block line on the same page with the same marker ("1 Per
+ *  injury or sickness"), and only when exactly one such line exists; the
+ *  footnote then belongs to the label's meaning. */
 export function resolveFootnotes(lines: readonly string[]): FootnotedLine[] {
-  const notes = lines.map((l) => FOOTNOTE_LINE.exec(l));
+  // A footnote is a line of a NOTE BLOCK (review S6): consecutive note-shaped
+  // lines numbered 1, 2, 3 … from 1, none stating an amount or percentage.
+  // A numbered list or table row ("2 Office visits $20") is not a note.
+  const shaped = lines.map((l) => {
+    const m = FOOTNOTE_LINE.exec(l);
+    return m && !/[$%]/.test(m[2]) ? m : null;
+  });
+  const notes: (RegExpExecArray | null)[] = lines.map(() => null);
+  for (let i = 0; i < lines.length; i++) {
+    if (!shaped[i] || markerKey(shaped[i]![1]) !== "1" || (i > 0 && shaped[i - 1])) continue;
+    for (let j = i, n = 1; j < lines.length && shaped[j] && markerKey(shaped[j]![1]) === String(n); j++, n++) notes[j] = shaped[j];
+  }
   return lines.map((line, idx) => {
     const footnotes: number[] = [];
     const matchText = line.replace(FOOTNOTE_MARKER, (marker) => {
@@ -108,9 +119,11 @@ export function resolveFootnotes(lines: readonly string[]): FootnotedLine[] {
 }
 
 /** A schedule line that opens with the deductible label and states its
- *  amount ("Deductible elsewhere $100"); waivers and credits are not an
- *  amount of the deductible. */
-const SCHEDULE_DEDUCTIBLE = "^\\s*deductibles?\\b(?![^\\n]*\\b(?:waived?|credits?|not)\\b)[^$\\n.;]{0,60}\\$\\s?[\\d,]+";
+ *  amount, with at most a plan-level scope in between ("Deductible
+ *  elsewhere $100", "Deductible (individual) $500", "Deductible in-network
+ *  $250"). A service, place or incident between them ("for emergency room",
+ *  "at the …", "per sickness") is not the plan's annual deductible (review B1). */
+const SCHEDULE_DEDUCTIBLE = "^\\s*deductibles?\\b\\s*(?:[:(\\-–]\\s*)?(?:(?:in|out[- ]of)[- ]network|non[- ]network|elsewhere|individual|family|per (?:person|member|individual|insured|family)|annual|(?:per )?(?:policy|calendar|plan|certificate) (?:year|period))?\\s*\\)?\\s*:?\\s*\\$\\s?[\\d,]+";
 /** A schedule line naming the plan's overall maximum with its amount
  *  ("Annual maximum $1,000,000", "Overall maximum: $250,000"); nothing may
  *  sit between "maximum" and the amount (out-of-pocket, visits, …). */

@@ -72,18 +72,23 @@ const BENEFIT_FACTS: ReadonlySet<string> = new Set(
  *  OF REMAINS", "EXCLUSIONS"): at most five words, no amount, percentage or
  *  digit, no "label: value" colon, and no word that states something.
  *  Never a value of any fact. */
-const STATING_WORD = /\b(?:covered|not|no|none|yes|included|includes|excluded|exclud\w*|waived?|unlimited|paid|payable|pays|required|appl(?:y|ies|ied)|available|only|except|unless|subject|must|limit(?:s|ed)?|maximum|up to|same as|usual|customary|reasonable|n\/a)\b/i;
+const STATING_WORD = /\b(?:covered|not|no|none|nothing|yes|included|includes|excluded|exclud\w*|waived?|unlimited|paid|payable|pays?|free|full|required|requires?|needed|appl(?:y|ies|ied)|available|only|except|unless|subject|must|limit(?:s|ed)?|maximum|up to|same as|usual|customary|reasonable|renewable|worldwide|after|before|once|twice|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|n\/a)\b/i;
 export function isValuelessLabel(line: string): boolean {
-  const text = withoutFootnoteMarkers(line).replace(/^\s*[•·▪\-–*]\s*/, "").replace(/:\s*$/, "").trim();
+  // Figures are read on the RAW line: a glued digit may be a value
+  // ("visits20"), not only a footnote marker (review S2).
+  if (/[\d$%]/.test(line)) return false;
+  const text = line.replace(/^\s*[•·▪\-–*]\s*/, "").replace(/:\s*$/, "").trim();
   // "Label: value" states its value after the colon.
-  if (!text || /:\s*\S/.test(text) || /[\d$%]/.test(text) || STATING_WORD.test(text)) return false;
+  if (!text || /:\s*\S/.test(text) || STATING_WORD.test(text)) return false;
   return text.split(/\s+/).length <= 5;
 }
 /** Facts whose value IS a name ("Northwind PPO Network"): a short line
  *  without figures is their value, not a label. */
 const NAME_VALUED_FACTS: ReadonlySet<string> = new Set(["network"]);
-/** "<Term> means …": a definition names a term; it states no benefit. */
-const TERM_DEFINITION = /^\s*["“]?[A-Z][\w’'&-]*(?:\s+[A-Za-z][\w’'&-]*){0,5}["”]?\s+means\b/;
+/** "<Term> means …": a definition names a term; it states no benefit. A
+ *  line opening "This/That/It means" explains, and a definition carrying a
+ *  figure states the value (review S3): neither is a definition here. */
+const TERM_DEFINITION = /^\s*(?!(?:this|that|it|which|what)\s)["“]?[A-Z][\w’'&-]*(?:\s+[A-Za-z][\w’'&-]*){0,5}["”]?\s+means\b(?![^\n]*[$%])/i;
 
 /** Page spans of the enumerated/bulleted items of every exclusion section,
  *  found structurally by the shared C1 scanner (heading grammar + list
@@ -494,7 +499,8 @@ export function findAllMatchesWithHeaders(
         const relevantHeader = headers.find(h => h.lineIndex < lineIdx && lineIdx - h.lineIndex <= 10);
 
         if (relevantHeader) {
-          const hasValues = /\d/.test(line) || /\$/.test(line);
+          const unmarked = withoutFootnoteMarkers(line);
+          const hasValues = /\d/.test(unmarked) || /\$/.test(unmarked);
 
           if (hasValues) {
             const tierValues = parseTieredLine(line, relevantHeader);
@@ -536,7 +542,9 @@ export function findAllMatchesWithHeaders(
       // A value read from a footnoted label cites the footnote too: the
       // footnote decided which fact the line states.
       const notes = footnoted[lineIdx].footnotes.map((j) => lines[j]);
-      if (notes.length) for (const r of results.slice(before)) if (r.quote === line) r.notes = notes;
+      // Every value read from this label, including one on a lookahead
+      // line, depends on the footnote (review S6).
+      if (notes.length) for (const r of results.slice(before)) r.notes = notes;
     }
   }
   return results;

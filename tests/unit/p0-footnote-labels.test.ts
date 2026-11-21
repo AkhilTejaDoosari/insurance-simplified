@@ -23,8 +23,10 @@ describe("footnote markers on labels", () => {
   });
 
   it("a schedule deductible with a footnote marker is read, verbatim", () => {
+    // Review B1: a place-specific deductible ("at the …") is not the plan's
+    // annual deductible; the plan-level "elsewhere" line is.
     const shown = valuesFor(["SCHEDULE OF BENEFITS", "Deductible1 at the student health center $50", "Deductible1 elsewhere $100"], "annual-deductible");
-    expect(shown).toEqual(["Deductible1 at the student health center $50", "Deductible1 elsewhere $100"]);
+    expect(shown).toEqual(["Deductible1 elsewhere $100"]);
   });
 
   it("a per-illness deductible with a marker stays per-illness, not annual", () => {

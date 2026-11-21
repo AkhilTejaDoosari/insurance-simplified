@@ -19,6 +19,7 @@
 //      whether nothing was found in the pages read or candidates were withheld.
 
 import { verifyEvidenceCitation, checkDisplayGrounding } from "@/app/lib/evidence-verification";
+import { resolveFootnotes } from "@/app/lib/extraction/fact-list";
 import type { CellValue, ComparisonTable, EvidenceCitation, ProvenPlan } from "@/app/lib/extraction/types";
 import { buildPlanInventory } from "@/app/lib/extraction/plan-inventory";
 import { attestPlans, attributePlanScope, resolveRowPlanIds } from "@/app/lib/extraction/plan-identity";
@@ -71,6 +72,19 @@ export interface VerifyOptions {
   attestUnowned?: boolean;
 }
 
+/** True unless the first cited line is a footnoted label whose footnote
+ *  (re-derived from the stored page) is missing from the verified evidence. */
+function requiredFootnotesCited(documents: VerifiableDocument[], evidence: EvidenceCitation[]): boolean {
+  const first = evidence[0];
+  const page = documents.find((d) => d.documentId === first.documentId)?.pages[first.page - 1];
+  if (!page || first.quote.includes("\n")) return true;
+  const lines = page.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const idx = lines.indexOf(first.quote.trim());
+  if (idx < 0) return true;
+  const cited = new Set(evidence.slice(1).map((e) => e.quote.trim()));
+  return resolveFootnotes(lines)[idx].footnotes.every((j) => cited.has(lines[j]));
+}
+
 export function verifyComparisonTable(
   table: ComparisonTable,
   documents: VerifiableDocument[],
@@ -121,6 +135,10 @@ export function verifyComparisonTable(
         if (verified.ok) evidence.push({ ...entry, quote: verified.quote });
       }
       if (evidence.length === 0) continue;
+      // Review S8: a label whose glued footnote marker resolves on its own
+      // page depends on that footnote (it can decide the row); re-derived from
+      // the page, the footnote line must be among the verified citations.
+      if (!value.anchor && !requiredFootnotesCited(documents, evidence)) continue;
       const stated = value.anchor || value.qualifiers.networkTier !== undefined
         ? undefined : statedNetworkTier({ display: value.display, evidence });
       // EC-4: a network scope literally stated in the value's own cited clause
