@@ -58,6 +58,7 @@ describe("A-026: model or provider failure is a retryable technical error", () =
     ["timeout", Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" })],
     ["provider HTTP error", new Error("LLM request failed with status 503")],
     ["unparseable output", new Error("LLM returned malformed JSON")],
+    ["prompt truncated by the provider", new Error("LLM prompt truncated by provider: context window smaller than the prompt")],
   ])("%s → CHAT_FAILED, retryable, no passages", async (_case, err) => {
     vi.mocked(completeJson).mockRejectedValueOnce(err);
     const res = await ask();

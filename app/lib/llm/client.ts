@@ -35,6 +35,11 @@ const MAX_ATTEMPTS = 3;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const REASONING_EFFORTS: ReadonlySet<string> = new Set(["none", "minimal", "low", "medium", "high"]);
+/** Truncation check (see completeJson): prompts shorter than this are not
+ *  checked, and a long prompt reported at more characters per token than
+ *  this was cut by the provider. */
+const TRUNCATION_CHECK_MIN_CHARS = 4000;
+const MAX_CHARS_PER_PROMPT_TOKEN = 8;
 
 export async function completeJson(
   messages: LlmMessage[],
@@ -98,7 +103,19 @@ export async function completeJson(
   }
   const data = (await res.json()) as {
     choices?: { finish_reason?: string | null; message?: { content?: string } }[];
+    usage?: { prompt_tokens?: unknown };
   };
+  // A provider whose context window is smaller than the prompt may drop the
+  // prompt's beginning — the trusted instructions and the question — and
+  // answer from untrusted document text alone. Detected from the provider's
+  // own usage report: ordinary text runs ~3–5 characters per token, so a
+  // long prompt reported at under one token per 8 characters was cut. Fail
+  // closed (A-026: a provider/configuration failure, retryable upstream).
+  const promptChars = messages.reduce((n, m) => n + m.content.length, 0);
+  const promptTokens = data.usage?.prompt_tokens;
+  if (typeof promptTokens === "number" && promptTokens > 0 && promptChars >= TRUNCATION_CHECK_MIN_CHARS && promptChars / promptTokens > MAX_CHARS_PER_PROMPT_TOKEN) {
+    throw new Error("LLM prompt truncated by provider: context window smaller than the prompt");
+  }
   const choice = data.choices?.[0];
   if (choice?.finish_reason === "length") {
     throw new Error("LLM incomplete generation: provider finish_reason=length");
