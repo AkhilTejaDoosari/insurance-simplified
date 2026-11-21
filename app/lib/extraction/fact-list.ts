@@ -74,6 +74,39 @@ export function withoutFootnoteMarkers(line: string): string {
   return line.replace(FOOTNOTE_MARKER, "");
 }
 
+const SUPERSCRIPT_DIGITS: Record<string, string> = { "\u2070": "0", "\u00B9": "1", "\u00B2": "2", "\u00B3": "3", "\u2074": "4", "\u2075": "5", "\u2076": "6", "\u2077": "7", "\u2078": "8", "\u2079": "9" };
+const markerKey = (marker: string) => [...marker].map((c) => SUPERSCRIPT_DIGITS[c] ?? c).join("").replace(/^0+(?=\d)/, "");
+/** A footnote line: the marker, a space, then text that starts with a letter. */
+const FOOTNOTE_LINE = /^(\d{1,2}|[\u00B9\u00B2\u00B3\u2070\u2074-\u2079]{1,2})\s+([A-Za-z].{1,200})$/;
+
+export interface FootnotedLine {
+  /** The line as matchers read it: each glued marker replaced by its
+   *  footnote text when resolved ("Deductible (Per injury or sickness) …"),
+   *  otherwise removed. */
+  matchText: string;
+  /** Indexes of the footnote lines it resolved to (cited with the value). */
+  footnotes: number[];
+}
+
+/** Resolve glued footnote markers on a page's lines. A marker resolves only
+ *  to a LATER line on the same page that opens with the same marker and a
+ *  space ("1 Per injury or sickness"), and only when exactly one such line
+ *  exists; the footnote then belongs to the label's meaning. */
+export function resolveFootnotes(lines: readonly string[]): FootnotedLine[] {
+  const notes = lines.map((l) => FOOTNOTE_LINE.exec(l));
+  return lines.map((line, idx) => {
+    const footnotes: number[] = [];
+    const matchText = line.replace(FOOTNOTE_MARKER, (marker) => {
+      const key = markerKey(marker);
+      const hits = notes.flatMap((m, j) => (m && j > idx && markerKey(m[1]) === key ? [j] : []));
+      if (hits.length !== 1) return "";
+      footnotes.push(hits[0]);
+      return ` (${notes[hits[0]]![2]})`;
+    });
+    return { matchText, footnotes };
+  });
+}
+
 /** A schedule line that opens with the deductible label and states its
  *  amount ("Deductible elsewhere $100"); waivers and credits are not an
  *  amount of the deductible. */

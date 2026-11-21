@@ -22,7 +22,7 @@ import {
   FACT_LIST_VERSION,
   VAGUE_PATTERNS,
   extractQualifiers,
-  withoutFootnoteMarkers,
+  resolveFootnotes,
 } from "@/app/lib/extraction/fact-list";
 import { wrapDocuments } from "@/app/lib/llm/safe-prompt";
 import { completeJson } from "@/app/lib/llm/client";
@@ -430,7 +430,7 @@ export function findAllMatchesWithHeaders(
   pages: string[],
   tierHeadersByPage: Map<number, TierHeader[]>,
   guards: FactGuards = {},
-): { page: number; quote: string; display?: string; qualifiers: Record<string, string> }[] {
+): { page: number; quote: string; display?: string; qualifiers: Record<string, string>; notes?: string[] }[] {
   const regexes = factPatterns.map((p) => new RegExp(p, "i"));
   const excludes = (guards.excludePatterns ?? []).map((p) => new RegExp(p, "i"));
   const requires = (guards.requiredPatterns ?? []).map((p) => new RegExp(p, "i"));
@@ -443,16 +443,19 @@ export function findAllMatchesWithHeaders(
     const context = /\b(?:for each|per|each)\s*$/i.test(line) ? `${line} ${next}` : line;
     return !excludes.some((re) => re.test(context)) && (requires.length === 0 || requires.some((re) => re.test(line)));
   };
-  const results: { page: number; quote: string; display?: string; qualifiers: Record<string, string> }[] = [];
+  const results: { page: number; quote: string; display?: string; qualifiers: Record<string, string>; notes?: string[] }[] = [];
 
   for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
     const pageNum = pageIdx + 1;
     const lines = pages[pageIdx].split(/\n+/).map((l) => l.trim()).filter(Boolean);
     const headers = tierHeadersByPage.get(pageNum) ?? [];
 
-    // Matchers read each line without glued footnote markers
-    // ("Deductible1"); quotes and displays keep the verbatim line.
-    const matchLines = lines.map(withoutFootnoteMarkers);
+    // Matchers read each line with its glued footnote markers resolved to
+    // the page's own footnote text ("Deductible1" + "1 Per injury or
+    // sickness"), or removed when unresolved; quotes and displays keep the
+    // verbatim line, and a resolved footnote line is cited with the value.
+    const footnoted = resolveFootnotes(lines);
+    const matchLines = footnoted.map((f) => f.matchText);
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const line = lines[lineIdx];
@@ -468,6 +471,7 @@ export function findAllMatchesWithHeaders(
         }
         continue;
       }
+      const before = results.length;
       {
         const relevantHeader = headers.find(h => h.lineIndex < lineIdx && lineIdx - h.lineIndex <= 10);
 
@@ -511,6 +515,10 @@ export function findAllMatchesWithHeaders(
           results.push({ page: pageNum, quote: line, qualifiers });
         }
       }
+      // A value read from a footnoted label cites the footnote too: the
+      // footnote decided which fact the line states.
+      const notes = footnoted[lineIdx].footnotes.map((j) => lines[j]);
+      if (notes.length) for (const r of results.slice(before)) if (r.quote === line) r.notes = notes;
     }
   }
   return results;
@@ -574,11 +582,20 @@ export function extractFallback(
         if (!vague) allVague = false;
         const ruledOut = contextFieldRulesOut(fact.contextField, userContext, match.quote);
         if (ruledOut) ruledOutField = ruledOut;
+        // Footnote lines this value depends on must verify too (fail closed).
+        const noteCitations = (match.notes ?? []).map((quote) => verifyEvidenceCitation([doc], { documentId: doc.documentId, page: match.page, quote }));
+        if (noteCitations.some((n) => !n.ok)) {
+          ambiguousEvidence = true;
+          continue;
+        }
         const value: CellValue = {
           documentId: doc.documentId,
           display: match.display ?? match.quote,
           qualifiers: match.qualifiers,
-          evidence: [{ documentId: doc.documentId, page: match.page, quote: verified.quote }],
+          evidence: [
+            { documentId: doc.documentId, page: match.page, quote: verified.quote },
+            ...noteCitations.map((n) => ({ documentId: doc.documentId, page: match.page, quote: n.ok ? n.quote : "" })),
+          ],
         };
         values.push({ ...value, qualifiers: attestedQualifiers(value, [doc]) });
         docsWithValues.add(doc.documentId);

@@ -42,6 +42,47 @@ describe("footnote markers on labels", () => {
   });
 });
 
+describe("a resolved footnote is part of the label's meaning", () => {
+  // The owner PDF's footnote 1 reads "Per injury or sickness": the marked
+  // deductibles are per-illness deductibles, never the annual deductible.
+  const SCHEDULE = [
+    "SUMMARY SCHEDULE OF BENEFITS",
+    "Deductible1 at the student health center $50",
+    "Deductible1 elsewhere $100",
+    "Coinsurance in-network2 80% of preferred allowance",
+    "1 Per injury or sickness",
+    "2 Refer to the benefit description for daily limits.",
+  ];
+  const table = () =>
+    extractFallback([{ documentId: "doc-1", filename: "plan.pdf", pageCount: 1, pages: [SCHEDULE.join("\n")] }], {});
+  const row = (fact: string) => table().rows.find((r) => r.factName === fact)?.values ?? [];
+
+  it("a per-illness footnote keeps the deductible out of the annual row", () => {
+    expect(row("annual-deductible")).toEqual([]);
+  });
+
+  it("files it as the per-illness deductible, citing the label line and its footnote", () => {
+    const values = row("per-illness-deductible");
+    expect(values.map((v) => v.display)).toEqual(["Deductible1 at the student health center $50", "Deductible1 elsewhere $100"]);
+    for (const v of values) {
+      expect(v.evidence.map((e) => e.quote)).toEqual([v.display, "1 Per injury or sickness"]);
+    }
+  });
+
+  it("an unrelated footnote does not change the fact and is cited with it", () => {
+    const value = row("coinsurance").find((v) => v.display === "Coinsurance in-network2 80% of preferred allowance");
+    expect(value?.evidence.map((e) => e.quote)).toEqual([
+      "Coinsurance in-network2 80% of preferred allowance",
+      "2 Refer to the benefit description for daily limits.",
+    ]);
+  });
+
+  it("a footnote line ABOVE the marked label is not its footnote", () => {
+    const t = extractFallback([{ documentId: "doc-1", filename: "plan.pdf", pageCount: 1, pages: [["1 Per injury or sickness", "Deductible1 elsewhere $100"].join("\n")] }], {});
+    expect((t.rows.find((r) => r.factName === "annual-deductible")?.values ?? []).map((v) => v.display)).toEqual(["Deductible1 elsewhere $100"]);
+  });
+});
+
 describe("annual maximum is the overall plan limit", () => {
   it.each(["Annual maximum $1,000,000", "Annual maximum3 $500,000", "Overall maximum: $250,000"])("overall-limit line %# → policy-limit", (line) => {
     expect(valuesFor(["SCHEDULE OF BENEFITS", line], "policy-limit")).toEqual([line]);
