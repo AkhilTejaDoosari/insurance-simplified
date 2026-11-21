@@ -47,6 +47,8 @@ import { quoteInTable, tableClaims, tableDrops, tableOwnedSpans, unrecognizedLab
 import { annotateAbsence, stripServerOnlyFields, WITHHELD_ROW_RATIONALE } from "@/app/lib/extraction/absence";
 import type { PageReadability } from "@/app/lib/pdf/page-readability";
 import { statementClaims, statementOwnedSpans } from "@/app/lib/extraction/statement-facts";
+import { scanExclusionSections } from "@/app/lib/evidence/proposer/exclusion-sections";
+import type { Span } from "@/app/lib/pdf/layout-tables";
 
 const CARE_FACTS: ReadonlySet<string> = new Set(
   SECTIONS.find((s) => s.title === "Coverage")?.factNames ?? []
@@ -54,6 +56,27 @@ const CARE_FACTS: ReadonlySet<string> = new Set(
 const RULES_FACTS: ReadonlySet<string> = new Set(
   SECTIONS.find((s) => s.title === "Limits & Risks")?.factNames ?? []
 );
+/** Benefit and cost facts: an item of an exclusions list states what is NOT
+ *  covered and is never one of their values (owner decision 2026-11-21).
+ *  The pre-existing-condition rule is commonly stated as an exclusion item
+ *  and stays readable from one; Limits & Risks facts are unaffected. */
+const BENEFIT_FACTS: ReadonlySet<string> = new Set(
+  SECTIONS.filter((s) => s.title === "Coverage" || s.title === "My Costs")
+    .flatMap((s) => s.factNames)
+    .filter((name) => name !== "pre-existing-conditions"),
+);
+
+/** Page spans of the enumerated/bulleted items of every exclusion section,
+ *  found structurally by the shared C1 scanner (heading grammar + list
+ *  markers; framed/example sections yield nothing). */
+export function exclusionItemSpans(doc: { pages: readonly string[] }): Map<number, Span[]> {
+  const owned = new Map<number, Span[]>();
+  for (const item of scanExclusionSections(doc.pages).items) {
+    const spans = owned.get(item.page) ?? owned.set(item.page, []).get(item.page)!;
+    spans.push({ start: item.markerStart, end: item.end });
+  }
+  return owned;
+}
 
 export interface ExtractInputDocument {
   documentId: string;
@@ -505,6 +528,7 @@ export function extractFallback(
   // Table cells the document states for a fact but whose claim was dropped
   // (finding #2): reported as withheld, never left as a silent NOT STATED.
   const dropsByDoc = new Map(documents.map((doc) => [doc.documentId, tableDrops(doc)]));
+  const exclusionItemsByDoc = new Map(documents.map((doc) => [doc.documentId, exclusionItemSpans(doc)]));
 
   const withheldByFact = new Map<string, { withheld: WithheldClaim[]; withheldOnly: boolean }>();
   const builtRows: TableRow[] = FACTS.map((fact) => {
@@ -539,6 +563,7 @@ export function extractFallback(
         }
         const statementOwned = statementOwnedByDoc.get(doc.documentId)!.get(fact.name);
         if (statementOwned && quoteInTable(doc, statementOwned, match.page, verified.quote)) continue;
+        if (BENEFIT_FACTS.has(fact.name) && quoteInTable(doc, exclusionItemsByDoc.get(doc.documentId)!, match.page, verified.quote)) continue;
         const vague = isVague(match.quote);
         if (!vague) allVague = false;
         const ruledOut = contextFieldRulesOut(fact.contextField, userContext, match.quote);
@@ -556,6 +581,7 @@ export function extractFallback(
       // column scope) and grammar-parsed statements (verbatim sentence).
       for (const claim of claimsByDoc.get(doc.documentId) ?? []) {
         if (claim.factName !== fact.name) continue;
+        if (BENEFIT_FACTS.has(fact.name) && claim.value.evidence.some((e) => quoteInTable(doc, exclusionItemsByDoc.get(doc.documentId)!, e.page, e.quote))) continue;
         values.push(claim.value);
         docsWithValues.add(doc.documentId);
         allVague = false;
