@@ -264,26 +264,18 @@ export async function POST(request: NextRequest) {
   try {
     let response;
     if (useLlm) {
-      try {
-        response = await timeAsync("chat.answerViaLlm", () =>
-          answerViaLlm(scopedDocuments, question, {
-            sessionId,
-          }),
-        );
-      } catch (err) {
-        // Contract: degraded successes above stay 200; only a total failure lands
-        // here. Raw error text is logged server-side only — the client gets the
-        // fixed CHAT_FAILED message (no secret/structure leakage).
-        logFailure(requestId, "chat", err);
-        console.warn(
-          `[chat] llm engine failed; degrading to semantic: ${err instanceof Error ? err.message : "unknown"}`,
-        );
-        response = await timeAsync("chat.answerQuestionSemantic", () =>
-          answerQuestionSemantic(scopedDocuments, question, {
-            sessionId,
-          }),
-        );
-      }
+      // A-026 (owner decision 2026-11-21): a model/provider failure (timeout,
+      // HTTP error, unparseable or off-schema output) throws out of
+      // answerViaLlm and becomes the retryable CHAT_FAILED error below — it
+      // never degrades to the retrieval engine, whose "cannot be confirmed"
+      // would read as a statement about the documents. A model answer that
+      // verifyAnswerClaims rejects is NOT a failure: answerViaLlm returns
+      // "cannot be confirmed" with the cited passages.
+      response = await timeAsync("chat.answerViaLlm", () =>
+        answerViaLlm(scopedDocuments, question, {
+          sessionId,
+        }),
+      );
     } else {
       response = await timeAsync("chat.answerQuestionSemantic", () =>
         answerQuestionSemantic(scopedDocuments, question, {
@@ -385,6 +377,9 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(validated);
   } catch (err) {
+    // Raw error text is logged server-side only; the client gets the fixed
+    // CHAT_FAILED message (no secret/structure leakage).
+    logFailure(requestId, "chat", err);
     try {
       emitTrace(
         buildTraceEvent({

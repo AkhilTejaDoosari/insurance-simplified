@@ -128,7 +128,10 @@ describe("POST /api/chat embedding degradation (todo 23)", () => {
     });
   });
 
-  it("bad-key provider failure degrades to lexical, never a 500", async () => {
+  // A-026 (owner decision 2026-11-21) replaced the earlier "degrade to
+  // lexical, never a 500" contract: a provider failure is a retryable
+  // technical error and the retrieval engine is not consulted.
+  it("bad-key provider failure is the retryable CHAT_FAILED error, not a degraded answer", async () => {
     clearAllEngineEnv();
     process.env.LLM_BASE_URL = "https://llm.example";
     process.env.LLM_API_KEY = "bad-key";
@@ -137,28 +140,26 @@ describe("POST /api/chat embedding degradation (todo 23)", () => {
     );
     const { session, capability } = seedSession();
     const res = await post(session.sessionId, capability, { question: "What is the deductible?" });
-    expect(res.status).toBe(200);
-    expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
-    const body = (await res.json()) as unknown;
-    expect(() => validateChatResponse(body)).not.toThrow();
-    expect(body).toEqual({
-      schemaVersion: "v1",
-      kind: "refusal",
-      refusalText: REFUSAL_TEXT,
-    });
+    expect(res.status).toBe(500);
+    expect(answerQuestionSemantic).not.toHaveBeenCalled();
+    const body = (await res.json()) as { error: { code: string; retryable: boolean } };
+    expect(body.error.code).toBe("CHAT_FAILED");
+    expect(body.error.retryable).toBe(true);
+    expect(JSON.stringify(body)).not.toContain(REFUSAL_TEXT);
   });
 
-  it("explicit engine llm with an unhealthy provider still degrades to lexical, not 500", async () => {
+  it("explicit engine llm with an unhealthy provider is the retryable CHAT_FAILED error", async () => {
     clearAllEngineEnv();
     vi.mocked(answerViaLlm).mockRejectedValueOnce(
       new Error("LLM not configured (set LLM_BASE_URL and LLM_API_KEY)"),
     );
     const { session, capability } = seedSession();
     const res = await post(session.sessionId, capability, { question: "q", engine: "llm" });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(500);
     expect(answerViaLlm).toHaveBeenCalledTimes(1);
-    expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
-    const body = (await res.json()) as unknown;
-    expect(() => validateChatResponse(body)).not.toThrow();
+    expect(answerQuestionSemantic).not.toHaveBeenCalled();
+    const body = (await res.json()) as { error: { code: string; retryable: boolean } };
+    expect(body.error.code).toBe("CHAT_FAILED");
+    expect(body.error.retryable).toBe(true);
   });
 });
