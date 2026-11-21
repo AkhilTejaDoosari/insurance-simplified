@@ -109,9 +109,12 @@ export async function completeJson(
   // prompt's beginning — the trusted instructions and the question — and
   // answer from untrusted document text alone. Detected from the provider's
   // own usage report: ordinary text runs ~3–5 characters per token, so a
-  // long prompt reported at under one token per 8 characters was cut. Fail
-  // closed (A-026: a provider/configuration failure, retryable upstream).
-  const promptChars = messages.reduce((n, m) => n + m.content.length, 0);
+  // long prompt reported at under one token per 8 characters was cut. This
+  // catches severe front truncation only (a cut keeping >~half the prompt
+  // passes); fail closed (A-026: provider/configuration failure).
+  // Whitespace collapsed first: layout-preserving PDF text (column padding)
+  // tokenizes compactly and must not read as truncation (review S1).
+  const promptChars = messages.reduce((n, m) => n + m.content.replace(/\s+/g, " ").length, 0);
   const promptTokens = data.usage?.prompt_tokens;
   if (typeof promptTokens === "number" && promptTokens > 0 && promptChars >= TRUNCATION_CHECK_MIN_CHARS && promptChars / promptTokens > MAX_CHARS_PER_PROMPT_TOKEN) {
     throw new Error("LLM prompt truncated by provider: context window smaller than the prompt");

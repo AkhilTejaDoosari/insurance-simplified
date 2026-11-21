@@ -49,6 +49,12 @@ describe("provider prompt truncation", () => {
     await expect(completeJson([{ role: "user", content: LONG }], "m")).resolves.toEqual({ answer: 1 });
   });
 
+  it("layout whitespace (column padding, blank runs) does not read as truncation (review S1)", async () => {
+    const padded = Array.from({ length: 300 }, () => "Deductible" + " ".repeat(60) + "$500" + "\n\n\n").join("");
+    fetchMock.mockResolvedValueOnce(reply(1200));
+    await expect(completeJson([{ role: "user", content: padded }], "m")).resolves.toEqual({ answer: 1 });
+  });
+
   it("short prompts are not checked (token ratios are noisy there)", async () => {
     fetchMock.mockResolvedValueOnce(reply(3));
     await expect(completeJson([{ role: "user", content: "Return {\"answer\":1}" }], "m")).resolves.toEqual({ answer: 1 });
