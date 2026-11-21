@@ -110,6 +110,7 @@ export async function POST(request: NextRequest) {
       documents: session.documents,
       record,
     }));
+  let gridSelection: { planIds: string[]; tiers: Record<string, string | null> } | undefined;
   if (body.selection !== undefined) {
     const parsed = parseSelectionRequest(body.selection);
     if (!parsed) {
@@ -177,6 +178,8 @@ export async function POST(request: NextRequest) {
       activeViewFromSelection(parsed),
     );
     scopedDocuments = scoped.documents;
+    // Grid-first answers only for the selected plans and tiers (review B2).
+    gridSelection = { planIds: [...parsed.planIds], tiers: { ...parsed.legacyTiersByDocument, ...parsed.tiers } };
   }
 
   const useLlm =
@@ -278,10 +281,12 @@ export async function POST(request: NextRequest) {
           table: current.table,
           scopedDocuments,
           sessionDocuments: session.documents,
+          selection: gridSelection,
           rephrase: useLlm ? rephraseVerifiedFacts : undefined,
         }),
       );
       if (grid) {
+        validateChatResponse(grid); // the same chat-api v1 contract check
         trace({
           candidateCount: grid.citations.length,
           topK: grid.citations.map((c) => ({ documentId: c.documentId, page: c.page })),

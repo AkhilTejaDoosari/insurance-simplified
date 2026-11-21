@@ -301,6 +301,11 @@ export function statesScopingMarker(text: string): boolean {
   return markersIn(grammarText(text)).size > 0;
 }
 
+/** The text's negation/exception/network markers, as a stable key. */
+export function scopingMarkers(text: string): string {
+  return [...markersIn(grammarText(text))].sort().join(",");
+}
+
 function withoutNegations(text: string): string {
   let out = text;
   for (const m of MARKERS) if (m.kind === "negation") out = out.replace(new RegExp(m.re.source, "g"), " ");
@@ -426,12 +431,15 @@ function splitSentences(text: string): string[] {
     .filter(Boolean);
 }
 
-/** Count whitespace-separated tokens in a segment. */
+/** A sentence that states coverage is substantive however short. */
+const COVERAGE_STATEMENT = /\b(?:covered|not|no|excluded|exclud\w*|except|unless|only|waived?|included|pays?|payable|limited)\b/i;
+
 /** Whole figures a text states ("$1,000,000" → "1000000", "80%" → "80"). */
 function figuresOf(text: string): string[] {
   return [...text.matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((m) => m[0].replace(/,/g, "").replace(/\.0+$/, ""));
 }
 
+/** Count whitespace-separated tokens in a segment. */
 function countTokens(segment: string): number {
   return segment.split(/\s+/).filter(Boolean).length;
 }
@@ -446,19 +454,34 @@ function normalizeForClaim(text: string): string {
 }
 
 /** Check if a normalized sentence is covered by any normalized canonical quote. */
-function isSentenceCovered(sentence: string, canonicalQuotes: string[]): boolean {
+function tokensCovered(normSentence: string, text: string): boolean {
+  const normText = normalizeForClaim(text);
+  if (normText.includes(normSentence)) return true;
+  // Token-level coverage: every token (> 2 chars) of the sentence appears.
+  const sentenceTokens = normSentence.split(/\s+/).filter((t) => t.length > 2);
+  return sentenceTokens.length > 0 && sentenceTokens.every((t) => normText.includes(t));
+}
+
+function sameMarkers(a: string, b: string): boolean {
+  const x = markersIn(grammarText(a));
+  const y = markersIn(grammarText(b));
+  return x.size === y.size && [...x].every((m) => y.has(m));
+}
+
+/** The cited quote that covers a sentence, or undefined. Review 2026-11-21
+ *  (B1): coverage keeps meaning — the covering source line (or, failing
+ *  that, the whole quote) must state exactly the sentence's negation,
+ *  exception and network markers ("Dental is covered" is not covered by
+ *  "Dental treatment is not covered"). Fail-closed: a long quote whose
+ *  markers differ from the sentence covers it only line by line. */
+function coveringQuote(sentence: string, canonicalQuotes: string[]): string | undefined {
   const normSentence = normalizeForClaim(sentence);
-  if (!normSentence) return false;
+  if (!normSentence) return undefined;
   for (const quote of canonicalQuotes) {
-    const normQuote = normalizeForClaim(quote);
-    if (normQuote.includes(normSentence)) return true;
-    // Check token-level coverage: every non-stopword token in sentence appears in quote
-    const sentenceTokens = normSentence.split(/\s+/).filter((t) => t.length > 2);
-    if (sentenceTokens.length === 0) continue;
-    const allTokensInQuote = sentenceTokens.every((t) => normQuote.includes(t));
-    if (allTokensInQuote) return true;
+    if (clausesOf(quote).some((line) => tokensCovered(normSentence, line) && sameMarkers(sentence, line))) return quote;
+    if (tokensCovered(normSentence, quote) && sameMarkers(sentence, quote)) return quote;
   }
-  return false;
+  return undefined;
 }
 
 /** Verify claims in answerText against supplied citations and chunk context.
@@ -538,15 +561,18 @@ export function verifyAnswerClaims(
   // and each figure must equal (whole value) a figure of a cited passage:
   // "Annual maximum $2,000,000" against "$1,000,000" fails; token substring
   // coverage alone would accept "100" inside "1000000" (2026-11-21).
-  const citedFigures = new Set(canonicalQuotes.flatMap(figuresOf));
+  // Review B1/S8: a short sentence is skipped only when it states neither a
+  // figure nor coverage; figures must come from the COVERING passage.
   const sentences = splitSentences(answerText);
   for (const sentence of sentences) {
     const figures = figuresOf(sentence);
-    if (figures.some((f) => !citedFigures.has(f))) {
-      return { ok: false, rationale: `Unsupported claim: figure not in cited passages` };
+    if (countTokens(sentence) < 4 && figures.length === 0 && !COVERAGE_STATEMENT.test(sentence)) continue; // non-substantive
+    const quote = coveringQuote(sentence, canonicalQuotes);
+    const quoteFigures = new Set(quote ? figuresOf(quote) : []);
+    if (figures.some((f) => !quoteFigures.has(f))) {
+      return { ok: false, rationale: `Unsupported claim: figure not in the covering passage` };
     }
-    if (countTokens(sentence) < 4) continue; // non-substantive
-    if (!isSentenceCovered(sentence, canonicalQuotes)) {
+    if (!quote) {
       return { ok: false, rationale: `Unsupported claim: "${sentence}"` };
     }
   }

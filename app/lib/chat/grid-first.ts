@@ -14,7 +14,7 @@
 
 import type { CellValue, TableRow } from "@/app/lib/extraction/types";
 import { describeFact } from "@/app/lib/presentation/claim";
-import { verifyAnswerClaims, verifyEvidenceCitation } from "@/app/lib/evidence-verification";
+import { scopingMarkers, statesScopingMarker, verifyAnswerClaims, verifyEvidenceCitation } from "@/app/lib/evidence-verification";
 import type { ChatCitation, ChatResponse } from "@/app/lib/rag/answer";
 
 /** One fact concept a question can name. Health-domain terms only; no
@@ -49,11 +49,38 @@ export const FACT_CONCEPTS: readonly FactConcept[] = [
   { id: "physical-therapy", question: /\bphysical therapy\b|\bphysiotherapy\b/i, facts: ["physical-therapy"] },
   { id: "specialist", question: /\bspecialists?\b/i, facts: ["specialist-visit"] },
   { id: "primary-care", question: /\bprimary care\b|\bdoctor'?s? visit\b|\boffice visit\b/i, facts: ["primary-care-visit"] },
-  { id: "network", question: /\bnetwork\b/i, facts: ["network"] },
 ];
 
+/** The one concept a question names, or undefined when it names none or
+ *  more than one (review B4: "dental deductible", "does the deductible
+ *  apply to ER visits" are different questions from "the deductible"). The
+ *  out-of-pocket concept also names "maximum"; it is not counted twice. */
 export function conceptForQuestion(question: string): FactConcept | undefined {
-  return FACT_CONCEPTS.find((c) => c.question.test(question));
+  const hits = FACT_CONCEPTS.filter((c) => c.question.test(question));
+  const distinct = hits.filter((c) => !(c.id === "overall-limit" && hits.some((h) => h.id === "out-of-pocket")));
+  return distinct.length === 1 ? distinct[0] : undefined;
+}
+
+/** The chat selection: selected plan ids (legacy: document ids) and the
+ *  tier chosen per plan (null/absent = all tiers). */
+export interface GridSelection {
+  planIds: readonly string[];
+  tiers: Readonly<Record<string, string | null>>;
+}
+
+/** Review B2: a value is used only when it belongs to the selection — its
+ *  plan (or, unattributed on a legacy table, its document) is selected and
+ *  its tier, when it has one, is the tier chosen for that plan. */
+function inSelection(value: CellValue, selection: GridSelection | undefined, plans: readonly { planId: string; sources: readonly { documentId: string }[] }[]): boolean {
+  if (!selection) return true;
+  // An unattributed value belongs to a plan only when its document is the
+  // source of exactly one plan (a single-plan document); on a legacy table
+  // without plans the selection names documents. Mixed documents fail closed.
+  const owners = plans.filter((p) => p.sources.some((s) => s.documentId === value.documentId)).map((p) => p.planId);
+  const owner = value.planId ?? (plans.length === 0 ? value.documentId : owners.length === 1 ? owners[0] : undefined);
+  if (!owner || !selection.planIds.includes(owner)) return false;
+  const tier = selection.tiers[owner];
+  return !tier || !value.qualifiers.planTier || value.qualifiers.planTier === tier;
 }
 
 interface Doc {
@@ -80,7 +107,10 @@ const UNCERTAIN_VERDICTS = new Set(["NEEDS VERIFICATION", "CONFLICTED"]);
 function valueLines(value: CellValue, factName: string): string[] {
   const d = describeFact(value, factName);
   const head = d.claim ?? d.sourceWording;
-  const extra = value.evidence.slice(1).map((e) => e.quote).filter((q) => !value.display.includes(q));
+  // A further cited line (a footnote deciding the basis) is shown only when
+  // it states no figure of its own (review S6: never a second amount that
+  // reads as part of the answer).
+  const extra = value.evidence.slice(1).map((e) => e.quote).filter((q) => !value.display.includes(q) && !/\d/.test(q.replace(/^\s*\d{1,2}\s+/, "")));
   return [head, ...d.conditions, ...extra];
 }
 
@@ -97,24 +127,42 @@ function verifiedInScope(value: CellValue, scoped: Doc[], session: Doc[]): ChatC
 
 export async function gridFirstAnswer(input: {
   question: string;
-  table: { rows: readonly TableRow[] };
+  table: { rows: readonly TableRow[]; plans?: readonly { planId: string; sources: readonly { documentId: string }[] }[] };
   scopedDocuments: Doc[];
   sessionDocuments: Doc[];
+  selection?: GridSelection;
   rephrase?: Rephrase;
 }): Promise<Extract<ChatResponse, { kind: "answer" }> | undefined> {
   const concept = conceptForQuestion(input.question);
   if (!concept) return undefined;
   const rows = input.table.rows.filter((r) => concept.facts.includes(r.factName));
-  // Uncertainty is never hidden behind a confident answer.
-  if (rows.some((r) => UNCERTAIN_VERDICTS.has(r.verdict) && r.values.length > 0)) return undefined;
+  // Uncertainty is never hidden behind a confident answer: an uncertain row,
+  // or withheld source lines for the concept (review S5), fall back.
+  if (rows.some((r) => (UNCERTAIN_VERDICTS.has(r.verdict) && r.values.length > 0) || (r.withheld?.length ?? 0) > 0)) return undefined;
 
-  const lines: string[] = [];
-  const citations: ChatCitation[] = [];
+  const used: { value: CellValue; factName: string; cites: ChatCitation[] }[] = [];
   for (const row of rows) {
     if (row.verdict !== "SUPPORTED") continue;
     for (const value of row.values) {
+      if (!inSelection(value, input.selection, input.table.plans ?? [])) continue;
       const cites = verifiedInScope(value, input.scopedDocuments, input.sessionDocuments);
-      if (!cites) continue;
+      if (cites) used.push({ value, factName: row.factName, cites });
+    }
+  }
+  // Review B3: values of more than one plan, document or tier would need a
+  // per-plan label the claim verifier cannot check — fall back instead.
+  const groups = new Set(used.map(({ value }) => `${value.documentId}|${value.planId ?? ""}|${value.qualifiers.planTier ?? ""}`));
+  if (groups.size > 1) return undefined;
+  // Review S7: values that differ by age band need the user's context.
+  if (new Set(used.map(({ value }) => value.qualifiers.ageBand ?? "")).size > 1) return undefined;
+  // Review S5: an unconfirmed claim is never shown as an answer.
+  if (used.some(({ value, factName }) => describeFact(value, factName).status === "unconfirmed")) return undefined;
+
+  const lines: string[] = [];
+  const citations: ChatCitation[] = [];
+  for (const { value, factName, cites } of used) {
+    {
+      const row = { factName };
       for (const line of valueLines(value, row.factName)) if (!lines.includes(line)) lines.push(line);
       for (const c of cites) if (!citations.some((x) => x.documentId === c.documentId && x.page === c.page && x.quote === c.quote)) citations.push(c);
     }
@@ -141,7 +189,14 @@ export async function gridFirstAnswer(input: {
     // Only the facts' own citations may be cited, and the rephrase must pass
     // verifyAnswerClaims against them; otherwise the exact wording stands.
     const own = cites.every((c) => citations.some((x) => x.documentId === c?.documentId && x.page === c?.page && x.quote === c?.quote));
-    if (text && cites.length > 0 && own && verifyAnswerClaims(text, cites, citations, sessionDocs).ok) {
+    // Review B1: a rephrase keeps every condition verbatim and states exactly
+    // the facts' negation/exception/network markers.
+    const norm = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
+    const conditions = used.flatMap(({ value, factName }) => describeFact(value, factName).conditions);
+    const parenthetical = lines.flatMap((l) => l.match(/\([^()]+\)/g) ?? []);
+    const keepsConditions = [...conditions, ...parenthetical].every((c) => norm(text).includes(norm(c)));
+    const sameMarkers = statesScopingMarker(text) === statesScopingMarker(verbatim) && scopingMarkers(text) === scopingMarkers(verbatim);
+    if (text && cites.length > 0 && own && keepsConditions && sameMarkers && verifyAnswerClaims(text, cites, citations, sessionDocs).ok) {
       return answer(text, cites);
     }
     console.warn(`[chat-grid] rephrase=rejected concept=${concept.id}`);

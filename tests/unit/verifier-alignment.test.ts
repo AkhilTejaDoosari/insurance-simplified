@@ -95,3 +95,29 @@ describe("a short sentence that states a figure is always checked", () => {
     expect(verifyAnswerClaims("Yes, it does.\nAnnual maximum $1,000,000", cite, C, D).ok).toBe(true);
   });
 });
+
+// Review (2026-11-21, grid-first range), B1 + S8: coverage keeps meaning.
+describe("a covered sentence keeps its source line's negation/exception markers", () => {
+  const P = ["BENEFITS", "Dental treatment is not covered.", "Annual maximum $1,000,000", "Newborn maximum $500"].join("\n");
+  const D = [{ documentId: "doc-1", pages: [P] }];
+  const C = [{ documentId: "doc-1", page: 1, quote: P }];
+  const c = (quote: string) => [{ documentId: "doc-1", page: 1, quote }];
+
+  it("a reversed coverage statement is rejected", () => {
+    expect(verifyAnswerClaims("Dental is covered.", c("Dental treatment is not covered."), C, D).ok).toBe(false);
+  });
+
+  it("a short coverage statement is never skipped", () => {
+    expect(verifyAnswerClaims("Dental covered.", c("Dental treatment is not covered."), C, D).ok).toBe(false);
+  });
+
+  it("the faithful statement passes", () => {
+    expect(verifyAnswerClaims("Dental treatment is not covered.", c("Dental treatment is not covered."), C, D).ok).toBe(true);
+  });
+
+  it("a figure must come from the passage that covers the sentence (no borrowing a sub-limit)", () => {
+    const cites = [...c("Annual maximum $1,000,000"), ...c("Newborn maximum $500")];
+    expect(verifyAnswerClaims("Annual maximum $500", cites, C, D).ok).toBe(false);
+    expect(verifyAnswerClaims("Annual maximum $1,000,000", cites, C, D).ok).toBe(true);
+  });
+});

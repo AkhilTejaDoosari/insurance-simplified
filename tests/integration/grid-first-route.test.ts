@@ -3,7 +3,7 @@
 // (TB-3 still holds: an altered stored row is not an answer source), without
 // a model call; other questions take the retrieval path. Synthetic text only.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 vi.mock("@/app/lib/rag/answer", async (importOriginal) => {
@@ -15,7 +15,7 @@ import { POST as chat } from "@/app/api/chat/route";
 import { answerQuestionSemantic, answerViaLlm, UNCERTAIN_TEXT } from "@/app/lib/rag/answer";
 import { deleteComparisonResult } from "@/app/lib/comparison-result-db";
 import { deleteSession } from "@/app/lib/session";
-import { SESSIONS_DIR, blankProviderEnv, extractedSession, post, tamperStoredRow } from "./m7b-fixtures";
+import { SESSIONS_DIR, blankProviderEnv, extractedSession, post, selectionFor, tamperStoredRow } from "./m7b-fixtures";
 
 const originalEnv = { ...process.env };
 const created: string[] = [];
@@ -57,6 +57,25 @@ describe("grid-first chat route", () => {
     expect(body.kind).toBe("refusal");
     expect(body.refusalText).toBe(UNCERTAIN_TEXT);
     expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
+  });
+
+  it("a stored result for different documents (stale fingerprint) is not an answer source", async () => {
+    const { sessionId, capability } = await extractedSession(created);
+    const path = join(SESSIONS_DIR, `${sessionId}.result.json`);
+    const record = JSON.parse(readFileSync(path, "utf8"));
+    record.documentFingerprint = "stale-fingerprint";
+    writeFileSync(path, JSON.stringify(record));
+    const res = await chat(post("/api/chat", { sessionId, question: "What is the deductible?" }, capability));
+    expect((await res.json()).kind).toBe("refusal");
+    expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
+  });
+
+  it("with a selection, the answer comes from the selected plan", async () => {
+    const { sessionId, capability, table } = await extractedSession(created);
+    const res = await chat(post("/api/chat", { sessionId, question: "What is the deductible?", selection: selectionFor(table) }, capability));
+    const body = await res.json();
+    expect(body.kind).toBe("answer");
+    expect(body.answerText).toContain("Annual deductible: $500 per person");
   });
 
   it("a question that names no fact takes the retrieval path", async () => {

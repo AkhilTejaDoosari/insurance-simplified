@@ -109,3 +109,59 @@ describe("the model may only rephrase", () => {
     expect(spy.mock.calls[0][0].lines).toEqual(["Annual maximum $1,000,000"]);
   });
 });
+
+// Review (2026-11-21, grid-first range): B1–B4, S5–S7.
+describe("grid-first review fixes", () => {
+  const two = [
+    { documentId: "doc-a", filename: "a.pdf", pageCount: 1, pages: ["Plan name: Alpha\nAnnual deductible: $250"] },
+    { documentId: "doc-b", filename: "b.pdf", pageCount: 1, pages: ["Plan name: Beta\nAnnual deductible: $900"] },
+  ];
+  const twoTable = () => verifyComparisonTable(validateTable(extractFallback(two, {})), two);
+
+  it("B3: values from more than one plan/document fall back (never unlabelled)", async () => {
+    expect(await gridFirstAnswer({ question: "What is the deductible?", table: twoTable(), scopedDocuments: two, sessionDocuments: two })).toBeUndefined();
+  });
+
+  it("B2: a selection keeps only the selected plan's values", async () => {
+    const t = twoTable();
+    const alpha = t.plans?.find((p) => p.name === "Alpha");
+    expect(alpha).toBeDefined();
+    const r = await gridFirstAnswer({ question: "What is the deductible?", table: t, scopedDocuments: two, sessionDocuments: two, selection: { planIds: [alpha!.planId], tiers: {} } });
+    expect(r?.kind === "answer" && r.answerText).toBe("Annual deductible: $250");
+  });
+
+  it("B2: with a selection, a value attributed to no selected plan is not used", async () => {
+    const r = await gridFirstAnswer({ question: "What is the annual maximum?", table: table(), scopedDocuments: DOCS, sessionDocuments: DOCS, selection: { planIds: ["plan-elsewhere"], tiers: {} } });
+    expect(r).toBeUndefined();
+  });
+
+  it.each(["What is the dental deductible?", "Does the deductible apply to emergency room visits?", "Is Dr Smith in network?"])(
+    "B4: an ambiguous or off-concept question falls back: %s",
+    async (q) => expect(await gridFirstAnswer({ question: q, table: table(), scopedDocuments: DOCS, sessionDocuments: DOCS })).toBeUndefined(),
+  );
+
+  it("S5: a matched row with withheld source lines falls back", async () => {
+    const t = table();
+    t.rows.find((r) => r.factName === "policy-limit")!.withheld = [{ documentId: "doc-1", page: 1, quote: "Annual maximum $1,000,000", reason: "label-without-value" }];
+    expect(await gridFirstAnswer({ question: "What is the annual maximum?", table: t, scopedDocuments: DOCS, sessionDocuments: DOCS })).toBeUndefined();
+  });
+
+  it("S7: values that differ by age band fall back (missing context → ask)", async () => {
+    const t = table();
+    const row = t.rows.find((r) => r.factName === "policy-limit")!;
+    row.values = [
+      { ...row.values[0], qualifiers: { ...row.values[0].qualifiers, ageBand: "0-49" } },
+      { ...row.values[0], qualifiers: { ...row.values[0].qualifiers, ageBand: "50-64" } },
+    ];
+    expect(await gridFirstAnswer({ question: "What is the annual maximum?", table: t, scopedDocuments: DOCS, sessionDocuments: DOCS })).toBeUndefined();
+  });
+
+  it("B1: a rephrase that reverses or drops a condition is discarded", async () => {
+    const ask = (text: string) =>
+      gridFirstAnswer({ question: "What is the emergency room copay?", table: table(), scopedDocuments: DOCS, sessionDocuments: DOCS, rephrase: async (f) => ({ answerText: text, citations: f.citations }) });
+    const dropped = await ask("Emergency room copay $300");
+    expect(dropped?.kind === "answer" && dropped.answerText).toBe("Emergency room copay (waived if admitted) $300");
+    const kept = await ask("Emergency room copay $300 (waived if admitted)");
+    expect(kept?.kind === "answer" && kept.answerText).toBe("Emergency room copay $300 (waived if admitted)");
+  });
+});
