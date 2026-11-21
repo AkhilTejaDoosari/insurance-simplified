@@ -26,6 +26,10 @@ export interface FactDefinition {
    *  above it is a value-less benefit label: it is that benefit's own
    *  sub-limit ("Physical therapy" / "Annual maximum $1,000"; review S7). */
   notUnderLabelPatterns?: string[];
+  /** A line opening in lower case continues a sentence wrapped from the
+   *  line above: a fragment, never this fact's value (checked in code, case-
+   *  sensitively — patterns compile with the "i" flag; review 2026-11-21). */
+  rejectWrappedFragments?: boolean;
   /** P0-03: match table labels against the full label (sub-notes and
    *  parentheticals included), because the fact's basis lives there. */
   matchFullLabel?: boolean;
@@ -153,11 +157,6 @@ const LEGAL_REFERRAL = "\\b(?:legal|attorneys?|lawyers?|consul(?:ar|ate)?|embass
 const PER_NETWORK_SHARE =
   "\\bcoinsurance\\b|\\d{1,3}\\s*%[^%\\n]{0,40}\\bin[- ]network\\b[^%\\n]{0,40}\\d{1,3}\\s*%[^%\\n]{0,40}\\bout[- ]of[- ]network\\b|\\bin[- ]network\\b[^%\\n]{0,20}\\d{1,3}\\s*%[^%\\n]{0,40}\\bout[- ]of[- ]network\\b[^%\\n]{0,20}\\d{1,3}\\s*%";
 
-/** A line opening in lower case continues a sentence wrapped from the line
- *  above: a fragment, never the plan's overall limit (residual list). */
-// Case-sensitive group: fact patterns are compiled with the "i" flag.
-const WRAPPED_FRAGMENT = "^\\s*(?-i:[a-z])";
-
 export const FACTS: FactDefinition[] = [
   { name: "premium", label: "Premium / price", patterns: ["premium(?=.*(?:\\$|\\b\\d))", "\\bprice\\b(?=.*(?:\\$|\\b\\d))"] },
   { name: "annual-deductible", label: "Annual deductible", excludePatterns: ["^(?!.*" + NAMES_ANNUAL + ")(?:.*(?:" + PER_INCIDENT + "|" + PER_EVENT + "))"], patterns: ["^(?!.*\\brecommend(?:s|ed)?\\b)(?:.*\\bannual deductible\\b|.*\\bdeductible options\\b|.*\\bdeductible\\s*[:$]|.*\\$\\s?[\\d,]+\\s+deductible|" + SCHEDULE_DEDUCTIBLE.slice(1) + "|.*\\bcalendar[- ]year deductibles?(?:\\s+is)?(?:\\s+now)?\\s*:?\\s*\\$\\s?[\\d,]+)"] },
@@ -166,7 +165,7 @@ export const FACTS: FactDefinition[] = [
   { name: "emergency-care", label: "Emergency room", patterns: ["emergency (room|department|services?|care|coverage)", "emergency[^.\\n]*copay", "copay[^.\\n]*emergency", "emergency[^.\\n]*deductible"] },
   { name: "prescriptions", label: "Prescription drugs", patterns: ["prescription"] },
   { name: "coinsurance", label: "Coinsurance / your share", patterns: ["coinsurance", "cost sharing", "cost-share", "you pay \\d+\\s*%"] },
-  { name: "policy-limit", label: "Maximum coverage / policy limit", excludePatterns: [WRAPPED_FRAGMENT], patterns: ["policy limit", "maximum coverage", "coverage maximum(?=.*\\$\\s?\\d)", "lifetime maximum", "benefit maximum", "maximum benefit", "^\\s*(?:(?:certificate|policy|overall|plan)\\s+)?maximum limit\\b\\s*:?\\s*\\$\\s?\\d", OVERALL_MAXIMUM], notUnderLabelPatterns: [OVERALL_MAXIMUM], governedPatterns: [{
+  { name: "policy-limit", label: "Maximum coverage / policy limit", rejectWrappedFragments: true, patterns: ["policy limit", "maximum coverage", "coverage maximum(?=.*\\$\\s?\\d)", "lifetime maximum", "benefit maximum", "maximum benefit", "^\\s*(?:(?:certificate|policy|overall|plan)\\s+)?maximum limit\\b\\s*:?\\s*\\$\\s?\\d", OVERALL_MAXIMUM], notUnderLabelPatterns: [OVERALL_MAXIMUM], governedPatterns: [{
     // An overall limit heading (review R2): not an out-of-pocket, visit,
     // per-day or drug maximum.
     heading: "^(?!.*\\b(?:out[- ]of[- ]pocket|visits?|per day|drugs?|pharmacy|prescriptions?)\\b).*(?:\\b(?:overall|policy|certificate|plan|lifetime|coverage)\\s+(?:maximum|limit)\\b|\\bmaximum\\s+(?:coverage|limit|amount)\\b|\\bcoverage\\s+limit\\b)",

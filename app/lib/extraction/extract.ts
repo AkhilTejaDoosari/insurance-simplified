@@ -447,6 +447,7 @@ function hasOwnLabel(line: string): boolean {
 /** P0-03 semantic guards for one fact (see FactDefinition). */
 export interface FactGuards {
   name?: string;
+  rejectWrappedFragments?: boolean;
   notUnderLabelPatterns?: string[];
   excludePatterns?: string[];
   requiredPatterns?: string[];
@@ -511,6 +512,7 @@ export function findAllMatchesWithHeaders(
       // Review S7: a maximum directly under a value-less benefit label is
       // that benefit's sub-limit, not this fact.
       const plainLine = plainLines[lineIdx];
+      if (guards.rejectWrappedFragments && /^\s*[a-z]/.test(line)) continue;
       if (lineIdx > 0 && notUnderLabel.some((re) => re.test(matchLine) || re.test(plainLine)) && namesABenefit(lines[lineIdx - 1])) continue;
       if (!regexes.some((re) => re.test(matchLine) || re.test(plainLine)) || !admissible(matchLine, next)) {
         // A bullet value whose own words do not name the fact belongs to it
