@@ -456,10 +456,12 @@ function normalizeForClaim(text: string): string {
 /** Check if a normalized sentence is covered by any normalized canonical quote. */
 function tokensCovered(normSentence: string, text: string): boolean {
   const normText = normalizeForClaim(text);
-  if (normText.includes(normSentence)) return true;
-  // Token-level coverage: every token (> 2 chars) of the sentence appears.
+  // Word-level coverage (confirmation review): every word (> 2 chars) of the
+  // sentence must begin a word of the text — "visit" is covered by "visits",
+  // "limited" is NOT covered by "unlimited".
+  const words = normText.split(/\s+/).filter(Boolean);
   const sentenceTokens = normSentence.split(/\s+/).filter((t) => t.length > 2);
-  return sentenceTokens.length > 0 && sentenceTokens.every((t) => normText.includes(t));
+  return sentenceTokens.length > 0 && sentenceTokens.every((t) => words.some((w) => w.startsWith(t)));
 }
 
 /** Negation and qualifier words a faithful sentence must keep exactly,
@@ -581,7 +583,10 @@ export function verifyAnswerClaims(
   const sentences = splitSentences(answerText);
   for (const sentence of sentences) {
     const figures = figuresOf(sentence);
-    if (countTokens(sentence) < 4 && figures.length === 0 && !COVERAGE_STATEMENT.test(sentence)) continue; // non-substantive
+    // No short-sentence skip (confirmation review: "Dental is free." must not
+    // pass against "not covered"); only a sentence with no word of more than
+    // two characters and no figure is non-substantive.
+    if (figures.length === 0 && !normalizeForClaim(sentence).split(/\s+/).some((t) => t.length > 2)) continue;
     const quote = coveringQuote(sentence, canonicalQuotes);
     const quoteFigures = new Set(quote ? figuresOf(quote) : []);
     if (figures.some((f) => !quoteFigures.has(f))) {

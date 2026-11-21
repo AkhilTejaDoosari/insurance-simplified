@@ -90,9 +90,11 @@ describe("a short sentence that states a figure is always checked", () => {
     expect(verifyAnswerClaims("$1,000,000.", cite, C, D).ok).toBe(true);
   });
 
-  it("the stated figure from the citation passes; a short sentence without figures is still skipped", () => {
+  // Confirmation review reversed this session's earlier assertion that a
+  // short sentence without figures is skipped: it must be covered too.
+  it("the stated figure from the citation passes; an uncovered short sentence is rejected", () => {
     expect(verifyAnswerClaims("Annual maximum $1,000,000", cite, C, D).ok).toBe(true);
-    expect(verifyAnswerClaims("Yes, it does.\nAnnual maximum $1,000,000", cite, C, D).ok).toBe(true);
+    expect(verifyAnswerClaims("Yes, it does.\nAnnual maximum $1,000,000", cite, C, D).ok).toBe(false);
   });
 });
 
@@ -143,5 +145,22 @@ describe("coverage keeps every negation and qualifier word", () => {
     ["Copay $300 waived if admitted", "Copay $300 waived if admitted."],
     ["Maternity covered after 12 months", "Maternity covered after 12 months."],
     ["Annual maximum $1,000,000\nNewborn maximum $500", "Annual maximum $1,000,000"],
+  ])("accepts faithful pair %#", (page, sentence) => expect(check(page, sentence)).toBe(true));
+});
+
+// Confirmation review (2026-11-21): no short-sentence skip; whole-word
+// coverage ("limited" is not covered by "unlimited").
+describe("short affirmatives and substring words cannot reverse a fact", () => {
+  const check = (page: string, sentence: string) =>
+    verifyAnswerClaims(sentence, [{ documentId: "doc-1", page: 1, quote: page }], [{ documentId: "doc-1", page: 1, quote: page }], [{ documentId: "doc-1", pages: [page] }]).ok;
+  it.each([
+    ["Ambulance limited to $1,000", "Ambulance unlimited."],
+    ["Dental is not covered", "Dental is free."],
+    ["Dental is not covered", "Yes, dental."],
+    ["Ambulance unlimited", "Ambulance limited."],
+  ])("rejects pair %#", (page, sentence) => expect(check(page, sentence)).toBe(false));
+  it.each([
+    ["Ambulance limited to $1,000", "Ambulance limited to $1,000."],
+    ["Two office visits per year", "Two office visit per year."],
   ])("accepts faithful pair %#", (page, sentence) => expect(check(page, sentence)).toBe(true));
 });
