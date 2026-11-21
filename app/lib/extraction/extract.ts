@@ -72,7 +72,7 @@ const BENEFIT_FACTS: ReadonlySet<string> = new Set(
  *  OF REMAINS", "EXCLUSIONS"): at most five words, no amount, percentage or
  *  digit, no "label: value" colon, and no word that states something.
  *  Never a value of any fact. */
-const STATING_WORD = /\b(?:covered|not|no|none|yes|included|includes|excluded|exclud\w*|waived?|unlimited|paid|payable|pays|required|appl(?:y|ies|ied)|available|only|except|unless|subject|must|limited|n\/a)\b/i;
+const STATING_WORD = /\b(?:covered|not|no|none|yes|included|includes|excluded|exclud\w*|waived?|unlimited|paid|payable|pays|required|appl(?:y|ies|ied)|available|only|except|unless|subject|must|limit(?:s|ed)?|maximum|up to|same as|usual|customary|reasonable|n\/a)\b/i;
 export function isValuelessLabel(line: string): boolean {
   const text = withoutFootnoteMarkers(line).replace(/^\s*[•·▪\-–*]\s*/, "").replace(/:\s*$/, "").trim();
   // "Label: value" states its value after the colon.

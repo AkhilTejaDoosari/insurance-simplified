@@ -35,6 +35,10 @@ describe("a value-less label or heading is never a value", () => {
     expect(shown(c, "maternity-coverage")).toEqual(["Maternity Covered as any sickness"]);
     expect(shown(c, "dental-coverage")).toEqual(["Dental Not covered"]);
     expect(shown(c, "urgent-care")).toEqual(["Urgent care $50"]);
+    const u = table([["Ambulance up to maximum", "Physiotherapy same as any sickness", "Chiropractic usual and customary"].join("\n")]);
+    expect(shown(u, "ambulance")).toEqual(["Ambulance up to maximum"]);
+    expect(shown(u, "physical-therapy")).toEqual(["Physiotherapy same as any sickness"]);
+    expect(shown(u, "chiropractic")).toEqual(["Chiropractic usual and customary"]);
     const e = table([["Telehealth: Teladoc app"].join("\n")]);
     expect(shown(e, "telehealth")).toEqual(["Telehealth: Teladoc app"]);
     const n = table([["Northwind PPO Network"].join("\n")]);
