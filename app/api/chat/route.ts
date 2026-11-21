@@ -19,7 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { registerEvidence } from "@/app/lib/session";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
-import { REFUSAL_TEXT, type ChatCitation } from "@/app/lib/rag/answer";
+import { REFUSAL_TEXT, UNCERTAIN_TEXT, type ChatCitation } from "@/app/lib/rag/answer";
 import {
   answerQuestion,
   answerQuestionSemantic,
@@ -308,7 +308,7 @@ export async function POST(request: NextRequest) {
             `[chat-refusal] stage=verifyEvidenceCitation page=${citation.page} citationCount=${validated.citations.length}`,
           );
           allVerified = false;
-          break;
+          continue;
         }
         canonical.push({ ...citation, quote: verified.quote });
       }
@@ -319,14 +319,22 @@ export async function POST(request: NextRequest) {
             documentId: c.documentId,
             page: c.page,
           })),
-          citationCount: 0,
+          citationCount: canonical.length,
           verification: "fail",
           refusalReason: "verification-failed",
         });
+        // Owner decision 2026-11-21: a rejected answer is never shown; the
+        // refusal carries the cited passages that DO verify on their page
+        // and in scope ("cannot be confirmed"), or the plain refusal if none.
+        if (canonical.length === 0) {
+          return NextResponse.json({ schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT });
+        }
         return NextResponse.json({
           schemaVersion: "v1",
           kind: "refusal",
-          refusalText: REFUSAL_TEXT,
+          refusalText: UNCERTAIN_TEXT,
+          citations: canonical.map(withEvidenceId),
+          ...(await attachVerified(canonical)),
         });
       }
       trace({

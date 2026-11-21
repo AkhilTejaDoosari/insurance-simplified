@@ -515,13 +515,17 @@ export function verifyAnswerClaims(
     if (typeof citation.quote !== "string" || !citation.quote.trim()) {
       return { ok: false, rationale: `Citation quote empty` };
     }
-    // Simple exact normalized containment check
-    const normPage = normalizeForClaim(pageText);
-    const normQuote = normalizeForClaim(citation.quote);
-    if (!normPage.includes(normQuote)) {
+    // Owner decision 2026-11-21: the SAME strict verbatim rule as every other
+    // citation check (verifyEvidenceCitation: exact, unique, contiguous;
+    // whitespace and line wraps normalized, punctuation and wording not).
+    const strict = verifyEvidenceCitation(
+      [{ documentId: doc.documentId, pageCount: doc.pages.length, pages: doc.pages }],
+      citation,
+    );
+    if (!strict.ok) {
       return { ok: false, rationale: `Citation not found in source page: ${citation.documentId} p${citation.page}` };
     }
-    canonicalQuotes.push(citation.quote);
+    canonicalQuotes.push(strict.quote);
   }
 
   // (a) Every substantive generated sentence must be covered by >=1 citation

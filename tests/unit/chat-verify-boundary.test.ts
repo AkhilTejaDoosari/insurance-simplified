@@ -60,7 +60,10 @@ function answer(citations: unknown[]) {
 }
 
 describe("POST /api/chat evidence verification boundary", () => {
-  it("15. fails a partially unsupported answer closed with the existing refusal", async () => {
+  // Owner decision 2026-11-21 (6) replaced "fails closed with the existing
+  // (plain) refusal": still fails closed — the answer is never shown — but
+  // the refusal carries the cited passage that verifies.
+  it("15. fails a partially unsupported answer closed: 'cannot be confirmed' with the verifying passage", async () => {
     const { session, capability } = seedSession();
     mockedAnswer.mockReturnValue(
       answer([
@@ -70,11 +73,11 @@ describe("POST /api/chat evidence verification boundary", () => {
     );
     const res = await post(session.sessionId, capability);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      schemaVersion: "v1",
-      kind: "refusal",
-      refusalText: REFUSAL_TEXT,
-    });
+    const body = await res.json();
+    expect(body.kind).toBe("refusal");
+    expect(body.refusalText).toBe(UNCERTAIN_TEXT);
+    expect(body.citations.map((c: { quote: string }) => c.quote)).toEqual(["Annual deductible: $250 in-network."]);
+    expect(body).not.toHaveProperty("answerText");
   });
 
   it("16+17. returns canonical verbatim quotes and registers them", async () => {
