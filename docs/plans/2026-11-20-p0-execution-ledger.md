@@ -802,7 +802,39 @@ review fixes · this ledger update.
 | `npm run test:e2e` (local Supabase stack, port 3344) | 57 passed / 1 skipped (baseline 57/1) |
 | private-data guard | ok on every commit |
 
+## Owner decisions 2026-11-21 (after the audit) — implemented
+
+| Decision | Commit | Evidence |
+| --- | --- | --- |
+| 1 Extraction/grouping deterministic; no LLM call with LLM_* set | `3217ba5` | `extraction-no-llm.test.ts` (red before); real routes: 0 provider calls during extract. EXTRACTION_ENGINE=llm server opt-in only. Owner-directed assertion changes: 2 in `extract-route-engine.test.ts`. |
+| 2 Keyword fallback kept, logged | `ca2470b` | `keyword-fallback-log.test.ts` |
+| 5 Grid-first chat | `9b2ca2f`, `ee56e9e`, `5824721` | `grid-first.test.ts`, `grid-first-route.test.ts` (TB-3, stale fingerprint, selection) |
+| 6 One strict citation rule; refusals keep passages | `75d759a` | `verifier-alignment.test.ts`; owner-directed change: `chat-verify-boundary` #15 |
+| Verifier holes found in review | `19b2694`, `ee56e9e`, `5824721`, `18d0caa` | figures exact and from the covering line; negation/qualifier parity; no short-sentence skip; word-level coverage. Own assertion reversed (`verifier-alignment`: short uncovered sentence now rejected). |
+| Usage log + token caps | `896283c` | `llm-usage-log.test.ts` |
+| Policy-limit wrapped fragments | `e72d173`, `5d5788a` | doc 02 −4 fragments (1,138 → 1,134); code guard (RegExp modifiers throw on Node 20); all 149 patterns compile in `node:20-alpine` (v20.20.2) |
+| 7 Phase 5: record the source page for every NOT STATED row | — | Phase 5 requirement, not started |
+
+Nemotron (`nvidia/nemotron-3-ultra-550b-a55b`, reasoning_effort none, 2 s
+throttle, keyword retrieval because the local embedding model is no longer
+on disk): doc 02, eight questions through the real routes at `18d0caa` —
+deductible, annual maximum, pre-existing (grid-first, exact wording; every
+rephrase rejected), coinsurance, ER copay (retrieval + model) verified;
+maternity "cannot be confirmed" with passages; geographic refusal (model
+declined); space tourism refusal. 0.9–3.2 s each, 0 failures. With
+reasoning on, reasoning tokens exhausted the 1,024/512 caps (2 CHAT_FAILED).
+
+Open: KodeKloud LLM block still active in `.env.local` (last block wins);
+Cloudflare credentials; local embedding model absent (semantic leg
+untested); figure swap between labels on one line (reviewer should-fix);
+"deductible for X" style concepts beyond prepositions; maternity and
+geographic not answered; pre-existing grid answer includes a residual
+warning line.
+
+Gates at `18d0caa`: tsc clean; npm test 1,866/22 skipped; real-PDF 1,988
+passed / 1 failed (documented missing-brochure gap) / 42 skipped; build 0;
+e2e 57/1 skipped. At `5d5788a`: full suite 1,868 passed on Node 22.
+
 ## Next atomic step
 
-Owner review of the dependency audit (session report). No provider switch
-has been made. Phase 5 is NO-GO.
+Owner review. Phase 5 is NO-GO.
