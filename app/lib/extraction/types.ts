@@ -155,7 +155,9 @@ export type WithheldReason =
   /** A label or heading line naming the fact with no value of its own. */
   | "label-without-value"
   /** A "<Term> means …" definition line: it names, it does not state. */
-  | "definition-line";
+  | "definition-line"
+  /** A footnoted label whose footnote was not found: its basis is unknown. */
+  | "footnote-unresolved";
 
 /** A source line the page states for this fact but that the reader withheld
  *  (EC-2/EC-5). Shown so the drop is visible, never as a value. The quote is

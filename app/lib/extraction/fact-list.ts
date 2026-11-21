@@ -1,3 +1,4 @@
+import { headingShaped } from "@/app/lib/evidence/proposer/exclusion-sections";
 // Versioned comparable-fact list v1 (spec FR-004).
 // Each fact carries match patterns run (line-by-line) against extracted page
 // text by the deterministic fallback engine. The LLM path receives the same
@@ -21,6 +22,10 @@ export interface FactDefinition {
    *  GOVERNED_MAX_BULLETS sibling bullets — matches `heading`. The evidence
    *  quote spans heading → line so the governing context is cited. */
   governedPatterns?: { heading: string; line: string }[];
+  /** A line matching one of these is not this fact when the line directly
+   *  above it is a value-less benefit label: it is that benefit's own
+   *  sub-limit ("Physical therapy" / "Annual maximum $1,000"; review S7). */
+  notUnderLabelPatterns?: string[];
   /** P0-03: match table labels against the full label (sub-notes and
    *  parentheticals included), because the fact's basis lives there. */
   matchFullLabel?: boolean;
@@ -86,6 +91,9 @@ export interface FootnotedLine {
   matchText: string;
   /** Indexes of the footnote lines it resolved to (cited with the value). */
   footnotes: number[];
+  /** A glued marker on this line did NOT resolve to a footnote: whatever the
+   *  footnote says (e.g. the basis of a deductible) is unknown (review N1). */
+  unresolved: boolean;
 }
 
 /** Resolve glued footnote markers on a page's lines. A marker resolves only
@@ -93,28 +101,32 @@ export interface FootnotedLine {
  *  injury or sickness"), and only when exactly one such line exists; the
  *  footnote then belongs to the label's meaning. */
 export function resolveFootnotes(lines: readonly string[]): FootnotedLine[] {
-  // A footnote is a line of a NOTE BLOCK (review S6): consecutive note-shaped
-  // lines numbered 1, 2, 3 … from 1, none stating an amount or percentage.
-  // A numbered list or table row ("2 Office visits $20") is not a note.
-  const shaped = lines.map((l) => {
-    const m = FOOTNOTE_LINE.exec(l);
-    return m && !/[$%]/.test(m[2]) ? m : null;
-  });
+  // A footnote is a line of a NOTE BLOCK (reviews S6, N1, N2): consecutive
+  // note-shaped lines numbered 1, 2, 3 … from 1, not continuing another
+  // numbered run and not directly under a heading (a heading introduces a
+  // numbered LIST, e.g. "Exclusions" / "1 Cosmetic surgery"). Note text may
+  // state amounts. A marker that finds no note stays unresolved.
+  const shaped = lines.map((l) => FOOTNOTE_LINE.exec(l));
+  const isHeading = (l: string | undefined) => l !== undefined && !/[\d$%]/.test(l) && headingShaped(l);
   const notes: (RegExpExecArray | null)[] = lines.map(() => null);
   for (let i = 0; i < lines.length; i++) {
-    if (!shaped[i] || markerKey(shaped[i]![1]) !== "1" || (i > 0 && shaped[i - 1])) continue;
+    if (!shaped[i] || markerKey(shaped[i]![1]) !== "1" || (i > 0 && shaped[i - 1]) || isHeading(lines[i - 1])) continue;
     for (let j = i, n = 1; j < lines.length && shaped[j] && markerKey(shaped[j]![1]) === String(n); j++, n++) notes[j] = shaped[j];
   }
   return lines.map((line, idx) => {
     const footnotes: number[] = [];
+    let unresolved = false;
     const matchText = line.replace(FOOTNOTE_MARKER, (marker) => {
       const key = markerKey(marker);
       const hits = notes.flatMap((m, j) => (m && j > idx && markerKey(m[1]) === key ? [j] : []));
-      if (hits.length !== 1) return "";
+      if (hits.length !== 1) {
+        unresolved = true;
+        return "";
+      }
       footnotes.push(hits[0]);
       return ` (${notes[hits[0]]![2]})`;
     });
-    return { matchText, footnotes };
+    return { matchText, footnotes, unresolved };
   });
 }
 
@@ -149,7 +161,7 @@ export const FACTS: FactDefinition[] = [
   { name: "emergency-care", label: "Emergency room", patterns: ["emergency (room|department|services?|care|coverage)", "emergency[^.\\n]*copay", "copay[^.\\n]*emergency", "emergency[^.\\n]*deductible"] },
   { name: "prescriptions", label: "Prescription drugs", patterns: ["prescription"] },
   { name: "coinsurance", label: "Coinsurance / your share", patterns: ["coinsurance", "cost sharing", "cost-share", "you pay \\d+\\s*%"] },
-  { name: "policy-limit", label: "Maximum coverage / policy limit", patterns: ["policy limit", "maximum coverage", "coverage maximum(?=.*\\$\\s?\\d)", "lifetime maximum", "benefit maximum", "maximum benefit", "^\\s*(?:(?:certificate|policy|overall|plan)\\s+)?maximum limit\\b\\s*:?\\s*\\$\\s?\\d", OVERALL_MAXIMUM], governedPatterns: [{
+  { name: "policy-limit", label: "Maximum coverage / policy limit", patterns: ["policy limit", "maximum coverage", "coverage maximum(?=.*\\$\\s?\\d)", "lifetime maximum", "benefit maximum", "maximum benefit", "^\\s*(?:(?:certificate|policy|overall|plan)\\s+)?maximum limit\\b\\s*:?\\s*\\$\\s?\\d", OVERALL_MAXIMUM], notUnderLabelPatterns: [OVERALL_MAXIMUM], governedPatterns: [{
     // An overall limit heading (review R2): not an out-of-pocket, visit,
     // per-day or drug maximum.
     heading: "^(?!.*\\b(?:out[- ]of[- ]pocket|visits?|per day|drugs?|pharmacy|prescriptions?)\\b).*(?:\\b(?:overall|policy|certificate|plan|lifetime|coverage)\\s+(?:maximum|limit)\\b|\\bmaximum\\s+(?:coverage|limit|amount)\\b|\\bcoverage\\s+limit\\b)",

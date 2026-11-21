@@ -89,3 +89,58 @@ describe("S2: short real values are not labels", () => {
     expect(isValuelessLabel(line)).toBe(true);
   });
 });
+
+// Follow-up review (2026-11-21) of 685f2fc: N1–N4, S7.
+describe("N1/N2: an unresolved footnote never decides a basis-dependent row", () => {
+  const rows = (lines: string[]) => extractFallback([doc(lines)], {}).rows;
+  const get = (lines: string[], fact: string) => rows(lines).find((r) => r.factName === fact);
+
+  it("a footnote whose note text carries an amount still resolves", () => {
+    const lines = ["Deductible1 $100", "1 Per injury or sickness, up to $500 per policy year"];
+    expect(get(lines, "annual-deductible")?.values ?? []).toEqual([]);
+    expect((get(lines, "per-illness-deductible")?.values ?? []).map((v) => v.display)).toEqual(["Deductible1 $100"]);
+  });
+
+  it("a marked deductible whose footnote cannot be found is withheld, not filed as annual", () => {
+    const lines = ["Deductible1 $100", "3 Office visits", "1 Per injury or sickness"];
+    const annual = get(lines, "annual-deductible");
+    expect(annual?.values ?? []).toEqual([]);
+    expect((annual?.withheld ?? []).map((w) => w.reason)).toContain("footnote-unresolved");
+  });
+
+  it("a numbered exclusion list under its heading is not a note block", () => {
+    const lines = ["Deductible1 $100", "Exclusions", "1 Cosmetic surgery", "2 Dental care"];
+    expect(resolveFootnotes(lines)[0].footnotes).toEqual([]);
+    expect((get(lines, "annual-deductible")?.withheld ?? []).map((w) => w.reason)).toContain("footnote-unresolved");
+  });
+
+  it("an unmarked deductible is unaffected", () => {
+    expect((get(["Deductible $100"], "annual-deductible")?.values ?? []).map((v) => v.display)).toEqual(["Deductible $100"]);
+  });
+});
+
+describe("N3: a marked label with a resolved footnote is still a label", () => {
+  it("'Specialist2' with footnote 2 on the page is withheld, not shown", () => {
+    const t = extractFallback([doc(["Copay per visit:", "Specialist2", "$30", "1 Per visit", "2 Referral required"])], {});
+    const row = t.rows.find((r) => r.factName === "specialist-visit");
+    expect((row?.values ?? []).map((v) => v.display)).not.toContain("Specialist2");
+  });
+});
+
+describe("N4: headings stay headings", () => {
+  it.each(["WORLDWIDE ASSISTANCE", "One Call Assistance", "Before departure", "Full policy wording", "EMERGENCY DENTAL"])("%s is a label", (line) => {
+    expect(isValuelessLabel(line)).toBe(true);
+  });
+  it.each(["NOT COVERED", "Two visits per year", "Paid in full", "After deductible", "Emergency services worldwide"])("%s is a value", (line) => {
+    expect(isValuelessLabel(line)).toBe(false);
+  });
+});
+
+describe("S7: a maximum directly under a benefit label is that benefit's sub-limit", () => {
+  it("'Annual maximum $1,000' under 'Physical therapy' is not the policy limit", () => {
+    expect(shown(["SCHEDULE OF BENEFITS", "Physical therapy", "Annual maximum $1,000"], "policy-limit")).toEqual([]);
+  });
+  it("a schedule's overall annual maximum is still read", () => {
+    expect(shown(["SCHEDULE OF BENEFITS", "Policy number 12345", "Annual maximum $1,000,000"], "policy-limit")).toEqual(["Annual maximum $1,000,000"]);
+  });
+});

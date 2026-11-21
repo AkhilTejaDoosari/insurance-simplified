@@ -72,16 +72,33 @@ const BENEFIT_FACTS: ReadonlySet<string> = new Set(
  *  OF REMAINS", "EXCLUSIONS"): at most five words, no amount, percentage or
  *  digit, no "label: value" colon, and no word that states something.
  *  Never a value of any fact. */
-const STATING_WORD = /\b(?:covered|not|no|none|nothing|yes|included|includes|excluded|exclud\w*|waived?|unlimited|paid|payable|pays?|free|full|required|requires?|needed|appl(?:y|ies|ied)|available|only|except|unless|subject|must|limit(?:s|ed)?|maximum|up to|same as|usual|customary|reasonable|renewable|worldwide|after|before|once|twice|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|n\/a)\b/i;
+const STATING_WORD = /\b(?:covered|not|no|none|nothing|yes|included|includes|excluded|exclud\w*|waived?|unlimited|paid|payable|pays?|free|in full|full (?:cost|amount|charges?|coverage)|required|requires?|needed|appl(?:y|ies|ied)|available|only|except|unless|subject|must|limit(?:s|ed)?|maximum|up to|same as|usual|customary|reasonable|renewable|worldwide|after|before (?:the |a |an )?(?:deductible|admission|treatment|surgery|coverage|services?)|once|twice|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:visits?|days?|times?|treatments?|sessions?|weeks?|months?|years?|per)|n\/a)\b/i;
+/** Words that state coverage even in an ALL-CAPS line ("NOT COVERED"). */
+const COVERAGE_WORD = /\b(?:covered|not|no|none|nothing|included|excluded|exclud\w*|waived?|unlimited|paid|payable|free)\b/i;
 export function isValuelessLabel(line: string): boolean {
   // Figures are read on the RAW line: a glued digit may be a value
   // ("visits20"), not only a footnote marker (review S2).
   if (/[\d$%]/.test(line)) return false;
   const text = line.replace(/^\s*[•·▪\-–*]\s*/, "").replace(/:\s*$/, "").trim();
   // "Label: value" states its value after the colon.
-  if (!text || /:\s*\S/.test(text) || STATING_WORD.test(text)) return false;
+  if (!text || /:\s*\S/.test(text)) return false;
+  // Review N4: an ALL-CAPS line is a heading unless it states coverage.
+  const letters = text.replace(/[^A-Za-z]/g, "");
+  if (letters.length >= 3 && letters === letters.toUpperCase()) return !COVERAGE_WORD.test(text) && text.split(/\s+/).length <= 5;
+  if (STATING_WORD.test(text)) return false;
   return text.split(/\s+/).length <= 5;
 }
+/** A value-less line naming a Coverage benefit ("Physical therapy"); a
+ *  section heading ("SCHEDULE OF BENEFITS") names none. */
+let careLabelPatterns: RegExp[] | undefined;
+function namesABenefit(line: string): boolean {
+  if (!isValuelessLabel(line)) return false;
+  careLabelPatterns ??= FACTS.filter((f) => CARE_FACTS.has(f.name)).flatMap((f) => f.patterns.map((p) => new RegExp(p, "i")));
+  return careLabelPatterns.some((re) => re.test(line));
+}
+/** Facts whose row is decided by a basis a footnote may state (per illness,
+ *  per policy year, …): an unresolved footnote marker withholds the line. */
+const BASIS_DEPENDENT_FACTS: ReadonlySet<string> = new Set(["annual-deductible", "per-illness-deductible", "policy-limit", "out-of-pocket-maximum"]);
 /** Facts whose value IS a name ("Northwind PPO Network"): a short line
  *  without figures is their value, not a label. */
 const NAME_VALUED_FACTS: ReadonlySet<string> = new Set(["network"]);
@@ -429,6 +446,8 @@ function hasOwnLabel(line: string): boolean {
 /** Find all matching lines per fact per document, using pre-computed tier headers. */
 /** P0-03 semantic guards for one fact (see FactDefinition). */
 export interface FactGuards {
+  name?: string;
+  notUnderLabelPatterns?: string[];
   excludePatterns?: string[];
   requiredPatterns?: string[];
   governedPatterns?: { heading: string; line: string }[];
@@ -453,7 +472,7 @@ export function findAllMatchesWithHeaders(
   pages: string[],
   tierHeadersByPage: Map<number, TierHeader[]>,
   guards: FactGuards = {},
-): { page: number; quote: string; display?: string; qualifiers: Record<string, string>; notes?: string[] }[] {
+): { page: number; quote: string; display?: string; qualifiers: Record<string, string>; notes?: string[]; unresolvedFootnote?: boolean }[] {
   const regexes = factPatterns.map((p) => new RegExp(p, "i"));
   const excludes = (guards.excludePatterns ?? []).map((p) => new RegExp(p, "i"));
   const requires = (guards.requiredPatterns ?? []).map((p) => new RegExp(p, "i"));
@@ -466,7 +485,8 @@ export function findAllMatchesWithHeaders(
     const context = /\b(?:for each|per|each)\s*$/i.test(line) ? `${line} ${next}` : line;
     return !excludes.some((re) => re.test(context)) && (requires.length === 0 || requires.some((re) => re.test(line)));
   };
-  const results: { page: number; quote: string; display?: string; qualifiers: Record<string, string>; notes?: string[] }[] = [];
+  const results: { page: number; quote: string; display?: string; qualifiers: Record<string, string>; notes?: string[]; unresolvedFootnote?: boolean }[] = [];
+  const notUnderLabel = (guards.notUnderLabelPatterns ?? []).map((p) => new RegExp(p, "i"));
 
   for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
     const pageNum = pageIdx + 1;
@@ -479,12 +499,20 @@ export function findAllMatchesWithHeaders(
     // verbatim line, and a resolved footnote line is cited with the value.
     const footnoted = resolveFootnotes(lines);
     const matchLines = footnoted.map((f) => f.matchText);
+    // Patterns may match either reading (the footnote text in place can
+    // separate a label from its amount); guards always read matchLines, so
+    // a footnote can still disqualify the line.
+    const plainLines = lines.map(withoutFootnoteMarkers);
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const line = lines[lineIdx];
       const matchLine = matchLines[lineIdx];
       const next = matchLines[lineIdx + 1] ?? "";
-      if (!regexes.some((re) => re.test(matchLine)) || !admissible(matchLine, next)) {
+      // Review S7: a maximum directly under a value-less benefit label is
+      // that benefit's sub-limit, not this fact.
+      const plainLine = plainLines[lineIdx];
+      if (lineIdx > 0 && notUnderLabel.some((re) => re.test(matchLine) || re.test(plainLine)) && namesABenefit(lines[lineIdx - 1])) continue;
+      if (!regexes.some((re) => re.test(matchLine) || re.test(plainLine)) || !admissible(matchLine, next)) {
         // A bullet value whose own words do not name the fact belongs to it
         // only under a matching governing heading, which is cited with it.
         const rule = admissible(matchLine, next) ? governed.find((g) => g.line.test(matchLine)) : undefined;
@@ -545,6 +573,7 @@ export function findAllMatchesWithHeaders(
       // Every value read from this label, including one on a lookahead
       // line, depends on the footnote (review S6).
       if (notes.length) for (const r of results.slice(before)) r.notes = notes;
+      if (footnoted[lineIdx].unresolved) for (const r of results.slice(before)) r.unresolvedFootnote = true;
     }
   }
   return results;
@@ -608,8 +637,16 @@ export function extractFallback(
         // A label/heading or a definition is not a value; it is withheld
         // for verification only when the document states nothing else for
         // this fact (never a silent NOT STATED), and dropped otherwise.
+        // Review N1: a basis-dependent fact never takes a line whose glued
+        // footnote marker found no footnote; the basis is unknown. Withheld.
+        if (match.unresolvedFootnote && BASIS_DEPENDENT_FACTS.has(fact.name)) {
+          withhold(doc, { factName: fact.name, page: match.page, quote: verified.quote, reason: "footnote-unresolved" });
+          continue;
+        }
         const shownLine = match.display ?? match.quote;
-        const notAValue = !NAME_VALUED_FACTS.has(fact.name) && isValuelessLabel(shownLine)
+        // Review N3: a marker that resolved to a footnote is not a figure.
+        const labelText = match.notes?.length ? withoutFootnoteMarkers(shownLine) : shownLine;
+        const notAValue = !NAME_VALUED_FACTS.has(fact.name) && isValuelessLabel(labelText)
           ? "label-without-value"
           : (BENEFIT_FACTS.has(fact.name) || fact.name === "pre-existing-conditions") && TERM_DEFINITION.test(shownLine)
             ? "definition-line"

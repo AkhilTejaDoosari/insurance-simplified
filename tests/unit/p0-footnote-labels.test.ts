@@ -8,6 +8,11 @@ import { describe, expect, it } from "vitest";
 import { extractFallback } from "@/app/lib/extraction/extract";
 import { withoutFootnoteMarkers } from "@/app/lib/extraction/fact-list";
 
+function withheldFor(lines: string[], fact: string) {
+  const table = extractFallback([{ documentId: "doc-1", filename: "plan.pdf", pageCount: 1, pages: [lines.join("\n")] }], {});
+  return (table.rows.find((r) => r.factName === fact)?.withheld ?? []).map((w) => w.quote);
+}
+
 function valuesFor(lines: string[], fact: string) {
   const table = extractFallback([{ documentId: "doc-1", filename: "plan.pdf", pageCount: 1, pages: [lines.join("\n")] }], {});
   return (table.rows.find((r) => r.factName === fact)?.values ?? []).map((v) => v.display);
@@ -22,17 +27,20 @@ describe("footnote markers on labels", () => {
     expect(withoutFootnoteMarkers("$1,000,000 per 12 months; F1 or J1; age 26")).toBe("$1,000,000 per 12 months; F1 or J1; age 26");
   });
 
-  it("a schedule deductible with a footnote marker is read, verbatim", () => {
-    // Review B1: a place-specific deductible ("at the …") is not the plan's
-    // annual deductible; the plan-level "elsewhere" line is.
-    const shown = valuesFor(["SCHEDULE OF BENEFITS", "Deductible1 at the student health center $50", "Deductible1 elsewhere $100"], "annual-deductible");
-    expect(shown).toEqual(["Deductible1 elsewhere $100"]);
+  // Review N1 (follow-up): a marked deductible whose footnote is NOT on
+  // the page has an unknown basis — it is withheld for verification, never
+  // filed by its marker-free text (these two cases asserted filing before).
+  it("a marked schedule deductible without its footnote is withheld, verbatim", () => {
+    const lines = ["SCHEDULE OF BENEFITS", "Deductible1 at the student health center $50", "Deductible1 elsewhere $100"];
+    expect(valuesFor(lines, "annual-deductible")).toEqual([]);
+    expect(withheldFor(lines, "annual-deductible")).toEqual(["Deductible1 elsewhere $100"]);
   });
 
-  it("a per-illness deductible with a marker stays per-illness, not annual", () => {
+  it("a marked per-illness deductible without its footnote is withheld, never annual", () => {
     const lines = ["SCHEDULE OF BENEFITS", "Deductible2 per illness $250"];
     expect(valuesFor(lines, "annual-deductible")).toEqual([]);
-    expect(valuesFor(lines, "per-illness-deductible")).toEqual(["Deductible2 per illness $250"]);
+    expect(valuesFor(lines, "per-illness-deductible")).toEqual([]);
+    expect(withheldFor(lines, "per-illness-deductible")).toEqual(["Deductible2 per illness $250"]);
   });
 
   it("a per-visit deductible is not the annual deductible", () => {
@@ -81,13 +89,27 @@ describe("a resolved footnote is part of the label's meaning", () => {
 
   it("a footnote line ABOVE the marked label is not its footnote", () => {
     const t = extractFallback([{ documentId: "doc-1", filename: "plan.pdf", pageCount: 1, pages: [["1 Per injury or sickness", "Deductible1 elsewhere $100"].join("\n")] }], {});
-    expect((t.rows.find((r) => r.factName === "annual-deductible")?.values ?? []).map((v) => v.display)).toEqual(["Deductible1 elsewhere $100"]);
+    // Not its footnote, so the marker is unresolved (review N1): withheld.
+    const row = t.rows.find((r) => r.factName === "annual-deductible");
+    expect(row?.values ?? []).toEqual([]);
+    expect((row?.withheld ?? []).map((w) => w.reason)).toEqual(["footnote-unresolved"]);
   });
 });
 
 describe("annual maximum is the overall plan limit", () => {
-  it.each(["Annual maximum $1,000,000", "Annual maximum3 $500,000", "Overall maximum: $250,000"])("overall-limit line %# → policy-limit", (line) => {
+  it.each(["Annual maximum $1,000,000", "Overall maximum: $250,000"])("overall-limit line %# → policy-limit", (line) => {
     expect(valuesFor(["SCHEDULE OF BENEFITS", line], "policy-limit")).toEqual([line]);
+  });
+
+  it("a marked annual maximum whose footnote is not on the page is withheld (review N1)", () => {
+    const lines = ["SCHEDULE OF BENEFITS", "Annual maximum3 $500,000"];
+    expect(valuesFor(lines, "policy-limit")).toEqual([]);
+    expect(withheldFor(lines, "policy-limit")).toEqual(["Annual maximum3 $500,000"]);
+  });
+
+  it("a marked annual maximum with its footnote resolves and cites it", () => {
+    const lines = ["SCHEDULE OF BENEFITS", "Annual maximum3 $500,000", "1 Per policy year", "2 Network providers only", "3 Per covered person"];
+    expect(valuesFor(lines, "policy-limit")).toEqual(["Annual maximum3 $500,000"]);
   });
 
   it.each([
