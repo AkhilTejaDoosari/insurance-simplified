@@ -22,6 +22,7 @@ import {
   FACT_LIST_VERSION,
   VAGUE_PATTERNS,
   extractQualifiers,
+  withoutFootnoteMarkers,
 } from "@/app/lib/extraction/fact-list";
 import { wrapDocuments } from "@/app/lib/llm/safe-prompt";
 import { completeJson } from "@/app/lib/llm/client";
@@ -449,15 +450,20 @@ export function findAllMatchesWithHeaders(
     const lines = pages[pageIdx].split(/\n+/).map((l) => l.trim()).filter(Boolean);
     const headers = tierHeadersByPage.get(pageNum) ?? [];
 
+    // Matchers read each line without glued footnote markers
+    // ("Deductible1"); quotes and displays keep the verbatim line.
+    const matchLines = lines.map(withoutFootnoteMarkers);
+
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const line = lines[lineIdx];
-      const next = lines[lineIdx + 1] ?? "";
-      if (!regexes.some((re) => re.test(line)) || !admissible(line, next)) {
+      const matchLine = matchLines[lineIdx];
+      const next = matchLines[lineIdx + 1] ?? "";
+      if (!regexes.some((re) => re.test(matchLine)) || !admissible(matchLine, next)) {
         // A bullet value whose own words do not name the fact belongs to it
         // only under a matching governing heading, which is cited with it.
-        const rule = admissible(line, next) ? governed.find((g) => g.line.test(line)) : undefined;
+        const rule = admissible(matchLine, next) ? governed.find((g) => g.line.test(matchLine)) : undefined;
         const headingIdx = rule ? governingHeadingIndex(lines, lineIdx) : undefined;
-        if (rule && headingIdx !== undefined && rule.heading.test(lines[headingIdx]) && !excludes.some((re) => re.test(lines[headingIdx]))) {
+        if (rule && headingIdx !== undefined && rule.heading.test(matchLines[headingIdx]) && !excludes.some((re) => re.test(matchLines[headingIdx]))) {
           results.push({ page: pageNum, quote: lines.slice(headingIdx, lineIdx + 1).join("\n"), display: line, qualifiers: extractQualifiers(line) });
         }
         continue;

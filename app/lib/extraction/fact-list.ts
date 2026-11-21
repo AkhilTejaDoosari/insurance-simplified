@@ -64,15 +64,34 @@ const DEFINITION =
 /** Contact lines ("Customer service (USA only): 1-800-…") restrict nothing. */
 const CONTACT_LINE = "\\b(?:call|phone|telephone|customer service|toll[- ]free|fax)\\b|\\+?\\d[\\d .()-]{8,}\\d";
 
+/** A footnote marker glued to a label word ("Deductible1", "in-network2",
+ *  "maximum³"): one or two digits or superscripts right after a word of at
+ *  least three letters, before a space, punctuation or the line end. Removed
+ *  for MATCHING only — quotes and displays keep the verbatim line. Codes
+ *  with fewer letters ("F1", "J1") and amounts are untouched. */
+const FOOTNOTE_MARKER = /(?<=[A-Za-z]{3})(?:\d{1,2}|[\u00B9\u00B2\u00B3\u2070\u2074-\u2079]{1,2})(?=[\s:;,.)]|$)/g;
+export function withoutFootnoteMarkers(line: string): string {
+  return line.replace(FOOTNOTE_MARKER, "");
+}
+
+/** A schedule line that opens with the deductible label and states its
+ *  amount ("Deductible elsewhere $100"); waivers and credits are not an
+ *  amount of the deductible. */
+const SCHEDULE_DEDUCTIBLE = "^\\s*deductibles?\\b(?![^\\n]*\\b(?:waived?|credits?|not)\\b)[^$\\n.;]{0,60}\\$\\s?[\\d,]+";
+/** A schedule line naming the plan's overall maximum with its amount
+ *  ("Annual maximum $1,000,000", "Overall maximum: $250,000"); nothing may
+ *  sit between "maximum" and the amount (out-of-pocket, visits, …). */
+const OVERALL_MAXIMUM = "^\\s*(?:annual|overall|aggregate|policy|plan|certificate)\\s+maximum\\b\\s*:?\\s*\\$\\s?\\d";
+
 export const FACTS: FactDefinition[] = [
   { name: "premium", label: "Premium / price", patterns: ["premium(?=.*(?:\\$|\\b\\d))", "\\bprice\\b(?=.*(?:\\$|\\b\\d))"] },
-  { name: "annual-deductible", label: "Annual deductible", excludePatterns: ["^(?!.*" + NAMES_ANNUAL + ")(?:.*(?:" + PER_INCIDENT + "|" + PER_EVENT + "))"], patterns: ["^(?!.*\\brecommend(?:s|ed)?\\b)(?:.*\\bannual deductible\\b|.*\\bdeductible options\\b|.*\\bdeductible\\s*[:$]|.*\\$\\s?[\\d,]+\\s+deductible|.*\\bcalendar[- ]year deductibles?(?:\\s+is)?(?:\\s+now)?\\s*:?\\s*\\$\\s?[\\d,]+)"] },
+  { name: "annual-deductible", label: "Annual deductible", excludePatterns: ["^(?!.*" + NAMES_ANNUAL + ")(?:.*(?:" + PER_INCIDENT + "|" + PER_EVENT + "))"], patterns: ["^(?!.*\\brecommend(?:s|ed)?\\b)(?:.*\\bannual deductible\\b|.*\\bdeductible options\\b|.*\\bdeductible\\s*[:$]|.*\\$\\s?[\\d,]+\\s+deductible|" + SCHEDULE_DEDUCTIBLE.slice(1) + "|.*\\bcalendar[- ]year deductibles?(?:\\s+is)?(?:\\s+now)?\\s*:?\\s*\\$\\s?[\\d,]+)"] },
   { name: "per-illness-deductible", label: "Deductible per illness, injury or condition", matchFullLabel: true, labelHeadPattern: "^\\s*deductibles?\\b", excludePatterns: ["\\bper damage\\b|\\bdamage deductible\\b", NAMES_ANNUAL], patterns: [PER_INCIDENT] },
   { name: "out-of-pocket-maximum", label: "Out-of-pocket maximum", patterns: ["out-of-pocket maximum", "out of pocket max"] },
   { name: "emergency-care", label: "Emergency room", patterns: ["emergency (room|department|services?|care|coverage)", "emergency[^.\\n]*copay", "copay[^.\\n]*emergency", "emergency[^.\\n]*deductible"] },
   { name: "prescriptions", label: "Prescription drugs", patterns: ["prescription"] },
   { name: "coinsurance", label: "Coinsurance / your share", patterns: ["coinsurance", "cost sharing", "cost-share", "you pay \\d+\\s*%"] },
-  { name: "policy-limit", label: "Maximum coverage / policy limit", patterns: ["policy limit", "maximum coverage", "coverage maximum(?=.*\\$\\s?\\d)", "lifetime maximum", "benefit maximum", "maximum benefit", "^\\s*(?:(?:certificate|policy|overall|plan)\\s+)?maximum limit\\b\\s*:?\\s*\\$\\s?\\d"], governedPatterns: [{
+  { name: "policy-limit", label: "Maximum coverage / policy limit", patterns: ["policy limit", "maximum coverage", "coverage maximum(?=.*\\$\\s?\\d)", "lifetime maximum", "benefit maximum", "maximum benefit", "^\\s*(?:(?:certificate|policy|overall|plan)\\s+)?maximum limit\\b\\s*:?\\s*\\$\\s?\\d", OVERALL_MAXIMUM], governedPatterns: [{
     // An overall limit heading (review R2): not an out-of-pocket, visit,
     // per-day or drug maximum.
     heading: "^(?!.*\\b(?:out[- ]of[- ]pocket|visits?|per day|drugs?|pharmacy|prescriptions?)\\b).*(?:\\b(?:overall|policy|certificate|plan|lifetime|coverage)\\s+(?:maximum|limit)\\b|\\bmaximum\\s+(?:coverage|limit|amount)\\b|\\bcoverage\\s+limit\\b)",
