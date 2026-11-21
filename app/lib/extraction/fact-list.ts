@@ -116,6 +116,18 @@ const SCHEDULE_DEDUCTIBLE = "^\\s*deductibles?\\b(?![^\\n]*\\b(?:waived?|credits
  *  sit between "maximum" and the amount (out-of-pocket, visits, …). */
 const OVERALL_MAXIMUM = "^\\s*(?:annual|overall|aggregate|policy|plan|certificate)\\s+maximum\\b\\s*:?\\s*\\$\\s?\\d";
 
+/** A reference to exclusions as contract terms or elsewhere in the document
+ *  ("terms, conditions, limits and exclusions", "subject to a separate
+ *  exclusion", a line continuing "… and exclusions."): not an exclusion. */
+const EXCLUSION_REFERENCE =
+  "\\b(?:terms|conditions|provisions|limitations|limits)\\b[^.]*\\b(?:and|&)\\s+exclusions\\b|\\b(?:subject to|pursuant to|see|refer to|described in)\\b[^.]*\\bexclusions?\\b|\\bseparate exclusion\\b|^\\s*(?:and|or)\\s+(?:limitations\\s+and\\s+)?exclusions\\b";
+/** A legal or consular assistance referral is not a medical referral. */
+const LEGAL_REFERRAL = "\\b(?:legal|attorneys?|lawyers?|consul(?:ar|ate)?|embass(?:y|ies))\\b";
+/** A benefit's cost share by network ("80% in-network, 70% out-of-network")
+ *  or a coinsurance line is a cost-share value, not a network rule. */
+const PER_NETWORK_SHARE =
+  "\\bcoinsurance\\b|\\d{1,3}\\s*%[^%\\n]{0,40}\\bin[- ]network\\b[^%\\n]{0,40}\\d{1,3}\\s*%[^%\\n]{0,40}\\bout[- ]of[- ]network\\b|\\bin[- ]network\\b[^%\\n]{0,20}\\d{1,3}\\s*%[^%\\n]{0,40}\\bout[- ]of[- ]network\\b[^%\\n]{0,20}\\d{1,3}\\s*%";
+
 export const FACTS: FactDefinition[] = [
   { name: "premium", label: "Premium / price", patterns: ["premium(?=.*(?:\\$|\\b\\d))", "\\bprice\\b(?=.*(?:\\$|\\b\\d))"] },
   { name: "annual-deductible", label: "Annual deductible", excludePatterns: ["^(?!.*" + NAMES_ANNUAL + ")(?:.*(?:" + PER_INCIDENT + "|" + PER_EVENT + "))"], patterns: ["^(?!.*\\brecommend(?:s|ed)?\\b)(?:.*\\bannual deductible\\b|.*\\bdeductible options\\b|.*\\bdeductible\\s*[:$]|.*\\$\\s?[\\d,]+\\s+deductible|" + SCHEDULE_DEDUCTIBLE.slice(1) + "|.*\\bcalendar[- ]year deductibles?(?:\\s+is)?(?:\\s+now)?\\s*:?\\s*\\$\\s?[\\d,]+)"] },
@@ -147,15 +159,15 @@ export const FACTS: FactDefinition[] = [
   { name: "lab-and-imaging", label: "Labs & imaging", patterns: ["\\blab\\b|laborator|radiolog|x-?ray|imaging|MRI|CT scan|diagnostic imaging"] },
   { name: "ambulance", label: "Ambulance", patterns: ["ambulance"] },
   { name: "international-coverage", label: "International restrictions", patterns: ["outside the (country|U\\.S\\.)|abroad|international|travel coverage"], requiredPatterns: [GEO_RESTRICTION], excludePatterns: [DEFINITION, CONTACT_LINE], contextField: "countryOrResidency" },
-  { name: "network-rules", label: "Network / out-of-network rules", patterns: ["out-of-network", "out of network", "network use required", "must use (a )?network"] },
+  { name: "network-rules", label: "Network / out-of-network rules", excludePatterns: [PER_NETWORK_SHARE], patterns: ["out-of-network", "out of network", "network use required", "must use (a )?network"] },
   { name: "preauthorization", label: "Preauthorization", patterns: ["pre-?authorization", "prior authorization", "pre-certification", "precertification", "approved in advance"] },
-  { name: "material-exclusions", label: "Material exclusions", patterns: ["exclusion", "excluded from coverage", "not covered", "limitations and exclusions"] },
+  { name: "material-exclusions", label: "Material exclusions", excludePatterns: [EXCLUSION_REFERENCE], patterns: ["exclusion", "excluded from coverage", "not covered", "limitations and exclusions"] },
   { name: "waiting-period", label: "Waiting periods", patterns: ["waiting period"] },
   { name: "claims-filing-deadline", label: "Claims filing deadline", patterns: ["\\b(?:proof|notice) of (?:claim|loss)\\b.*\\bwithin\\b.*(?:\\(\\d+\\)|\\b\\d+\\s*(?:days?|months?|years?)\\b)", "\\bclaims?\\b.*\\b(?:must|shall|should)\\s+be\\s+(?:filed|submitted|received|presented)\\b.*\\b(?:within|no later than|not later than)\\b.*\\d"], excludePatterns: ["\\b(?:action|proceeding|suit)s?\\b.*\\bbrought\\b"] },
   { name: "geographic-restrictions", label: "Geographic restrictions", patterns: ["service area", "home country", "coverage area", "area of coverage", "territor(?:y|ial)", "state of residence", "country of residence", "destination country", "\\b(?:the )?(?:United States\\b|U\\.S\\.(?:A\\.?)?(?!\\w)|USA\\b)"], requiredPatterns: [GEO_RESTRICTION], excludePatterns: [DEFINITION, CONTACT_LINE], labelHeadPattern: "^\\s*(?:area of coverage|coverage area|service area|territor(?:y|ial)|geographic)" },
   { name: "coverage-duration", label: "Coverage-duration limits", patterns: ["maximum trip", "minimum \\d+\\s*(day|week|month|year)", "maximum \\d+\\s*(day|week|month|year)", "renewable", "up to \\d+\\s*months? of coverage"] },
   { name: "age-limits", label: "Age limits", patterns: ["\\bage limits?\\b", "\\b(?:under|over|below|above|at least|younger than|older than)\\s+(?:the\\s+)?age\\s+(?:of\\s+)?\\d+", "\\bage\\s+\\d+", "\\b\\d+\\s+(?:years?\\s+(?:of\\s+age|old)|days?\\s+of\\s+age)", "\\b(?:maximum|minimum)\\s+(?:issue\\s+|entry\\s+|enrol?lment\\s+)?age\\b", "\\b(?:dependents?|child(?:ren)?|members?|persons?|people|applicants?|insureds?|students?|travell?ers?|individuals?|adults?|spouses?)\\s+(?:who are\\s+|aged?\\s+)?(?:under|over|below|above)\\s+\\d+"], excludePatterns: ["\\$\\s?\\d"], contextField: "age" },
-  { name: "referral-requirement", label: "Referrals", patterns: ["referral"] },
+  { name: "referral-requirement", label: "Referrals", patterns: ["referral"], excludePatterns: [LEGAL_REFERRAL] },
   { name: "coverage-dates", label: "Coverage dates / term", patterns: ["coverage (period|dates|term|begins|ends)|effective date"], contextField: "coverageDates" },
   // Plan Highlights candidates — unusual/plan-specific benefits
   { name: "emergency-evacuation", label: "Emergency medical evacuation", patterns: ["emergency (medical )?evacuation", "medevac"] },

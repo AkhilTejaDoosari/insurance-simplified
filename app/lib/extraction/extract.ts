@@ -23,6 +23,7 @@ import {
   VAGUE_PATTERNS,
   extractQualifiers,
   resolveFootnotes,
+  withoutFootnoteMarkers,
 } from "@/app/lib/extraction/fact-list";
 import { wrapDocuments } from "@/app/lib/llm/safe-prompt";
 import { completeJson } from "@/app/lib/llm/client";
@@ -66,6 +67,23 @@ const BENEFIT_FACTS: ReadonlySet<string> = new Set(
     .flatMap((s) => s.factNames)
     .filter((name) => name !== "pre-existing-conditions"),
 );
+
+/** A label or heading with no value of its own ("Specialist", "REPATRIATION
+ *  OF REMAINS", "EXCLUSIONS"): at most five words, no amount, percentage or
+ *  digit, no "label: value" colon, and no word that states something.
+ *  Never a value of any fact. */
+const STATING_WORD = /\b(?:covered|not|no|none|yes|included|includes|excluded|exclud\w*|waived?|unlimited|paid|payable|pays|required|appl(?:y|ies|ied)|available|only|except|unless|subject|must|limited|n\/a)\b/i;
+export function isValuelessLabel(line: string): boolean {
+  const text = withoutFootnoteMarkers(line).replace(/^\s*[•·▪\-–*]\s*/, "").replace(/:\s*$/, "").trim();
+  // "Label: value" states its value after the colon.
+  if (!text || /:\s*\S/.test(text) || /[\d$%]/.test(text) || STATING_WORD.test(text)) return false;
+  return text.split(/\s+/).length <= 5;
+}
+/** Facts whose value IS a name ("Northwind PPO Network"): a short line
+ *  without figures is their value, not a label. */
+const NAME_VALUED_FACTS: ReadonlySet<string> = new Set(["network"]);
+/** "<Term> means …": a definition names a term; it states no benefit. */
+const TERM_DEFINITION = /^\s*["“]?[A-Z][\w’'&-]*(?:\s+[A-Za-z][\w’'&-]*){0,5}["”]?\s+means\b/;
 
 /** Page spans of the enumerated/bulleted items of every exclusion section,
  *  found structurally by the shared C1 scanner (heading grammar + list
@@ -560,6 +578,7 @@ export function extractFallback(
     for (const doc of documents) {
       for (const drop of dropsByDoc.get(doc.documentId) ?? []) if (drop.factName === fact.name) withhold(doc, drop);
       const matches = findAllMatchesWithHeaders(fact.patterns, doc.pages, tierHeadersByDoc.get(doc.documentId)!, fact);
+      const notValues: { page: number; quote: string; reason: "label-without-value" | "definition-line" }[] = [];
 
       for (const match of matches) {
         const verified = verifyEvidenceCitation([doc], {
@@ -578,6 +597,19 @@ export function extractFallback(
         const statementOwned = statementOwnedByDoc.get(doc.documentId)!.get(fact.name);
         if (statementOwned && quoteInTable(doc, statementOwned, match.page, verified.quote)) continue;
         if (BENEFIT_FACTS.has(fact.name) && quoteInTable(doc, exclusionItemsByDoc.get(doc.documentId)!, match.page, verified.quote)) continue;
+        // A label/heading or a definition is not a value; it is withheld
+        // for verification only when the document states nothing else for
+        // this fact (never a silent NOT STATED), and dropped otherwise.
+        const shownLine = match.display ?? match.quote;
+        const notAValue = !NAME_VALUED_FACTS.has(fact.name) && isValuelessLabel(shownLine)
+          ? "label-without-value"
+          : (BENEFIT_FACTS.has(fact.name) || fact.name === "pre-existing-conditions") && TERM_DEFINITION.test(shownLine)
+            ? "definition-line"
+            : undefined;
+        if (notAValue) {
+          notValues.push({ page: match.page, quote: verified.quote, reason: notAValue });
+          continue;
+        }
         const vague = isVague(match.quote);
         if (!vague) allVague = false;
         const ruledOut = contextFieldRulesOut(fact.contextField, userContext, match.quote);
@@ -608,6 +640,9 @@ export function extractFallback(
         values.push(claim.value);
         docsWithValues.add(doc.documentId);
         allVague = false;
+      }
+      if (!docsWithValues.has(doc.documentId)) {
+        for (const n of notValues) withhold(doc, { factName: fact.name, ...n });
       }
     }
 
