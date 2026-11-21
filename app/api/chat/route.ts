@@ -20,6 +20,8 @@ import { registerEvidence } from "@/app/lib/session";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
 import { REFUSAL_TEXT, UNCERTAIN_TEXT, type ChatCitation } from "@/app/lib/rag/answer";
+import { gridFirstAnswer } from "@/app/lib/chat/grid-first";
+import { rephraseVerifiedFacts } from "@/app/lib/chat/rephrase";
 import {
   answerQuestion,
   answerQuestionSemantic,
@@ -262,6 +264,38 @@ export async function POST(request: NextRequest) {
   };
 
   try {
+    // Grid-first (owner decision 2026-11-21; M9 pulled forward): a question
+    // naming one fact concept answers from the stored result RE-DERIVED under
+    // this request (TB-3: an altered row has no values) — its verbatim facts,
+    // conditions and citations, in the chat scope. The model may only
+    // rephrase (gated by verifyAnswerClaims). Otherwise: retrieval below.
+    const storedForGrid = await loadStored();
+    if (storedForGrid && storedForGrid.documentFingerprint === documentFingerprint(session.documents)) {
+      const current = confirmStored(storedForGrid);
+      const grid = await timeAsync("chat.gridFirst", () =>
+        gridFirstAnswer({
+          question,
+          table: current.table,
+          scopedDocuments,
+          sessionDocuments: session.documents,
+          rephrase: useLlm ? rephraseVerifiedFacts : undefined,
+        }),
+      );
+      if (grid) {
+        trace({
+          candidateCount: grid.citations.length,
+          topK: grid.citations.map((c) => ({ documentId: c.documentId, page: c.page })),
+          citationCount: grid.citations.length,
+          verification: "pass",
+          fallbackReason: "grid-first",
+        });
+        return NextResponse.json({
+          ...grid,
+          citations: grid.citations.map(withEvidenceId),
+          ...(await attachVerified(grid.citations)),
+        });
+      }
+    }
     let response;
     if (useLlm) {
       // A-026 (owner decision 2026-11-21): a model/provider failure (timeout,
