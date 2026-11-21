@@ -165,3 +165,22 @@ describe("grid-first review fixes", () => {
     expect(kept?.kind === "answer" && kept.answerText).toBe("Emergency room copay $300 (waived if admitted)");
   });
 });
+
+describe("follow-up review: concept scope and two-plan documents", () => {
+  it.each(["What is the deductible for hearing aids?", "What is the coinsurance on orthodontics?"])("%s falls back", (q) => {
+    expect(conceptForQuestion(q)).toBeUndefined();
+  });
+
+  it("an unattributed value in a document holding two plans is dropped under a selection", async () => {
+    const docs = [{ documentId: "doc-m", filename: "m.pdf", pageCount: 1, pages: ["Annual maximum $1,000,000"] }];
+    const t = {
+      rows: table().rows,
+      plans: [
+        { planId: "p-1", name: "One", sources: [{ documentId: "doc-m", page: 1, quote: "x" }] },
+        { planId: "p-2", name: "Two", sources: [{ documentId: "doc-m", page: 1, quote: "y" }] },
+      ],
+    };
+    t.rows.forEach((r) => r.values.forEach((v) => { v.documentId = "doc-m"; v.evidence.forEach((e) => { e.documentId = "doc-m"; }); delete v.planId; }));
+    expect(await gridFirstAnswer({ question: "What is the annual maximum?", table: t, scopedDocuments: docs, sessionDocuments: docs, selection: { planIds: ["p-1"], tiers: {} } })).toBeUndefined();
+  });
+});

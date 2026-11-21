@@ -432,7 +432,7 @@ function splitSentences(text: string): string[] {
 }
 
 /** A sentence that states coverage is substantive however short. */
-const COVERAGE_STATEMENT = /\b(?:covered|not|no|excluded|exclud\w*|except|unless|only|waived?|included|pays?|payable|limited)\b/i;
+const COVERAGE_STATEMENT = /\b(?:covered|covers?|cover|provided|not|no|excluded|exclud\w*|except|unless|only|waived?|included|pays?|payable|reimburs\w*|limited)\b/i;
 
 /** Whole figures a text states ("$1,000,000" → "1000000", "80%" → "80"). */
 function figuresOf(text: string): string[] {
@@ -462,10 +462,18 @@ function tokensCovered(normSentence: string, text: string): boolean {
   return sentenceTokens.length > 0 && sentenceTokens.every((t) => normText.includes(t));
 }
 
+/** Negation and qualifier words a faithful sentence must keep exactly,
+ *  including ones the marker grammar does not know ("not payable",
+ *  "waived if admitted", "covered after 12 months"; follow-up review). */
+const QUALIFIER_WORD = /\b(?:not|no|never|nil|none|without|cannot|waived?|except|excluding|excluded|unless|only|if|after|until)\b|n['’]t\b/gi;
+function qualifierKey(text: string): string {
+  return [...new Set((text.match(QUALIFIER_WORD) ?? []).map((w) => w.toLowerCase().replace(/’/g, "'")))].sort().join(",");
+}
+
 function sameMarkers(a: string, b: string): boolean {
   const x = markersIn(grammarText(a));
   const y = markersIn(grammarText(b));
-  return x.size === y.size && [...x].every((m) => y.has(m));
+  return x.size === y.size && [...x].every((m) => y.has(m)) && qualifierKey(a) === qualifierKey(b);
 }
 
 /** The cited quote that covers a sentence, or undefined. Review 2026-11-21
@@ -477,9 +485,16 @@ function sameMarkers(a: string, b: string): boolean {
 function coveringQuote(sentence: string, canonicalQuotes: string[]): string | undefined {
   const normSentence = normalizeForClaim(sentence);
   if (!normSentence) return undefined;
+  const statesFigure = figuresOf(sentence).length > 0;
   for (const quote of canonicalQuotes) {
-    if (clausesOf(quote).some((line) => tokensCovered(normSentence, line) && sameMarkers(sentence, line))) return quote;
-    if (tokensCovered(normSentence, quote) && sameMarkers(sentence, quote)) return quote;
+    // The covering LINE is returned, so the sentence's figures are checked
+    // against that line only (follow-up review: no borrowing a figure from
+    // another line of the same quote).
+    const line = clausesOf(quote).find((l) => tokensCovered(normSentence, l) && sameMarkers(sentence, l));
+    if (line) return line;
+    // A sentence spread over several lines is covered by the whole quote
+    // only when it states no figure.
+    if (!statesFigure && tokensCovered(normSentence, quote) && sameMarkers(sentence, quote)) return quote;
   }
   return undefined;
 }

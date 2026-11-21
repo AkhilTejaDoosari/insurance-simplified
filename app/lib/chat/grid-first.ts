@@ -58,7 +58,12 @@ export const FACT_CONCEPTS: readonly FactConcept[] = [
 export function conceptForQuestion(question: string): FactConcept | undefined {
   const hits = FACT_CONCEPTS.filter((c) => c.question.test(question));
   const distinct = hits.filter((c) => !(c.id === "overall-limit" && hits.some((h) => h.id === "out-of-pocket")));
-  return distinct.length === 1 ? distinct[0] : undefined;
+  if (distinct.length !== 1) return undefined;
+  // "the deductible FOR hearing aids", "coinsurance ON orthodontics": a
+  // service named beyond the concept's own words is a different question.
+  const rest = question.replace(distinct[0].question, " ");
+  if (/\b(?:for|on|to|with|at|about|regarding|under)\s+(?!(?:me|my|this|the plan|this plan|the policy|this policy)\b)\w+/i.test(rest)) return undefined;
+  return distinct[0];
 }
 
 /** The chat selection: selected plan ids (legacy: document ids) and the
@@ -80,7 +85,7 @@ function inSelection(value: CellValue, selection: GridSelection | undefined, pla
   const owner = value.planId ?? (plans.length === 0 ? value.documentId : owners.length === 1 ? owners[0] : undefined);
   if (!owner || !selection.planIds.includes(owner)) return false;
   const tier = selection.tiers[owner];
-  return !tier || !value.qualifiers.planTier || value.qualifiers.planTier === tier;
+  return !tier || !value.qualifiers.planTier || value.qualifiers.planTier.toLowerCase() === tier.toLowerCase();
 }
 
 interface Doc {
@@ -161,11 +166,8 @@ export async function gridFirstAnswer(input: {
   const lines: string[] = [];
   const citations: ChatCitation[] = [];
   for (const { value, factName, cites } of used) {
-    {
-      const row = { factName };
-      for (const line of valueLines(value, row.factName)) if (!lines.includes(line)) lines.push(line);
-      for (const c of cites) if (!citations.some((x) => x.documentId === c.documentId && x.page === c.page && x.quote === c.quote)) citations.push(c);
-    }
+    for (const line of valueLines(value, factName)) if (!lines.includes(line)) lines.push(line);
+    for (const c of cites) if (!citations.some((x) => x.documentId === c.documentId && x.page === c.page && x.quote === c.quote)) citations.push(c);
   }
   if (lines.length === 0) return undefined;
 

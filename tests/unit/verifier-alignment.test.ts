@@ -121,3 +121,27 @@ describe("a covered sentence keeps its source line's negation/exception markers"
     expect(verifyAnswerClaims("Annual maximum $1,000,000", cites, C, D).ok).toBe(true);
   });
 });
+
+// Follow-up review (2026-11-21): negation/qualifier parity for words the
+// marker grammar does not know, and no figure borrowing inside one quote.
+describe("coverage keeps every negation and qualifier word", () => {
+  const check = (page: string, sentence: string) =>
+    verifyAnswerClaims(sentence, [{ documentId: "doc-1", page: 1, quote: page }], [{ documentId: "doc-1", page: 1, quote: page }], [{ documentId: "doc-1", pages: [page] }]).ok;
+
+  it.each([
+    ["Annual maximum $1,000,000\nNewborn maximum $500", "Annual maximum $500"],
+    ["Dental is not payable", "Dental is payable."],
+    ["Dental cover\nNot provided", "Dental cover provided."],
+    ["Physiotherapy: does not cover", "Physiotherapy: does cover."],
+    ["Copay $300 waived if admitted", "Copay $300."],
+    ["Copay $300 waived if admitted", "Copay $300 if admitted."],
+    ["Maternity covered after 12 months", "Maternity covered."],
+  ])("rejects unfaithful pair %#", (page, sentence) => expect(check(page, sentence)).toBe(false));
+
+  it.each([
+    ["Dental is not payable", "Dental is not payable."],
+    ["Copay $300 waived if admitted", "Copay $300 waived if admitted."],
+    ["Maternity covered after 12 months", "Maternity covered after 12 months."],
+    ["Annual maximum $1,000,000\nNewborn maximum $500", "Annual maximum $1,000,000"],
+  ])("accepts faithful pair %#", (page, sentence) => expect(check(page, sentence)).toBe(true));
+});
