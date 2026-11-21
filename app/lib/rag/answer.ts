@@ -520,8 +520,11 @@ export async function answerQuestionSemantic(
     // cosine always ranks) -> degrade to lexical, which itself refuses when
     // lexical evidence is empty.
     return answerQuestion(documents, question);
-  } catch {
-    // Any semantic error (Ollama down, bad key, timeout, dimension mismatch) -> degrade to lexical
+  } catch (e) {
+    // Any semantic error (provider down, bad key, timeout, dimension
+    // mismatch) -> keyword search, logged (owner decision 2026-11-21): error
+    // class only, never the question or document text.
+    console.warn(`[chat-retrieval] fallback=lexical reason=semantic-error class=${e instanceof Error ? e.constructor.name : typeof e}`);
     return answerQuestion(documents, question);
   }
 }
