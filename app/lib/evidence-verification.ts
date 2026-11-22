@@ -513,9 +513,13 @@ const BINDING_FILLER = new Set([
 type BindingToken = { value: string } | { word: string };
 
 function bindingTokens(text: string, plainAsValues: boolean, letterLabels = false): { tokens: BindingToken[]; plain: boolean } {
-  const raw = [...text.matchAll(/\$\s?\d[\d,]*(?:\.\d+)?%?|(?<![a-z0-9])\d[\d,]*(?:\.\d+)?%?|[a-z][a-z0-9']*/gi)].map((m) => m[0]);
+  // A range of two like numbers ("$0 - $5,000", "12 to 18") is one value.
+  const NUM = String.raw`\d[\d,]*(?:\.\d+)?%?`;
+  const rangeRe = new RegExp(String.raw`\$\s?${NUM}\s*(?:-|–|—|to)\s*\$\s?${NUM}|(?<![a-z0-9$])${NUM}\s*(?:-|–|—|to)\s*${NUM}`, "i");
+  const raw = [...text.matchAll(new RegExp(String.raw`${rangeRe.source}|\$\s?${NUM}|(?<![a-z0-9])${NUM}|[a-z][a-z0-9']*`, "gi"))].map((m) => m[0]);
   const isNumber = (t: string) => /^[$\d]/.test(t);
-  const norm = (t: string) => t.replace(/[$%,\s]/g, "").replace(/\.0+$/, "");
+  const norm = (t: string) =>
+    t.split(/\s*(?:-|–|—|to)\s*(?=[$\d])/i).map((p) => p.replace(/[$%,\s]/g, "").replace(/\.0+$/, "")).join("-");
   const marked = raw.map((t, i) =>
     isNumber(t) && (t.startsWith("$") || t.endsWith("%") || /,\d{3}/.test(t) || /\.\d/.test(t) || UNIT_WORD.test((raw[i + 1] ?? "").toLowerCase())),
   );

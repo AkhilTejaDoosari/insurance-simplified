@@ -847,9 +847,9 @@ Resumed at `610a2da`; nothing was done after the usage-limit reset.
 | 4 Decision 7 | record outside git | 83 NOT STATED rows, each with its pages; 13 have fact vocabulary on a page, 12 honest on review, **1 defect: doc 02 geographic-restrictions is stated (p4, p9 item 12) but NOT STATED** (restriction on a wrapped line / under the exclusions heading). |
 | 5 Ollama cleanup | `681c9e2`, `19a03fc` | Removed from docker-compose, architecture, roadmap; D-012 amended (rule change per owner decision). `scripts/check-no-local-inference.sh` in CI (fails on hit and on grep error). |
 
-Eight questions × five documents (Nemotron, Cloudflare embeddings, ≥2 s between provider calls of each kind, < 30/min). Final commit `e3897f4`: doc 01 5/8 verified, doc 02 5/8, doc 03 3/8. Docs 04/05 at `681c9e2` (before the binding rework): 3/8 each; final-commit run not completed.
+Eight questions × five documents (Nemotron, Cloudflare embeddings, ≥2 s between provider calls of each kind, < 30/min), run at `e3897f4`: verified 5/8 (doc 01), 5/8 (02), 3/8 (03), 1/8 (04), 2/8 (05) = 16/40; "space tourism" refused on all five. Replaying every captured model answer through the pre-binding verifier (`610a2da`): the binding caused exactly one refusal — doc 04's verbatim range line "$0 - $5,000" — fixed by reading a range as one value; every other refusal is also rejected by the old verifier (model variance; plan-name label lines still added on docs 04/05; citations not verbatim on docs 03/04; meta sentences). With that fix the replayed count is 17/40.
 
-Gates at `e3897f4`: `tsc` clean; `npm test` 1,946 passed / 22 skipped; real-PDF 2,068 passed / 1 failed (documented missing-brochure gap) / 42 skipped; build 0; guard ok. `test:e2e` 57 passed / 1 skipped at `62e6ba5` (verifier-only changes since).
+Gates at the range fix: `tsc` clean; `npm test` 1,949 passed / 22 skipped. At `e3897f4`: real-PDF 2,068 passed / 1 failed (documented missing-brochure gap) / 42 skipped; build 0; guard ok. `test:e2e` 57 passed / 1 skipped at `62e6ba5` (verifier-only changes since).
 
 ## Next atomic step
 

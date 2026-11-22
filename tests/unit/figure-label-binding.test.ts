@@ -155,3 +155,17 @@ describe("third review: figure-first value without a label", () => {
     expect(check("$300 specialist.", "$250 $30 primary care $300 specialist")).toEqual({ ok: true });
   });
 });
+
+// Five-document run (doc 04): a verbatim range line was rejected because the
+// range was read as two values. A range binds as one value.
+describe("a value range is one value", () => {
+  it.each([
+    ["Deductible Options (You pay) $0 - $5,000 (Choose the option you want.)", "Deductible Options (You pay) $0 - $5,000 (Choose the option you want.)"],
+    ["Policy maximum $50,000 to $1,000,000", "Policy maximum $50,000 to $1,000,000 Deductible $100"],
+  ])("verifies case %#", (answer, line) => {
+    expect(check(answer, line)).toEqual({ ok: true });
+  });
+  it("a range still cannot be moved to another label", () => {
+    expect(check("Deductible $50,000 to $1,000,000.", "Policy maximum $50,000 to $1,000,000 Deductible $100").ok).toBe(false);
+  });
+});
