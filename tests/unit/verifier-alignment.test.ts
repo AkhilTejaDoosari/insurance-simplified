@@ -87,7 +87,9 @@ describe("a short sentence that states a figure is always checked", () => {
 
   it("a bare figure answer must be in a cited passage", () => {
     expect(verifyAnswerClaims("$2,000,000.", cite, C, D).ok).toBe(false);
-    expect(verifyAnswerClaims("$1,000,000.", cite, C, D).ok).toBe(true);
+    // Owner decision 2026-11-22 (5) rule 1: a bare figure omits its own
+    // segment's label ("Annual maximum") — now rejected (was verified).
+    expect(verifyAnswerClaims("$1,000,000.", cite, C, D).ok).toBe(false);
   });
 
   // Confirmation review reversed this session's earlier assertion that a

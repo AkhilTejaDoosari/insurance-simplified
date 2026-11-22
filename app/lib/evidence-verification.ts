@@ -709,6 +709,101 @@ export function isScopeLabel(label: string): boolean {
 
 /** The covering line starts with a scope label ("Plan B: …") that the
  *  sentence leaves out. */
+/** Owner decision 2026-11-22 (5) rule 1 (closes review B1′/B4): a sentence
+ *  covered by ONE source line may omit only (a) articles, a leading list
+ *  marker and a leading ALL-CAPS topic heading that names no plan or group,
+ *  and (b) whole sibling label+value segments of that line. It never omits a
+ *  word of its own segment. Segments: on a line with two or more values,
+ *  label-first ("Primary care $30 Specialist $300") a segment ends after each
+ *  value and its unit words; figure-first ("$30 for primary care, $300 for
+ *  specialists") a segment starts at each value; words on both ends or fewer
+ *  than two values: the whole clause is one segment. A segment with no words
+ *  before its value ("$2,000 per family") may be stated with the previous
+ *  segment's label words. A header shared by every value ("Copays:") stays. */
+const SEG_ARTICLES = new Set(["a", "an", "the"]);
+const SEG_UNIT = /^(?:days?|weeks?|months?|years?|hours?|visits?|times?|percent)$/;
+const SEG_LEAD = /^(?:per|each|every)$/;
+const isSegValue = (t: string) => /^\$?\d[\d,.]*%?$/.test(t);
+function segmentForms(clause: string): string[][] {
+  let c = clause.replace(/^\s*(?:[•*\u2022\u2013-]|\(?\d{1,3}[).]|\(?[a-z][).]|\(?[ivx]{1,4}[).])\s+/i, "");
+  const forms: string[][] = [];
+  const words = (t: string) => wordRun(t).split(" ").filter((w) => w && !SEG_ARTICLES.has(w));
+  // An optional leading ALL-CAPS topic heading (never a scope label).
+  const topic = /^\s*([^:a-z]{2,60}):\s*/.exec(c);
+  const variants = [c];
+  if (topic && /[A-Z]/.test(topic[1]) && !isScopeLabel(topic[1])) variants.push(c.slice(topic[0].length));
+  for (const v of variants) {
+    // A header shared by every value: the single colon before the first value.
+    const head = /^([^$\d:]*):\s*(?=[^a-z]*\$?\d)/i.exec(v);
+    const header = head && (v.match(/:/g) ?? []).length === 1 ? words(head[1]) : [];
+    const body = head && header.length ? v.slice(head[0].length) : v;
+    const t = words(body);
+    const valueAt = t.map((w, i) => (isSegValue(w) ? i : -1)).filter((i) => i >= 0);
+    if (valueAt.length < 2) { forms.push([...header, ...t]); continue; }
+    const segs: string[][] = [];
+    const lastIsValueEnd = (() => {
+      let k = valueAt[valueAt.length - 1] + 1;
+      while (k < t.length && (SEG_UNIT.test(t[k]) || SEG_LEAD.test(t[k]) || (k > 0 && SEG_LEAD.test(t[k - 1])))) k++;
+      return k === t.length;
+    })();
+    if (!isSegValue(t[0]) && lastIsValueEnd) {
+      // label-first: cut after each value and its unit words
+      let cur: string[] = [];
+      for (let k = 0; k < t.length; k++) {
+        cur.push(t[k]);
+        if (isSegValue(t[k])) {
+          while (k + 1 < t.length && (SEG_UNIT.test(t[k + 1]) || SEG_LEAD.test(t[k + 1]) || SEG_LEAD.test(t[k]))) { k++; cur.push(t[k]); }
+          segs.push(cur);
+          cur = [];
+        }
+      }
+      if (cur.length) segs[segs.length - 1].push(...cur);
+    } else if (isSegValue(t[0])) {
+      // figure-first: each segment starts at a value
+      let cur: string[] = [];
+      for (const w of t) {
+        if (isSegValue(w) && cur.length && cur.some((x) => !isSegValue(x))) { segs.push(cur); cur = []; }
+        cur.push(w);
+      }
+      if (cur.length) segs.push(cur);
+    } else {
+      forms.push([...header, ...t]);
+      continue;
+    }
+    for (let i = 0; i < segs.length; i++) {
+      for (let j = i; j < segs.length; j++) {
+        const run = segs.slice(i, j + 1).flat();
+        forms.push([...header, ...run]);
+        // Inherited label: a label-first segment with no words before its value.
+        if (!isSegValue(t[0]) && isSegValue(segs[i][0])) {
+          for (let p = i - 1; p >= 0; p--) {
+            const lead = segs[p].slice(0, segs[p].findIndex(isSegValue));
+            if (lead.length) { forms.push([...header, ...lead, ...run]); break; }
+          }
+        }
+      }
+    }
+  }
+  return forms;
+}
+function statesWholeSegments(sentence: string, clause: string): boolean {
+  const said = wordRun(sentence).split(" ").filter((w) => w && !SEG_ARTICLES.has(w));
+  // Same words as one form (word order is enforced by the in-order and
+  // figure-binding checks); a word matches by prefix ("visit"/"visits"), a
+  // value exactly.
+  const same = (f: string[]) => {
+    if (f.length !== said.length) return false;
+    const used = new Array(f.length).fill(false);
+    return said.every((w) => {
+      const k = f.findIndex((x, i) => !used[i] && (isSegValue(w) || isSegValue(x) ? x === w : x.startsWith(w)));
+      if (k < 0) return false;
+      used[k] = true;
+      return true;
+    });
+  };
+  return segmentForms(clause).some(same);
+}
+
 function dropsScopeLabel(sentence: string, line: string): boolean {
   const m = /^\s*([^:]{1,60}):\s*\S/.exec(line);
   if (!m || !isScopeLabel(m[1])) return false;
@@ -988,7 +1083,7 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
     // against that line only (follow-up review: no borrowing a figure from
     // another line of the same quote).
     const line = clausesOf(quote).find(
-      (l) => tokensCoveredInOrder(normSentence, l) && holdsFigures(l) && !dropsScopeLabel(sentence, l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l) && !fragment(l),
+      (l) => tokensCoveredInOrder(normSentence, l) && statesWholeSegments(sentence, l) && holdsFigures(l) && !dropsScopeLabel(sentence, l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l) && !fragment(l),
     );
     if (line) return line;
     // Second follow-up review: the unordered whole-quote path is gone. A

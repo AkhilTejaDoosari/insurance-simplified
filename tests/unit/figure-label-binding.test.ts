@@ -113,7 +113,10 @@ describe("follow-up review: letter labels, repeated values, plain numbers, side 
     ["Outpatient $500 per visit.", "Inpatient $500 per day Outpatient $500 per visit"],
     ["Copay $30.", "Deductible 500 Copay $30"],
     ["Tier 2 drugs 40.", "Tier 1 drugs 10 Tier 2 drugs 40"],
-    ["$300 specialist.", "Copays: $30 primary care, $300 specialist"],
+    // Owner decision 2026-11-22 (5) rule 1: the shared header "Copays" is a
+    // word of the value's own segment and may not be omitted (was "$300
+    // specialist." → verified).
+    ["Copays: $300 specialist.", "Copays: $30 primary care, $300 specialist"],
     ["Inpatient $500 per day Outpatient $500 per visit.", "Inpatient $500 per day Outpatient $500 per visit"],
     ["Emergency room copay (waived if admitted) $300 Hospitalization copay $300", "Emergency room copay (waived if admitted) $300 Hospitalization copay $300"],
     ["Emergency room copay (waived if admitted) $300", "Emergency room copay (waived if admitted) $300 Hospitalization copay $300"],
