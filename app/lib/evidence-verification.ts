@@ -672,6 +672,11 @@ function boundUnder(sentence: string, line: string, plainAsValues: boolean): boo
  *  different value. Lines with fewer than two values are unaffected. Plain
  *  numbers on a line that also has marked values are read both ways. */
 function figuresBoundToLabels(sentence: string, line: string): boolean {
+  // Third round (2): a sentence whose words and values are the line's own,
+  // in the line's order, is bound by definition (the ambiguous-layout rule
+  // rejected identical text).
+  const seq = (t: string) => JSON.stringify(bindingTokens(t, false).tokens);
+  if (seq(sentence) === seq(line)) return true;
   if (!boundUnder(sentence, line, false)) return false;
   return parseValues(line, false).plain || parseValues(sentence, false).plain ? boundUnder(sentence, line, true) : true;
 }
@@ -711,7 +716,7 @@ function verbatimSpanLines(sentence: string, quote: string, page?: string): stri
   const continues = (k: number) =>
     !listItem.test(lines[k]) &&
     !endsSentence(lines[k - 1]) &&
-    (/^\s*(?:[a-z]|\([a-z])/.test(lines[k]) || (/^\s*\$?\d/.test(lines[k]) && openPhrase.test(lines[k - 1].trim())));
+    (/^\s*(?:[a-z]|\([a-z])/.test(lines[k]) || (/^\s*\$?\d/.test(lines[k]) && openPhrase.test(lines[k - 1].trim())) || ENDS_IN_FUNCTION_WORD.test(lines[k - 1]));
   for (let at = joined.indexOf(target); at >= 0; at = joined.indexOf(target, at + 1)) {
     const end = at + target.length;
     if (isWordChar(joined[at - 1]) && isWordChar(joined[at])) continue;
@@ -748,7 +753,7 @@ function wholeSentenceOnPage(spanned: string[], fromLineStart: boolean, toLineEn
   if (page === undefined) return false;
   const pageLines = page.split("\n").map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
   const ends = (l: string) => /[.;!?]["'’”)\]]*$/.test(l); // ":" is a label, not an end
-  const runsOn = (l: string) => /^(?:[a-z]|\([a-z]|\$?\d)/.test(l);
+  const runsOn = (l: string, before?: string) => /^(?:[a-z]|\([a-z]|\$?\d)/.test(l) || (before !== undefined && ENDS_IN_FUNCTION_WORD.test(before));
   const opensWithFigure = (l: string) => /^\$?\d/.test(l);
   let found = false;
   for (let i = 0; i + spanned.length <= pageLines.length; i++) {
@@ -756,13 +761,19 @@ function wholeSentenceOnPage(spanned: string[], fromLineStart: boolean, toLineEn
     found = true;
     const prev = pageLines[i - 1];
     const next = pageLines[i + spanned.length];
-    if (fromLineStart && prev !== undefined && !ends(prev) && runsOn(spanned[0])) return false;
-    if (toLineEnd && next !== undefined && !ends(spanned[spanned.length - 1]) && runsOn(next)) return false;
+    if (fromLineStart && prev !== undefined && !ends(prev) && runsOn(spanned[0], prev)) return false;
+    if (toLineEnd && next !== undefined && !ends(spanned[spanned.length - 1]) && runsOn(next, spanned[spanned.length - 1])) return false;
     // A figure on the next line belongs to this row whatever ends the line.
     if (toLineEnd && next !== undefined && opensWithFigure(next)) return false;
   }
   return found;
 }
+
+/** Owner decision 2026-11-22 (third round, 2): a line ending in a function
+ *  word (article, preposition, conjunction, auxiliary) cannot end a sentence
+ *  or a table row, so the next line continues it even when that line opens
+ *  with a capital ("… prior to the / Effective Date …") or a figure. */
+const ENDS_IN_FUNCTION_WORD = /\b(?:the|a|an|of|to|in|on|for|with|by|at|from|and|or|nor|that|which|who|whose|is|are|was|were|be|been|than|as|into|under|within|any|each|such|your|their|its|his|her|our|this|these|those)\s*$/i;
 
 /** Owner decision 2026-11-22 (third round, 1): a covering source line that
  *  reaches the end of its page line, where the next page line continues the
@@ -778,7 +789,7 @@ function continuesOnto(prev: string, next: string): boolean {
   return (
     !CONTINUATION_LIST_ITEM.test(next) &&
     !lineEndsSentence(prev) &&
-    (/^\s*(?:[a-z]|\([a-z])/.test(next) || (/^\s*\$?\d/.test(next) && CONTINUATION_OPEN_PHRASE.test(prev.trim())))
+    (/^\s*(?:[a-z]|\([a-z])/.test(next) || (/^\s*\$?\d/.test(next) && CONTINUATION_OPEN_PHRASE.test(prev.trim())) || ENDS_IN_FUNCTION_WORD.test(prev))
   );
 }
 function continuationMissing(lineText: string, page: string | undefined, answerText: string): boolean {
@@ -802,6 +813,64 @@ function continuationMissing(lineText: string, page: string | undefined, answerT
     if (!wordsOk || figuresOf(cont).some((f) => !answerFigures.has(f))) return true;
   }
   return false;
+}
+
+/** Mirror of continuationMissing: the covering line starts a page line
+ *  whose sentence began on the line(s) above (the line above does not end a
+ *  sentence and runs on into it). It covers a sentence only when the answer
+ *  also states every word and figure of that sentence's start (from the
+ *  last sentence end, at most three lines back). */
+function precedingMissing(lineText: string, page: string | undefined, answerText: string): boolean {
+  if (page === undefined) return false;
+  const ws = (s: string) => s.replace(/\s+/g, " ").trim();
+  const head = ws(lineText);
+  if (!head) return false;
+  const pageLines = page.split("\n").map(ws).filter(Boolean);
+  const answerFigures = new Set(figuresOf(answerText));
+  for (let i = 1; i < pageLines.length; i++) {
+    if (!pageLines[i].startsWith(head)) continue;
+    const parts: string[] = [];
+    for (let j = i; j > 0 && parts.length < 3 && continuesOnto(pageLines[j - 1], pageLines[j]); j--) {
+      const prev = pageLines[j - 1];
+      // Only the part of the line above after its last sentence end.
+      const cut = Math.max(prev.lastIndexOf(". "), prev.lastIndexOf("; "), prev.lastIndexOf("? "), prev.lastIndexOf("! "));
+      parts.unshift(cut >= 0 ? prev.slice(cut + 2) : prev);
+      if (cut >= 0) break;
+    }
+    if (parts.length === 0) continue;
+    const before = parts.join(" ");
+    const norm = normalizeForClaim(before);
+    const wordsOk = !norm.split(/\s+/).some((t) => t.length > 2) || tokensCovered(norm, answerText);
+    if (!wordsOk || figuresOf(before).some((f) => !answerFigures.has(f))) return true;
+  }
+  return false;
+}
+
+/** The covering clause starts its quote line (only list/bullet markers or
+ *  opening punctuation before it), so its sentence may have begun above. */
+function clauseStartsLine(clause: string, quote: string): string | undefined {
+  for (const raw of quote.split("\n")) {
+    const at = raw.indexOf(clause);
+    if (at < 0) continue;
+    if (/^[\s"'‘“(\[•*-]*$/.test(raw.slice(0, at))) return raw;
+  }
+  return undefined;
+}
+
+/** Ordered word coverage: every word (> 2 chars) of the sentence begins a
+ *  word of the text, in the sentence's order (a bag of the quote's words
+ *  can say the opposite: "vision is excluded" from "dental is excluded;
+ *  vision is covered"). */
+function tokensCoveredInOrder(normSentence: string, text: string): boolean {
+  const words = normalizeForClaim(text).split(/\s+/).filter(Boolean);
+  const wanted = normSentence.split(/\s+/).filter((t) => t.length > 2);
+  let k = 0;
+  for (const t of wanted) {
+    while (k < words.length && !words[k].startsWith(t)) k++;
+    if (k === words.length) return false;
+    k++;
+  }
+  return wanted.length > 0;
 }
 
 /** The covering clause reaches the end of its quote line (nothing after it
@@ -828,20 +897,36 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
   for (const [qi, quote] of canonicalQuotes.entries()) {
     const fragment = (l: string) => {
       const raw = clauseReachesLineEnd(l, quote);
-      return raw !== undefined && continuationMissing(raw, quotePages[qi], answerText);
+      if (raw !== undefined && continuationMissing(raw, quotePages[qi], answerText)) return true;
+      const start = clauseStartsLine(l, quote);
+      return start !== undefined && precedingMissing(start, quotePages[qi], answerText);
+    };
+    // Third round (2): a figure sentence is checked against a line that holds
+    // its figures (the first word-covering line may be a sibling row).
+    const sentenceFigures = figuresOf(sentence);
+    const holdsFigures = (l: string) => {
+      const have = new Set(figuresOf(l));
+      return sentenceFigures.every((f) => have.has(f));
     };
     // The covering LINE is returned, so the sentence's figures are checked
     // against that line only (follow-up review: no borrowing a figure from
     // another line of the same quote).
     const line = clausesOf(quote).find(
-      (l) => tokensCovered(normSentence, l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l) && !fragment(l),
+      (l) => tokensCovered(normSentence, l) && holdsFigures(l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l) && !fragment(l),
     );
     if (line) return line;
     // A sentence spread over several lines is covered by the whole quote
     // only when it states no figure (and the quote's last line is not a
     // fragment whose continuation the answer leaves out).
-    const lastLine = quote.split("\n").filter((l) => l.trim()).pop() ?? "";
-    if (!statesFigure && tokensCovered(normSentence, quote) && sameMarkers(sentence, quote) && !continuationMissing(lastLine, quotePages[qi], answerText)) return quote;
+    const quoteLines = quote.split("\n").filter((l) => l.trim());
+    const lastLine = quoteLines[quoteLines.length - 1] ?? "";
+    if (
+      !statesFigure &&
+      tokensCoveredInOrder(normSentence, quote) &&
+      sameMarkers(sentence, quote) &&
+      !continuationMissing(lastLine, quotePages[qi], answerText) &&
+      !precedingMissing(quoteLines[0] ?? "", quotePages[qi], answerText)
+    ) return quote;
     // Owner decision 2026-11-22: a figure sentence that is the quote's own
     // wording across line breaks — identical except whitespace — is covered
     // by the whole lines it spans (figures stay bound to their labels).
@@ -869,7 +954,9 @@ function uncoveredReason(sentence: string, canonicalQuotes: string[], quotePages
   if (bound.length === 0) return "figure-label-binding";
   const whole = bound.filter(({ l, q, qi }) => {
     const raw = clauseReachesLineEnd(l, q);
-    return raw === undefined || !continuationMissing(raw, quotePages[qi], answerText);
+    const start = clauseStartsLine(l, q);
+    return (raw === undefined || !continuationMissing(raw, quotePages[qi], answerText)) &&
+      (start === undefined || !precedingMissing(start, quotePages[qi], answerText));
   });
   return whole.length === 0 ? "wrapped-fragment" : "figure-not-in-covering-line";
 }

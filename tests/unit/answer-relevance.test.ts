@@ -40,7 +40,7 @@ describe("an off-topic verified answer is not an answer", () => {
     expect(r.kind).toBe("refusal");
     expect(r.kind === "refusal" && r.refusalText).toBe(UNCERTAIN_TEXT);
     expect("answerText" in r).toBe(false);
-    expect(seen).toEqual([{ stage: "off-topic" }]);
+    expect(seen).toEqual([expect.objectContaining({ stage: "off-topic", answerText: "Ambulance $100 per trip." })]);
   });
 });
 

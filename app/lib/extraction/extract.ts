@@ -105,7 +105,10 @@ const NAME_VALUED_FACTS: ReadonlySet<string> = new Set(["network"]);
 /** "<Term> means …": a definition names a term; it states no benefit. A
  *  line opening "This/That/It means" explains, and a definition carrying a
  *  figure states the value (review S3): neither is a definition here. */
-const TERM_DEFINITION = /^\s*(?!(?:this|that|it|which|what)\s)["“]?[A-Z][\w’'&-]*(?:\s+[A-Za-z][\w’'&-]*){0,5}["”]?\s+means\b(?![^\n]*[$%])/i;
+// Third round (2): also "<term> is any / is defined as / refers to", after
+// an optional article and footnote marks ("** A pre-existing condition is
+// any injury …").
+const TERM_DEFINITION = /^\s*[*†‡]*\s*(?:(?:a|an|the)\s+)?(?!(?:this|that|it|which|what)\s)["“]?[A-Z][\w’'&-]*(?:\s+[A-Za-z][\w’'&-]*){0,5}["”]?\s+(?:means|is any|is defined as|refers to)\b(?![^\n]*[$%])/i;
 
 /** Page spans of the enumerated/bulleted items of every exclusion section,
  *  found structurally by the shared C1 scanner (heading grammar + list

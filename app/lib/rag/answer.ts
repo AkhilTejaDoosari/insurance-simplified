@@ -906,7 +906,12 @@ export async function answerViaLlm(
   // Headers are stripped only in a one-document answer; in a comparison the
   // plan line keeps attribution (and must verify like any other line).
   const oneDocument = !!citations && new Set(citations.map((c) => c.documentId)).size === 1;
-  const answerText = oneDocument ? stripPlanHeaders(raw.answerText, opts.planNames ?? []) : raw.answerText.trim();
+  // Third round (2): the cited document's file name (with or without its
+  // extension) is a header label too, never a claim.
+  const fileLabels = oneDocument
+    ? documents.filter((d) => d.documentId === citations[0].documentId).flatMap((d) => [d.filename, d.filename.replace(/\.pdf$/i, "")])
+    : [];
+  const answerText = oneDocument ? stripPlanHeaders(raw.answerText, [...(opts.planNames ?? []), ...fileLabels]) : raw.answerText.trim();
   if (!citations || !answerText) {
     console.warn(`[chat-refusal] stage=citation-ref category=${citations ? "empty-after-header-strip" : "bad-reference"}`);
     opts.onRejection?.({ stage: citations ? "empty-after-header-strip" : "bad-reference", answerText: raw.answerText });
@@ -969,7 +974,7 @@ export async function answerViaLlm(
   // answer: "cannot be confirmed" with the passages relevant to the question.
   if (!addressesQuestion(answerResponse.answerText, question)) {
     console.warn(`[chat-refusal] stage=off-topic citationCount=${answerResponse.citations.length}`);
-    opts.onRejection?.({ stage: "off-topic" });
+    opts.onRejection?.({ stage: "off-topic", answerText: answerResponse.answerText, citations: answerResponse.citations });
     return uncertainAfterModel([], passages, question);
   }
 
