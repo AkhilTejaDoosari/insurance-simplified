@@ -86,3 +86,38 @@ describe("review: swaps across table separators, figure-first lines, label numbe
     expect(check(answer, line)).toEqual({ ok: true });
   });
 });
+
+// Follow-up review of 19a03fc (2026-11-22): letter labels, repeated values
+// with different units, mixed marked/plain numbers, plain-number-only lines,
+// and a both-sides sentence on a header line.
+describe("follow-up review: letter labels, repeated values, plain numbers, side order", () => {
+  it.each([
+    ["Part A deductible $240.", "Part A deductible $1,600 Part B deductible $240"],
+    ["Plan A $30.", "Plan A $10 Plan B $30"],
+    ["Option A copay $30.", "Option A copay $10 Option B copay $30"],
+    ["Inpatient $500 per visit.", "Inpatient $500 per day Outpatient $500 per visit"],
+    ["Primary care $30 per day.", "Primary care $30 per visit Specialist $30 per day"],
+    ["Copay 500.", "Deductible 500 Copay $30"],
+    ["Deductible $30.", "Deductible 500 Copay $30"],
+    ["Copay $500.", "Deductible $500 Copay 30"],
+    ["Copay 20.", "Coinsurance 20 Copay $30"],
+    ["Tier 2 drugs 10.", "Tier 1 drugs 10 Tier 2 drugs 40"],
+    ["Primary care $300 specialist.", "Copays: $30 primary care, $300 specialist"],
+    ["Specialist primary care $300.", "Copays: $30 primary care, $300 specialist"],
+  ])("rejects case %#", (answer, line) => {
+    expect(check(answer, line).ok).toBe(false);
+  });
+
+  it.each([
+    ["Part B deductible $240.", "Part A deductible $1,600 Part B deductible $240"],
+    ["Outpatient $500 per visit.", "Inpatient $500 per day Outpatient $500 per visit"],
+    ["Copay $30.", "Deductible 500 Copay $30"],
+    ["Tier 2 drugs 40.", "Tier 1 drugs 10 Tier 2 drugs 40"],
+    ["$300 specialist.", "Copays: $30 primary care, $300 specialist"],
+    ["Inpatient $500 per day Outpatient $500 per visit.", "Inpatient $500 per day Outpatient $500 per visit"],
+    ["Emergency room copay (waived if admitted) $300 Hospitalization copay $300", "Emergency room copay (waived if admitted) $300 Hospitalization copay $300"],
+    ["Emergency room copay (waived if admitted) $300", "Emergency room copay (waived if admitted) $300 Hospitalization copay $300"],
+  ])("verifies case %#", (answer, line) => {
+    expect(check(answer, line)).toEqual({ ok: true });
+  });
+});

@@ -479,25 +479,29 @@ function sameMarkers(a: string, b: string): boolean {
 }
 
 /** Figure–label binding (owner directive 2026-11-22, blocking; tightened
- *  after independent review). On a line that states two or more distinct
- *  values, each value owns its own label words, and a sentence stating a
- *  value must use that value's label and no other value's.
+ *  after two independent reviews). On a line that states two or more values
+ *  (repeats included), each value owns its own label words, and a sentence
+ *  stating a value must use that value's label and no other value's.
  *  - Separators ("|", "/", tabs, commas) are ignored: a table cell is never
- *    shared context.
- *  - A value is a number with "$", "%", digit grouping, a decimal or a
- *    following unit word ("12 months"); other numbers ("Tier 1") are label
- *    words when the line has such values. Footnote digits glued to a word
- *    ("out-of-network2") stay part of the word.
+ *    shared context. Words before a colon that precedes the first value are
+ *    a header shared by every value ("Copays: $30 primary care, …").
+ *  - A value is a number with "$", "%", digit grouping, a decimal, or a
+ *    following unit word ("12 months", "40 percent"). Other numbers
+ *    ("Tier 1") are read both ways — as label words and as values — and the
+ *    sentence must pass under both readings (fail-closed). A footnote digit
+ *    glued to a word ("out-of-network2") stays part of that word, so it
+ *    never matches the bare word: fail-closed.
+ *  - A capital letter after a word ("Part A", "Plan B") is a label word.
  *  - Layout: words, then values, ending on a value → label-first (each
  *    value owns the words before it); starting on a value and ending on
- *    words → figure-first (each value owns the words after it); otherwise
- *    ambiguous, and the sentence must repeat the words on BOTH sides of the
- *    value. A value with no label of its own inherits its neighbour's
+ *    words → figure-first (the words after it); otherwise ambiguous: the
+ *    sentence must repeat the words on both sides, each on its own side. A
+ *    value with no label of its own inherits its neighbour's
  *    ("Out-of-pocket maximum $1,000 per person $2,000 per family").
- *  - Unit words directly after a value ("per visit", "12 months") are that
- *    value's own and must match.
- *  - Fail-closed: a sentence must name at least one label word of its value;
- *    a figure-only sentence ("$300.") on such a line is rejected. */
+ *  - Unit words directly after a value ("per visit") are that value's own.
+ *  - A sentence names at least one label word of its value (a figure-only
+ *    sentence such as "$300." is rejected); a sentence with several values
+ *    states them as a contiguous, same-order run of the line's values. */
 const UNIT_WORD = /^(?:days?|weeks?|months?|years?|hours?|visits?|times?|percent)$/;
 const UNIT_LEAD = /^(?:per|each|every)$/;
 const BINDING_FILLER = new Set([
@@ -507,7 +511,7 @@ const BINDING_FILLER = new Set([
 
 type BindingToken = { value: string } | { word: string };
 
-function bindingTokens(text: string): BindingToken[] {
+function bindingTokens(text: string, plainAsValues: boolean): { tokens: BindingToken[]; plain: boolean } {
   const raw = [...text.matchAll(/\$\s?\d[\d,]*(?:\.\d+)?%?|(?<![a-z0-9])\d[\d,]*(?:\.\d+)?%?|[a-z][a-z0-9']*/gi)].map((m) => m[0]);
   const isNumber = (t: string) => /^[$\d]/.test(t);
   const norm = (t: string) => t.replace(/[$%,\s]/g, "").replace(/\.0+$/, "");
@@ -515,25 +519,37 @@ function bindingTokens(text: string): BindingToken[] {
     isNumber(t) && (t.startsWith("$") || t.endsWith("%") || /,\d{3}/.test(t) || /\.\d/.test(t) || UNIT_WORD.test((raw[i + 1] ?? "").toLowerCase())),
   );
   const anyMarked = marked.some(Boolean);
-  return raw.map((t, i) =>
-    isNumber(t) ? (marked[i] || !anyMarked ? { value: norm(t) } : { word: norm(t) }) : { word: t.toLowerCase() },
-  );
+  const plain = raw.some((t, i) => isNumber(t) && !marked[i]);
+  const tokens = raw.map((t, i): BindingToken => {
+    if (isNumber(t)) return marked[i] || !anyMarked || plainAsValues ? { value: norm(t) } : { word: norm(t) };
+    const letterLabel = /^[A-Z]$/.test(t) && i > 0 && !isNumber(raw[i - 1]);
+    return { word: letterLabel ? t : t.toLowerCase() };
+  });
+  return { tokens, plain: plain && anyMarked };
 }
 
 interface ValueSlot {
   value: string;
+  before: string[];
+  after: string[];
   /** Label words this value owns. */
   own: string[];
-  /** Unit words directly after it. */
   units: string[];
   /** Ambiguous layout: words the sentence must repeat. */
   required: string[];
 }
 
+interface ParsedLine {
+  slots: ValueSlot[];
+  header: string[];
+  ambiguous: boolean;
+  plain: boolean;
+}
+
 const meaningful = (words: readonly string[]) => words.filter((w) => !BINDING_FILLER.has(w));
 
-function valueSlots(text: string): ValueSlot[] {
-  const tokens = bindingTokens(text);
+function parseValues(text: string, plainAsValues: boolean): ParsedLine {
+  const { tokens, plain } = bindingTokens(text, plainAsValues);
   const values: { value: string; units: string[] }[] = [];
   const runs: string[][] = [[]];
   let unitRun = false;
@@ -555,6 +571,9 @@ function valueSlots(text: string): ValueSlot[] {
     runs[runs.length - 1].push(t.word);
   }
   const k = values.length;
+  // "Copays: $30 …" — words before a colon that precedes the first value.
+  const header = k > 0 && /^[^$\d]*:\s*[^a-z]*\$?\d/i.test(text) ? runs[0] : [];
+  if (header.length > 0) runs[0] = [];
   const first = runs[0].length > 0;
   const last = runs[k].length > 0;
   const mode = first && !last ? "label" : !first && last ? "figure" : "ambiguous";
@@ -562,47 +581,63 @@ function valueSlots(text: string): ValueSlot[] {
     for (let j = i; j >= 0 && j <= k; j += step) if (meaningful(runs[j]).length > 0) return runs[j];
     return [];
   };
-  return values.map((v, i) => {
+  const slots = values.map((v, i) => {
+    const sides = { before: runs[i], after: runs[i + 1] };
     if (mode === "label") {
       const own = meaningful(runs[i]).length > 0 ? runs[i] : [...runs[i], ...inherit(i, -1)];
-      return { ...v, own, required: [] };
+      return { ...v, ...sides, own, required: [] };
     }
     if (mode === "figure") {
       const own = meaningful(runs[i + 1]).length > 0 ? runs[i + 1] : [...runs[i + 1], ...inherit(i + 1, 1)];
-      return { ...v, own, required: [] };
+      return { ...v, ...sides, own, required: [] };
     }
     const own = [...runs[i], ...runs[i + 1]];
-    return { ...v, own, required: meaningful(own) };
+    return { ...v, ...sides, own, required: meaningful(own) };
+  });
+  return { slots, header, ambiguous: mode === "ambiguous", plain };
+}
+
+/** A sentence word matches a line word: numbers and letter labels exactly,
+ *  words by prefix ("visit" ↔ "visits"), the same rule as word coverage. */
+function wordMatches(sentenceWord: string, lineWord: string): boolean {
+  return /^(?:\d|[A-Z]$)/.test(sentenceWord) ? sentenceWord === lineWord : lineWord.startsWith(sentenceWord);
+}
+const allMatch = (words: readonly string[], allowed: readonly string[]) =>
+  meaningful(words).every((w) => allowed.some((a) => wordMatches(w, a)));
+
+function boundUnder(sentence: string, line: string, plainAsValues: boolean): boolean {
+  const L = parseValues(line, plainAsValues);
+  if (L.slots.length < 2) return true;
+  const S = parseValues(sentence, plainAsValues);
+  if (S.slots.length === 0) return true;
+  if (S.slots.length > 1) {
+    const lineSeq = L.slots.map((s) => s.value);
+    const said = S.slots.map((s) => s.value);
+    const contiguous = lineSeq.some((_, i) => said.every((v, j) => lineSeq[i + j] === v));
+    if (!contiguous) return false;
+  }
+  const single = S.slots.length === 1;
+  return S.slots.every((s) => {
+    const words = single ? [...S.header, ...s.before, ...s.after, ...s.units] : [...s.own, ...s.units];
+    return L.slots.some((l) => {
+      if (l.value !== s.value) return false;
+      if (!allMatch(words, [...l.own, ...l.units, ...L.header])) return false;
+      const label = meaningful(l.own).length > 0 ? meaningful(l.own) : meaningful(l.units);
+      if (!meaningful(words).some((w) => label.some((a) => wordMatches(w, a)))) return false;
+      if (!l.required.every((r) => words.some((w) => wordMatches(w, r)))) return false;
+      // Ambiguous line: each word stays on its own side of the value.
+      if (L.ambiguous && !(allMatch([...S.header, ...s.before], [...l.before, ...L.header]) && allMatch(s.after, [...l.after, ...l.units]))) return false;
+      return true;
+    });
   });
 }
 
-/** A sentence word matches a line word: numbers exactly, words by prefix
- *  ("visit" ↔ "visits"), the same rule as word coverage. */
-function wordMatches(sentenceWord: string, lineWord: string): boolean {
-  return /^\d/.test(sentenceWord) ? sentenceWord === lineWord : lineWord.startsWith(sentenceWord);
-}
-
 /** True unless the sentence ties a value to label words the line ties to a
- *  different value. Lines with fewer than two distinct values are unaffected. */
+ *  different value. Lines with fewer than two values are unaffected. Plain
+ *  numbers on a line that also has marked values are read both ways. */
 function figuresBoundToLabels(sentence: string, line: string): boolean {
-  const lineSlots = valueSlots(line);
-  if (new Set(lineSlots.map((s) => s.value)).size < 2) return true;
-  const said = valueSlots(sentence);
-  const sentenceWords = bindingTokens(sentence).flatMap((t) => ("word" in t ? [t.word] : []));
-  const single = new Set(said.map((s) => s.value)).size === 1;
-  for (const s of said) {
-    const words = meaningful(single ? sentenceWords : [...s.own, ...s.units]);
-    const ok = lineSlots.some((l) => {
-      if (l.value !== s.value) return false;
-      const allowed = [...l.own, ...l.units];
-      if (!words.every((w) => allowed.some((a) => wordMatches(w, a)))) return false;
-      const label = meaningful(l.own).length > 0 ? meaningful(l.own) : meaningful(l.units);
-      if (!words.some((w) => label.some((a) => wordMatches(w, a)))) return false;
-      return l.required.every((r) => words.some((w) => wordMatches(w, r)));
-    });
-    if (!ok) return false;
-  }
-  return true;
+  if (!boundUnder(sentence, line, false)) return false;
+  return parseValues(line, false).plain || parseValues(sentence, false).plain ? boundUnder(sentence, line, true) : true;
 }
 
 /** The cited quote that covers a sentence, or undefined. Review 2026-11-21
