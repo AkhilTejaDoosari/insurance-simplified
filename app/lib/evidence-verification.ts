@@ -697,9 +697,29 @@ function figuresBoundToLabels(sentence: string, line: string): boolean {
  *  is a heading: the sentence after it starts there. Never when the label
  *  states a negation, exception, network scope or qualifier word ("NOT
  *  COVERED:"): then it is part of the meaning. */
+/** Review of 4ccd625 (B1): a label that names WHO or WHICH the sentence
+ *  applies to — a plan, option, rider, tier, class, group of people, age,
+ *  network/provider type, a limitation or exclusion list, a single-letter or
+ *  numbered name — is part of the meaning, never a heading. */
+const SCOPE_LABEL = /\b(?:plans?|options?|riders?|tiers?|levels?|class(?:es)?|groups?|members?|ages?|dependents?|child(?:ren)?|adults?|spouses?|students?|ppo|hmo|epo|pos|providers?|network|limitations?|optional|exclusions?|excluded|non)\b/i;
+export function isScopeLabel(label: string): boolean {
+  const l = label.replace(/^\s*\(?(?:\d{1,3}|[ivx]{1,4})[).]\s*/i, "");
+  return SCOPE_LABEL.test(l) || /\d/.test(l) || /(?:^|\s)[A-Z](?:\s|$)/.test(l);
+}
+
+/** The covering line starts with a scope label ("Plan B: …") that the
+ *  sentence leaves out. */
+function dropsScopeLabel(sentence: string, line: string): boolean {
+  const m = /^\s*([^:]{1,60}):\s*\S/.exec(line);
+  if (!m || !isScopeLabel(m[1])) return false;
+  const label = wordRun(m[1].replace(/^\s*\(?(?:\d{1,3}|[ivx]{1,4})[).]\s*/i, ""));
+  return !` ${wordRun(sentence)} `.includes(` ${label} `);
+}
+
 function isLabelPrefix(prefix: string): boolean {
   const p = prefix.trim();
   return (
+    !isScopeLabel(p.replace(/:$/, "")) &&
     /:$/.test(p) &&
     !/[.;!?]\s/.test(p) &&
     p.split(/\s+/).length <= 8 &&
@@ -968,7 +988,7 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
     // against that line only (follow-up review: no borrowing a figure from
     // another line of the same quote).
     const line = clausesOf(quote).find(
-      (l) => tokensCoveredInOrder(normSentence, l) && holdsFigures(l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l) && !fragment(l),
+      (l) => tokensCoveredInOrder(normSentence, l) && holdsFigures(l) && !dropsScopeLabel(sentence, l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l) && !fragment(l),
     );
     if (line) return line;
     // Second follow-up review: the unordered whole-quote path is gone. A

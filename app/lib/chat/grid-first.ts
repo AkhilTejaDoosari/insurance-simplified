@@ -186,7 +186,10 @@ export async function gridFirstAnswer(input: {
     const named = used.every(({ value, factName }) => {
       const tier = value.qualifiers.planTier;
       const claim = describeFact(value, factName).claim;
-      return !!tier && isCell(value) && !!claim && claim.toLowerCase().includes(tier.toLowerCase());
+      // Review nit: the tier name as a whole word ("Network" is not in
+      // "Non-Network"; "Tier 1" is not in "Tier 10").
+      const whole = !!tier && new RegExp(`(?<![\\w-])${tier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "i").test(claim ?? "");
+      return !!tier && isCell(value) && !!claim && whole;
     });
     if (!named) return fallback("tiers-without-names");
   }

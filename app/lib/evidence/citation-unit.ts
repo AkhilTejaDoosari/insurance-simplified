@@ -55,12 +55,26 @@ export function completeProseQuote(page: string, quote: string): string {
   let a = at[0];
   let b = at[0] + want.length - 1;
   for (let k = 0; k < MAX_BACK && a > 0 && norm[a - 1] && continuesOnto(norm[a - 1], norm[a], false, a > 1 ? norm[a - 2] : undefined); k++) a--;
-  for (let k = 0; k < MAX_FORWARD && b + 1 < norm.length && norm[b + 1] && !lineEndsSentence(norm[b]) && continuesOnto(norm[b], norm[b + 1], true); k++) b++;
+  // Review nit: a line ending in a value followed by a line stating its own
+  // amount is the next row ("Primary care $30" / "telehealth $10").
+  const nextRow = (cur: string, next: string) => /[\d%]\s*$/.test(cur) && /\$\s?\d|\d\s?%/.test(next);
+  for (let k = 0; k < MAX_FORWARD && b + 1 < norm.length && norm[b + 1] && !lineEndsSentence(norm[b]) && !nextRow(norm[b], norm[b + 1]) && continuesOnto(norm[b], norm[b + 1], true); k++) b++;
   return lines.slice(a, b + 1).join("\n").trim();
 }
 
+/** Review of 4ccd625 (S1): a citation must be unique on its page. A span
+ *  whose text repeats ("$0", "Covered") is cited by its whole page line
+ *  when that line is unique; otherwise it is not added. */
 function textsOf(page: string, t: LayoutText | undefined): string[] {
-  return (t?.spans ?? []).map((s) => page.slice(s.start, s.end).trim()).filter(Boolean);
+  const unique = (q: string) => !!q && page.indexOf(q) >= 0 && page.indexOf(q) === page.lastIndexOf(q);
+  return (t?.spans ?? []).flatMap((s) => {
+    const text = page.slice(s.start, s.end).trim();
+    if (unique(text)) return [text];
+    const from = page.lastIndexOf("\n", s.start - 1) + 1;
+    const to = page.indexOf("\n", s.start);
+    const line = page.slice(from, to < 0 ? page.length : to).trim();
+    return unique(line) ? [line] : [];
+  });
 }
 
 /** Table rows a quote overlaps (by page-text span), with their headings. */
@@ -82,7 +96,8 @@ function rowCitations(doc: UnitDocument, pageNo: number, quote: string): string[
         for (const c of cell.columns) out.push(...textsOf(page, table.columns[c]));
       }
       // The header line itself (one contiguous span) carries every heading.
-      out.push(page.slice(table.header.start, table.header.end).trim());
+      const header = page.slice(table.header.start, table.header.end).trim();
+      if (page.indexOf(header) === page.lastIndexOf(header)) out.push(header);
     }
   }
   return [...new Set(out.filter(Boolean))];

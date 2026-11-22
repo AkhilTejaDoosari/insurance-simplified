@@ -102,3 +102,42 @@ describe("table rows: the row's cells and their column headings are added", () =
     for (const q of quotes) expect(page.includes(q)).toBe(true);
   });
 });
+
+// Review of 4ccd625.
+import { verifyAnswerClaims } from "@/app/lib/evidence-verification";
+function verifyCompleted(pageLines: string[], cited: string, answer: string) {
+  const page = pageLines.join("\n");
+  const docs = [{ documentId: "doc-1", pages: [page] }];
+  const c = completeCitations(docs, [{ documentId: "doc-1", page: 1, quote: cited }]);
+  return verifyAnswerClaims(answer, c, c, docs).ok;
+}
+
+describe("review B1: a plan, rider, tier, group or limitation label is never dropped", () => {
+  it.each([
+    [["Plan A: Maternity is not covered.", "Plan B: Maternity is covered after a", "12 month waiting period."], "12 month waiting period.", "Maternity is covered after a 12 month waiting period."],
+    [["Optional Rider: Dental care is covered for", "accidental injury.", "Other"], "accidental injury.", "Dental care is covered for accidental injury."],
+    [["Tier 2: Specialist visits are payable at 50% after the", "deductible.", "Other"], "deductible.", "Specialist visits are payable at 50% after the deductible."],
+    [["Members age 65 and over: Wellness exams are covered once per", "calendar year.", "Other"], "calendar year.", "Wellness exams are covered once per calendar year."],
+    [["Limitations: Dental care for adults,", "including implants and crowns.", "Other"], "including implants and crowns.", "Dental care for adults, including implants and crowns."],
+    [["Plan B: Maternity is covered.", "Other"], "Plan B: Maternity is covered.", "Maternity is covered."],
+  ])("%#", (page, cited, answer) => expect(verifyCompleted(page, cited, answer)).toBe(false));
+  it("control: a topic heading label is still a heading", () => {
+    expect(verifyCompleted(["(5) MATERNITY AND NEWBORN CARE: All charges for prenatal care are", "excluded from this insurance.", "Other"], "excluded from this insurance.", "All charges for prenatal care are excluded from this insurance.")).toBe(true);
+  });
+});
+
+describe("review S1: a row citation that repeats on the page is not added alone", () => {
+  const DOC = tableDocument("doc-1", [{ caption: "BENEFIT", headings: ["ELITE", "BASIC"], rows: [["Deductible", "$0", "$250"], ["Ambulance", "$0", "Up to $500"], ["Maternity Care", "Up to $5,000", "No coverage"]] }]);
+  it("every added citation is unique on its page, and the answer still verifies", () => {
+    const page = DOC.pages[0];
+    const out = completeCitations([DOC], [{ documentId: "doc-1", page: 1, quote: "Up to $500" }]);
+    for (const c of out) expect(page.indexOf(c.quote)).toBe(page.lastIndexOf(c.quote));
+    expect(verifyAnswerClaims("Up to $500", out, out, [{ documentId: "doc-1", pages: DOC.pages }]).ok).toBe(true);
+  });
+});
+
+describe("review nit: completion never joins two rows", () => {
+  it("a row ending in a figure is not continued by a lower-case row with a figure", () => {
+    expect(completeProseQuote("Primary care $30\ntelehealth $10\nOther", "Primary care $30")).toBe("Primary care $30");
+  });
+});

@@ -45,3 +45,15 @@ describe("multi-tier rows are answered with their tier names", () => {
     expect(r?.kind === "answer" && r.answerText).not.toContain("(ELITE)");
   });
 });
+
+// Review of 4ccd625 (S2): a row with an empty cell is not read, so a value is
+// never placed under another tier's heading; (nit) tier names match whole.
+describe("review: empty cells and whole tier names", () => {
+  it("a row with an empty cell gives no tier answer", async () => {
+    const doc = tableDocument("doc-2", [{ caption: "BENEFIT", headings: ["ELITE", "BASIC"], rows: [["Deductible", "$0", "$250"], ["Specialist Visit", "", "$60"], ["Maternity Care", "Up to $5,000", "No coverage"]] }]);
+    const docs = [doc];
+    const t = verifyComparisonTable(validateTable(extractFallback(docs as never, {})), docs as never);
+    const r = await gridFirstAnswer({ question: "What is the specialist copay?", table: t, scopedDocuments: docs, sessionDocuments: docs });
+    expect(r?.kind === "answer" ? r.answerText : "").not.toMatch(/\(ELITE\): \$60/);
+  });
+});
