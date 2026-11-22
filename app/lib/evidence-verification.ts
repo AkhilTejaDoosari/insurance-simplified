@@ -702,6 +702,24 @@ function figuresBoundToLabels(sentence: string, line: string): boolean {
  *  network/provider type, a limitation or exclusion list, a single-letter or
  *  numbered name — is part of the meaning, never a heading. */
 const SCOPE_LABEL = /\b(?:plans?|options?|riders?|tiers?|levels?|class(?:es)?|groups?|members?|ages?|dependents?|child(?:ren)?|adults?|spouses?|students?|ppo|hmo|epo|pos|providers?|network|limitations?|optional|exclusions?|excluded|non)\b/i;
+/** Review of 1a9652c (R1-a/b): a label may be omitted only when it is an
+ *  ALL-CAPS heading whose every word names a benefit topic (allow-list) —
+ *  never a plan, tier, product or audience name ("ELITE:", "FAMILY:"). */
+const TOPIC_HEADING_WORDS = new Set((
+  "maternity newborn newborns care pregnancy prenatal dental vision hearing pre existing preexisting conditions condition " +
+  "emergency room medical evacuation repatriation remains prescription prescriptions drugs drug mental health nervous disorders " +
+  "physical therapy hospital hospitalization surgery surgical outpatient inpatient ambulance accident accidents sickness illness " +
+  "injury injuries deductible deductibles coinsurance copay copays copayments maximum limit limits benefit benefits expenses " +
+  "charges preventive wellness chiropractic acupuncture telehealth sports activities general provisions definitions schedule " +
+  "of and or for the to in"
+).split(" "));
+export function isTopicHeading(label: string): boolean {
+  const l = label.replace(/^\s*\(?(?:\d{1,3}|[ivx]{1,4})[).]\s*/i, "").trim();
+  if (!l || /[a-z]/.test(l) || !/[A-Z]/.test(l)) return false;
+  const words = l.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.every((w) => TOPIC_HEADING_WORDS.has(w)) && !isScopeLabel(l);
+}
+
 export function isScopeLabel(label: string): boolean {
   const l = label.replace(/^\s*\(?(?:\d{1,3}|[ivx]{1,4})[).]\s*/i, "");
   return SCOPE_LABEL.test(l) || /\d/.test(l) || /(?:^|\s)[A-Z](?:\s|$)/.test(l);
@@ -723,15 +741,17 @@ export function isScopeLabel(label: string): boolean {
 const SEG_ARTICLES = new Set(["a", "an", "the"]);
 const SEG_UNIT = /^(?:days?|weeks?|months?|years?|hours?|visits?|times?|percent)$/;
 const SEG_LEAD = /^(?:per|each|every)$/;
+/** Words for segment matching; thousands separators kept inside a figure. */
+const segWords = (t: string) => wordRun(t.replace(/(\d),(?=\d{3}\b)/g, "$1")).split(" ").filter((w) => w && !SEG_ARTICLES.has(w));
 const isSegValue = (t: string) => /^\$?\d[\d,.]*%?$/.test(t);
 function segmentForms(clause: string): string[][] {
   let c = clause.replace(/^\s*(?:[•*\u2022\u2013-]|\(?\d{1,3}[).]|\(?[a-z][).]|\(?[ivx]{1,4}[).])\s+/i, "");
   const forms: string[][] = [];
-  const words = (t: string) => wordRun(t).split(" ").filter((w) => w && !SEG_ARTICLES.has(w));
+  const words = segWords;
   // An optional leading ALL-CAPS topic heading (never a scope label).
   const topic = /^\s*([^:a-z]{2,60}):\s*/.exec(c);
   const variants = [c];
-  if (topic && /[A-Z]/.test(topic[1]) && !isScopeLabel(topic[1])) variants.push(c.slice(topic[0].length));
+  if (topic && isTopicHeading(topic[1])) variants.push(c.slice(topic[0].length));
   for (const v of variants) {
     // A header shared by every value: the single colon before the first value.
     const head = /^([^$\d:]*):\s*(?=[^a-z]*\$?\d)/i.exec(v);
@@ -775,7 +795,9 @@ function segmentForms(clause: string): string[][] {
         const run = segs.slice(i, j + 1).flat();
         forms.push([...header, ...run]);
         // Inherited label: a label-first segment with no words before its value.
-        if (!isSegValue(t[0]) && isSegValue(segs[i][0])) {
+        // Review R1-c: only a value followed by its own unit/qualifier words
+        // ("$2,000 per family") inherits; a bare value has no label.
+        if (!isSegValue(t[0]) && isSegValue(segs[i][0]) && segs[i].length > 1 && !isSegValue(segs[i][1])) {
           for (let p = i - 1; p >= 0; p--) {
             const lead = segs[p].slice(0, segs[p].findIndex(isSegValue));
             if (lead.length) { forms.push([...header, ...lead, ...run]); break; }
@@ -787,7 +809,7 @@ function segmentForms(clause: string): string[][] {
   return forms;
 }
 function statesWholeSegments(sentence: string, clause: string): boolean {
-  const said = wordRun(sentence).split(" ").filter((w) => w && !SEG_ARTICLES.has(w));
+  const said = segWords(sentence);
   // Same words as one form (word order is enforced by the in-order and
   // figure-binding checks); a word matches by prefix ("visit"/"visits"), a
   // value exactly.
@@ -795,7 +817,7 @@ function statesWholeSegments(sentence: string, clause: string): boolean {
     if (f.length !== said.length) return false;
     const used = new Array(f.length).fill(false);
     return said.every((w) => {
-      const k = f.findIndex((x, i) => !used[i] && (isSegValue(w) || isSegValue(x) ? x === w : x.startsWith(w)));
+      const k = f.findIndex((x, i) => !used[i] && (isSegValue(w) || isSegValue(x) ? x === w : x === w || x === `${w}s` || x === `${w}es` || w === `${x}s` || w === `${x}es`));
       if (k < 0) return false;
       used[k] = true;
       return true;
@@ -814,7 +836,7 @@ function dropsScopeLabel(sentence: string, line: string): boolean {
 function isLabelPrefix(prefix: string): boolean {
   const p = prefix.trim();
   return (
-    !isScopeLabel(p.replace(/:$/, "")) &&
+    isTopicHeading(p.replace(/:$/, "")) &&
     /:$/.test(p) &&
     !/[.;!?]\s/.test(p) &&
     p.split(/\s+/).length <= 8 &&

@@ -71,3 +71,78 @@ describe("prose citations are unchanged", () => {
     expect(renderTableAnswer([doc], [{ documentId: "doc-2", page: 1, quote: "Dental treatment is covered for accidental injury only." }])).toBeUndefined();
   });
 });
+
+// Review of 6c0811b: R2-a section heading, R2-b/c footnote markers, R2-d
+// mixed prose + table citations. Tables built by hand with exact spans.
+import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
+function handTable(page: string, spec: { header: string; columns: string[]; rows: { section?: string; label: string; cells: string[] }[]; footnotes?: { marker: string; text: string }[] }) {
+  let cursor = 0;
+  const span = (text: string) => {
+    const start = page.indexOf(text, cursor);
+    if (start < 0) throw new Error(`not on page: ${text}`);
+    cursor = start + text.length;
+    return { text, spans: [{ start, end: start + text.length }] };
+  };
+  const header = span(spec.header);
+  const columnStart = header.spans[0].start;
+  const columns = spec.columns.map((c) => {
+    const s = page.indexOf(c, columnStart);
+    return { text: c, spans: [{ start: s, end: s + c.length }], lines: [c], x0: 0, x1: 0 };
+  });
+  const rows = spec.rows.map((r) => ({
+    ...(r.section ? { section: span(r.section) } : {}),
+    label: span(r.label),
+    cells: r.cells.map((c, i) => ({ ...span(c), columns: [i] })),
+  }));
+  const footnotes = (spec.footnotes ?? []).map((f) => ({ ...span(f.text), marker: f.marker, complete: true }));
+  const table: LayoutTable = { page: 1, header: header.spans[0], columns, rows, footnotes };
+  return { documentId: "doc-h", pages: [page], tables: [table] };
+}
+
+describe("review R2-a: a row's section heading is part of the rendered answer", () => {
+  const page = ["BENEFIT ELITE BASIC", "IN-NETWORK SERVICES", "Specialist $30 $40", "OUT-OF-NETWORK SERVICES", "Specialist $60 $80", "End."].join("\n");
+  const doc = handTable(page, { header: "BENEFIT ELITE BASIC", columns: ["ELITE", "BASIC"], rows: [
+    { section: "IN-NETWORK SERVICES", label: "Specialist", cells: ["$30", "$40"] },
+    { section: "OUT-OF-NETWORK SERVICES", label: "Specialist", cells: ["$60", "$80"] },
+  ] });
+  it("renders and cites the section", () => {
+    const r = renderTableAnswer([doc], [{ documentId: "doc-h", page: 1, quote: "Specialist $60 $80" }]);
+    expect(typeof r === "object" && r.answerText).toBe("Specialist — OUT-OF-NETWORK SERVICES (ELITE): $60\nSpecialist — OUT-OF-NETWORK SERVICES (BASIC): $80");
+    expect(typeof r === "object" && r.citations.map((c) => c.quote)).toContain("OUT-OF-NETWORK SERVICES");
+  });
+});
+
+describe("review R2-b/c: footnote markers anywhere, matched exactly", () => {
+  it("a marker on a column heading renders its footnote", () => {
+    const page = ["BENEFIT ELITE* BASIC", "Deductible $0 $250", "Ambulance $100 $200", "* Elite benefits are paid at 50% in the first year.", "** Ambulance must be pre-approved."].join("\n");
+    const doc = handTable(page, { header: "BENEFIT ELITE* BASIC", columns: ["ELITE*", "BASIC"], rows: [{ label: "Deductible", cells: ["$0", "$250"] }, { label: "Ambulance", cells: ["$100", "$200"] }], footnotes: [{ marker: "*", text: "* Elite benefits are paid at 50% in the first year." }, { marker: "**", text: "** Ambulance must be pre-approved." }] });
+    const r = renderTableAnswer([doc], [{ documentId: "doc-h", page: 1, quote: "Deductible $0 $250" }]);
+    expect(typeof r === "object" && r.answerText).toContain("* Elite benefits are paid at 50% in the first year.");
+    expect(typeof r === "object" && r.answerText).not.toContain("pre-approved");
+  });
+  it("'**' on a row renders only the '**' footnote", () => {
+    const page = ["BENEFIT ELITE BASIC", "Deductible $0 $250", "Ambulance** $100 $200", "* Elite benefits are paid at 50% in the first year.", "** Ambulance must be pre-approved."].join("\n");
+    const doc = handTable(page, { header: "BENEFIT ELITE BASIC", columns: ["ELITE", "BASIC"], rows: [{ label: "Deductible", cells: ["$0", "$250"] }, { label: "Ambulance**", cells: ["$100", "$200"] }], footnotes: [{ marker: "*", text: "* Elite benefits are paid at 50% in the first year." }, { marker: "**", text: "** Ambulance must be pre-approved." }] });
+    const r = renderTableAnswer([doc], [{ documentId: "doc-h", page: 1, quote: "Ambulance** $100 $200" }]);
+    expect(typeof r === "object" && r.answerText).toContain("** Ambulance must be pre-approved.");
+    expect(typeof r === "object" && r.answerText).not.toContain("Elite benefits");
+  });
+  it("a marker mid-cell renders its footnote; a marker with no footnote fails closed", () => {
+    const page = ["BENEFIT ELITE BASIC", "Deductible $0* per year $250", "Ambulance $100 $200", "* Only after 6 months of coverage."].join("\n");
+    const doc = handTable(page, { header: "BENEFIT ELITE BASIC", columns: ["ELITE", "BASIC"], rows: [{ label: "Deductible", cells: ["$0* per year", "$250"] }, { label: "Ambulance", cells: ["$100", "$200"] }], footnotes: [{ marker: "*", text: "* Only after 6 months of coverage." }] });
+    const r = renderTableAnswer([doc], [{ documentId: "doc-h", page: 1, quote: "Deductible $0* per year $250" }]);
+    expect(typeof r === "object" && r.answerText).toContain("* Only after 6 months of coverage.");
+    const bare = { ...doc, tables: [{ ...doc.tables[0], footnotes: [] }] };
+    expect(renderTableAnswer([bare], [{ documentId: "doc-h", page: 1, quote: "Deductible $0* per year $250" }])).toBe("uncitable");
+  });
+});
+
+describe("review R2-d: prose and a table row cited together → cannot be confirmed", () => {
+  it("the prose condition is never silently dropped", async () => {
+    const page = DOC.pages[0] + "Dental benefits apply only after 12 months.\n";
+    const docs = [{ ...DOC, pages: [page] }];
+    vi.mocked(completeJson).mockImplementationOnce(answerCiting("Coinsurance 20%. Dental benefits apply only after 12 months.", ROW("Coinsurance"), "Dental benefits apply only after 12 months.") as never);
+    const r = await answerViaLlm(docs, "What is the out-of-network coinsurance?");
+    expect(r.kind).toBe("refusal");
+  });
+});

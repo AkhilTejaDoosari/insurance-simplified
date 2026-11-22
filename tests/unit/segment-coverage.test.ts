@@ -51,3 +51,37 @@ describe("controls: whole segments verify", () => {
     ["Emergency room copay $300.", "Emergency room copay $300. Ambulance $100."],
   ])("%s ← %s", (answer, line) => expect(check(answer, line)).toBe(true));
 });
+
+// Review of 1a9652c/6c0811b: R1-a (span path), R1-b (ALL-CAPS plan names),
+// R1-c (bare value borrowing a label), nit (clipped words).
+function checkPage(answer: string, pageLines: string[]) {
+  const page = pageLines.join("\n");
+  const docs = [{ documentId: "doc-1", pages: [page] }];
+  const c = [{ documentId: "doc-1", page: 1, quote: page }];
+  return verifyAnswerClaims(answer, c, c, docs).ok;
+}
+describe("review: only an allow-listed ALL-CAPS topic heading may be omitted", () => {
+  it.each(["Gold", "ELITE", "Basic", "Employee", "Retirees", "Family", "Premier Plus", "Travel Medical Basic"])("span path, label %s", (label) => {
+    expect(checkPage("Maternity is covered after a 12 month waiting period.", ["Other: Maternity is not covered.", `${label}: Maternity is covered after a`, "12 month waiting period.", "End."])).toBe(false);
+  });
+  it.each([
+    ["Maternity is covered.", "ELITE: Maternity is covered."],
+    ["Wellness exams are covered.", "FAMILY: Wellness exams are covered."],
+  ])("one line: %s ← %s", (answer, line) => expect(check(answer, line)).toBe(false));
+  it("control: an allow-listed topic heading on the span path", () => {
+    expect(checkPage("All charges for prenatal care are excluded from this insurance.", ["(5) MATERNITY AND NEWBORN CARE: All charges for prenatal care are", "excluded from this insurance.", "End."])).toBe(true);
+  });
+});
+describe("review: a bare value never borrows a label", () => {
+  it.each([
+    ["Deductible $1,000", "Deductible $500 $1,000"],
+    ["Deductible In-network $1,000", "Deductible In-network $500 $1,000"],
+  ])("%s ← %s", (answer, line) => expect(check(answer, line)).toBe(false));
+  it("control: a value with its own unit words inherits", () => {
+    expect(check("Out-of-pocket maximum $2,000 per family.", "Out-of-pocket maximum $1,000 per person $2,000 per family")).toBe(true);
+  });
+});
+describe("review nit: word forms are exact or plural", () => {
+  it("'cover' is not 'covered'", () => expect(check("Maternity is cover.", "Maternity is covered.")).toBe(false));
+  it("control: 'visit' / 'visits'", () => expect(check("Two office visit per year.", "Two office visits per year")).toBe(true));
+});

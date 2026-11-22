@@ -134,13 +134,14 @@ export function completeCitations(documents: readonly UnitDocument[], citations:
 export function renderTableAnswer(
   documents: readonly UnitDocument[],
   citations: readonly UnitCitation[],
-): { answerText: string; citations: UnitCitation[] } | undefined | "uncitable" {
+): { answerText: string; citations: UnitCitation[] } | undefined | "uncitable" | "mixed" {
   const lines: string[] = [];
   const cites: UnitCitation[] = [];
   const cite = (documentId: string, page: number, quote: string) => {
     if (!cites.some((c) => c.documentId === documentId && c.page === page && c.quote === quote)) cites.push({ documentId, page, quote });
   };
   let touched = false;
+  let prose = false;
   for (const c of citations) {
     const doc = documents.find((d) => d.documentId === c.documentId);
     const page = doc?.pages[c.page - 1];
@@ -148,37 +149,56 @@ export function renderTableAnswer(
     const start = page.indexOf(c.quote);
     if (start < 0 || page.indexOf(c.quote, start + 1) >= 0) continue;
     const end = start + c.quote.length;
+    let inTable = false;
     for (const table of (doc.tables ?? []).filter((t) => t.page === c.page)) {
       const hit = (t: LayoutText) => t.spans.some((s) => s.start < end && s.end > start);
       for (const row of table.rows) {
         if (!hit(row.label) && !row.cells.some(hit)) continue;
         touched = true;
+        inTable = true;
         const label = ws(row.label.text);
         const labelCites = textsOf(page, row.label);
         if (!label || labelCites.length === 0) return "uncitable";
+        // Review R2-a: the row's section heading ("OUT-OF-NETWORK SERVICES")
+        // is part of what the row means.
+        const section = row.section ? ws(row.section.text) : "";
+        const sectionCites = row.section ? textsOf(page, row.section) : [];
+        if (row.section && (!section || sectionCites.length === 0)) return "uncitable";
+        const head = section ? `${label} — ${section}` : label;
         for (const cell of row.cells) {
           const header = cell.columns.map((k) => ws(table.columns[k]?.text ?? "")).filter(Boolean).join(" / ");
           const cellText = ws(cell.text);
           const cellCites = textsOf(page, cell);
           const headerCites = cell.columns.flatMap((k) => textsOf(page, table.columns[k]));
           if (!header || !cellText || cellCites.length === 0 || headerCites.length === 0) return "uncitable";
-          const line = `${label} (${header}): ${cellText}`;
+          const line = `${head} (${header}): ${cellText}`;
           if (!lines.includes(line)) lines.push(line);
-          for (const q of [...labelCites, ...headerCites, ...cellCites]) cite(c.documentId, c.page, q);
+          for (const q of [...labelCites, ...sectionCites, ...headerCites, ...cellCites]) cite(c.documentId, c.page, q);
         }
-        // A governing footnote: its marker ends the row label or a cell.
-        for (const note of table.footnotes ?? []) {
-          const marked = [row.label.text, ...row.cells.map((x) => x.text)].some((t) => ws(t).endsWith(note.marker));
-          if (!marked) continue;
-          const noteCites = textsOf(page, note);
-          if (!note.complete || noteCites.length === 0) return "uncitable";
+        // Review R2-b/c: every footnote marker on the row label, a cell, a
+        // cell's column heading or the section — anywhere in the text — must
+        // resolve to a complete footnote with EXACTLY that marker ("*" is not
+        // "**"); otherwise the row cannot be rendered.
+        const markedTexts = [row.label.text, row.section?.text ?? "", ...row.cells.map((x) => x.text), ...row.cells.flatMap((x) => x.columns.map((k) => table.columns[k]?.text ?? ""))];
+        const markers = new Set(markedTexts.flatMap((t) => t.match(/\*+|†+|‡+/g) ?? []));
+        for (const m of markers) {
+          const note = (table.footnotes ?? []).find((n) => n.marker === m);
+          const noteCites = note ? textsOf(page, note) : [];
+          if (!note || !note.complete || noteCites.length === 0) return "uncitable";
           const text = ws(note.text);
           if (!lines.includes(text)) lines.push(text);
           for (const q of noteCites) cite(c.documentId, c.page, q);
         }
       }
     }
+    // A bare heading line (no figure, at most six words, no lower-case
+    // sentence) beside a table row is not a separate claim.
+    const heading = c.quote.split("\n").every((l) => !/\d/.test(l) && ws(l).split(" ").length <= 6 && !/[a-z]{2,}\s+[a-z]{2,}\s+[a-z]{2,}/.test(l));
+    if (!inTable && !heading) prose = true;
   }
   if (!touched) return undefined;
+  // Review R2-d: prose and a table row cited together — the prose would be
+  // dropped from a server-rendered answer, so nothing is rendered.
+  if (prose) return "mixed";
   return lines.length > 0 ? { answerText: lines.join("\n"), citations: cites } : "uncitable";
 }

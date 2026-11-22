@@ -948,8 +948,8 @@ export async function answerViaLlm(
   // answer from the row's own spans (label + column header + cell +
   // governing footnote). The model's wording is not used for table values.
   const table = referenced ? renderTableAnswer(documents, referenced) : undefined;
-  if (table === "uncitable") {
-    console.warn(`[chat-refusal] stage=table-render reason=uncitable`);
+  if (table === "uncitable" || table === "mixed") {
+    console.warn(`[chat-refusal] stage=table-render reason=${table}`);
     opts.onRejection?.({ stage: "table-uncitable", answerText: raw.answerText, citations: citations ?? [] });
     return uncertainAfterModel(citations ?? [], passages, question);
   }
