@@ -468,6 +468,28 @@ function governingHeadingIndex(lines: readonly string[], lineIdx: number): numbe
   return undefined;
 }
 
+/** Lines that end a sentence (or a heading line ending in a colon). */
+const ENDS_SENTENCE = /[.;:!?]["'’”)\]]*\s*$/;
+/** A line opening in lower case (or "(" before a lower-case word)
+ *  continues the line above; an enumerated item ("(55)", "(a)", "b.", "(iv)")
+ *  never does. */
+const LIST_ITEM = /^\s*\(?(?:\d+|[a-z]|[ivxlc]+)[).]\s/i;
+const CONTINUES = { test: (line: string) => !LIST_ITEM.test(line) && /^\s*(?:[a-z]|\([a-z])/.test(line) };
+/** Continuation lines read on each side of a matching line. */
+const SENTENCE_MAX_LINES = 3;
+
+/** The [start, end] line span of the sentence a line belongs to: back while
+ *  the line continues the one above (lower-case start, the line above does
+ *  not end a sentence), forward while the next line continues this one;
+ *  bounded on each side. Headings and other sentences are never joined. */
+function sentenceSpan(lines: readonly string[], idx: number): [number, number] {
+  let start = idx;
+  while (start > 0 && idx - start < SENTENCE_MAX_LINES && CONTINUES.test(lines[start]) && !ENDS_SENTENCE.test(lines[start - 1])) start--;
+  let end = idx;
+  while (end < lines.length - 1 && end - idx < SENTENCE_MAX_LINES && !ENDS_SENTENCE.test(lines[end]) && CONTINUES.test(lines[end + 1])) end++;
+  return [start, end];
+}
+
 export function findAllMatchesWithHeaders(
   factPatterns: string[],
   pages: string[],
@@ -514,6 +536,28 @@ export function findAllMatchesWithHeaders(
       const plainLine = plainLines[lineIdx];
       if (guards.rejectWrappedFragments && /^\s*[a-z]/.test(line)) continue;
       if (lineIdx > 0 && notUnderLabel.some((re) => re.test(matchLine) || re.test(plainLine)) && namesABenefit(lines[lineIdx - 1])) continue;
+      // Owner decision 2026-11-22 (blocker 1): a line naming a fact that
+      // requires a restriction may state it on a wrapped line of the same
+      // sentence; read the whole sentence and cite exactly its lines.
+      if (
+        requires.length > 0 &&
+        regexes.some((re) => re.test(matchLine) || re.test(plainLine)) &&
+        !requires.some((re) => re.test(matchLine)) &&
+        !excludes.some((re) => re.test(matchLine))
+      ) {
+        const [start, end] = sentenceSpan(lines, lineIdx);
+        if (end > start) {
+          const sentence = matchLines.slice(start, end + 1).join(" ");
+          if (requires.some((re) => re.test(sentence)) && !excludes.some((re) => re.test(sentence))) {
+            const quote = lines.slice(start, end + 1).join("\n");
+            if (!results.some((r) => r.page === pageNum && r.quote === quote)) {
+              const display = lines.slice(start, end + 1).join(" ");
+              results.push({ page: pageNum, quote, display, qualifiers: extractQualifiers(display) });
+            }
+            continue;
+          }
+        }
+      }
       if (!regexes.some((re) => re.test(matchLine) || re.test(plainLine)) || !admissible(matchLine, next)) {
         // A bullet value whose own words do not name the fact belongs to it
         // only under a matching governing heading, which is cited with it.
