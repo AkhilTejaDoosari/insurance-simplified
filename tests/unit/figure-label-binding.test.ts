@@ -169,3 +169,16 @@ describe("a value range is one value", () => {
     expect(check("Deductible $50,000 to $1,000,000.", "Policy maximum $50,000 to $1,000,000 Deductible $100").ok).toBe(false);
   });
 });
+
+// Range review (52e22c2): one end of a range is never a value of its own.
+describe("range review: one end of a range", () => {
+  it.each([
+    ["Specialist $30.", "Primary care $30 - $300 Specialist"],
+    ["Deductible $5,000.", "Deductible $0 - $5,000"],
+  ])("rejects case %#", (answer, line) => {
+    expect(check(answer, line).ok).toBe(false);
+  });
+  it("the whole range verifies", () => {
+    expect(check("Deductible $0 - $5,000.", "Deductible $0 - $5,000")).toEqual({ ok: true });
+  });
+});

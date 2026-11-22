@@ -618,7 +618,8 @@ const allMatch = (words: readonly string[], allowed: readonly string[]) =>
 
 function boundUnder(sentence: string, line: string, plainAsValues: boolean): boolean {
   const L = parseValues(line, plainAsValues);
-  if (L.slots.length < 2) return true;
+  // A range counts as two values: one end of it is never a value of its own.
+  if (L.slots.length < 2 && !L.slots.some((s) => s.value.includes("-"))) return true;
   const lineHasLetterLabels = bindingTokens(line, plainAsValues).tokens.some((t) => "word" in t && /^[A-Z]$/.test(t.word));
   const S = parseValues(sentence, plainAsValues, lineHasLetterLabels);
   if (S.slots.length === 0) return true;
