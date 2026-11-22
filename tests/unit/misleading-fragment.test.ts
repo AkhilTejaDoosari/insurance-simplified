@@ -61,3 +61,20 @@ describe("controls: complete sentences and included continuations still verify",
     expect(check("Specialist $60", ["Primary care $30", "Specialist $60"])).toEqual({ ok: true });
   });
 });
+
+// Owner decision 2026-11-22 (6): the fragment rule looked at every page line
+// that merely ENDS with the cited line's text ("states a $0 Deductible" for a
+// cited heading line "Deductible"). A whole cited line matches only an equal
+// page line; only the quote's first line (which may start mid-line) matches
+// a line ending, at a word boundary. Every such occurrence must still pass.
+describe("the fragment rule checks occurrences of the cited line itself", () => {
+  const PAGE = ["Deductible for Eligible Medical Expenses", "Deductible", "• Per Illness or Injury Refer to the Declaration", "Copayment is not applicable if the Declaration states a $0 Deductible", "$5", "End."];
+  it("a cited heading line is not judged by another line ending in the same word", () => {
+    const quote = PAGE.slice(0, 3).join("\n");
+    expect(verifyAnswerClaims("Deductible\n• Per Illness or Injury Refer to the Declaration", [{ documentId: "doc-1", page: 1, quote }], [{ documentId: "doc-1", page: 1, quote: PAGE.join("\n") }], [{ documentId: "doc-1", pages: [PAGE.join("\n")] }])).toEqual({ ok: true });
+  });
+  it("control: the same line that is a real fragment is still rejected", () => {
+    const page = ["Header", "Emergency room: $250 copay", "after deductible is met", "Ambulance: $100"];
+    expect(check("Emergency room: $250 copay", page, [0, 1, 2]).ok).toBe(false);
+  });
+});

@@ -1008,14 +1008,48 @@ function followsDirectly(answerText: string, first: string, second: string): boo
   return ` ${wordRun(answerText)} `.includes(` ${wordRun(first)} ${wordRun(second)} `);
 }
 
-function continuationMissing(lineText: string, page: string | undefined, answerText: string, sentence: string): boolean {
+/** Owner decision 2026-11-22 (6): which page lines are occurrences of a
+ *  cited quote line. A whole line of the quote matches only an equal page
+ *  line; only a quote's first line (it may start mid-line) matches a line
+ *  ending, and its last line a line start, at a word boundary — never an
+ *  unrelated line that merely ends ("states a $0 Deductible") or starts
+ *  with the same words. */
+function quoteLineEdges(raw: string, quote: string, page: string | undefined): { first: boolean; last: boolean } {
+  const lines = quote.split("\n").filter((l) => l.trim());
+  const isFirst = lines[0] === raw;
+  const isLast = lines[lines.length - 1] === raw;
+  // Where the cited text sits on the page: an edge is partial only when the
+  // quote starts (ends) mid-line. Not placed exactly once → partial
+  // (fail-closed: more page lines are checked).
+  const ws = (t: string) => t.replace(/[ \t]+/g, " ");
+  const p = page === undefined ? "" : ws(page);
+  const q = ws(quote).trim();
+  const at = p.indexOf(q);
+  if (page === undefined || at < 0 || p.indexOf(q, at + 1) >= 0) return { first: isFirst, last: isLast };
+  const before = p.slice(0, at);
+  const after = p.slice(at + q.length);
+  return {
+    first: isFirst && !/(^|\n)\s*$/.test(before),
+    last: isLast && !/^\s*(\n|$)/.test(after),
+  };
+}
+function occursAsEnd(pageLine: string, tail: string, partial: boolean): boolean {
+  if (pageLine === tail) return true;
+  return partial && pageLine.endsWith(tail) && /\s$/.test(pageLine.slice(0, pageLine.length - tail.length));
+}
+function occursAsStart(pageLine: string, head: string, partial: boolean): boolean {
+  if (pageLine === head) return true;
+  return partial && pageLine.startsWith(head) && /^\s/.test(pageLine.slice(head.length));
+}
+
+function continuationMissing(lineText: string, page: string | undefined, answerText: string, sentence: string, partial = true): boolean {
   if (page === undefined) return false;
   const ws = (s: string) => s.replace(/\s+/g, " ").trim();
   const tail = ws(lineText);
   if (!tail) return false;
   const pageLines = page.split("\n").map(ws).filter(Boolean);
   for (let i = 0; i < pageLines.length; i++) {
-    if (!pageLines[i].endsWith(tail)) continue;
+    if (!occursAsEnd(pageLines[i], tail, partial)) continue;
     const parts: string[] = [];
     for (let j = i + 1; j < pageLines.length && parts.length < 3 && continuesOnto(pageLines[j - 1], pageLines[j]); j++) {
       parts.push(pageLines[j]);
@@ -1032,14 +1066,14 @@ function continuationMissing(lineText: string, page: string | undefined, answerT
  *  sentence and runs on into it). It covers a sentence only when the answer
  *  also states every word and figure of that sentence's start (from the
  *  last sentence end, at most three lines back). */
-function precedingMissing(lineText: string, page: string | undefined, answerText: string, sentence: string): boolean {
+function precedingMissing(lineText: string, page: string | undefined, answerText: string, sentence: string, partial = true): boolean {
   if (page === undefined) return false;
   const ws = (s: string) => s.replace(/\s+/g, " ").trim();
   const head = ws(lineText);
   if (!head) return false;
   const pageLines = page.split("\n").map(ws).filter(Boolean);
   for (let i = 1; i < pageLines.length; i++) {
-    if (!pageLines[i].startsWith(head)) continue;
+    if (!occursAsStart(pageLines[i], head, partial)) continue;
     const parts: string[] = [];
     for (let j = i; j > 0 && parts.length < 3 && continuesOnto(pageLines[j - 1], pageLines[j], false, pageLines[j - 2]); j--) {
       const prev = pageLines[j - 1];
@@ -1104,9 +1138,9 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
   for (const [qi, quote] of canonicalQuotes.entries()) {
     const fragment = (l: string) => {
       const raw = clauseReachesLineEnd(l, quote);
-      if (raw !== undefined && continuationMissing(raw, quotePages[qi], answerText, sentence)) return true;
+      if (raw !== undefined && continuationMissing(raw, quotePages[qi], answerText, sentence, quoteLineEdges(raw, quote, quotePages[qi]).first)) return true;
       const start = clauseStartsLine(l, quote);
-      return start !== undefined && precedingMissing(start, quotePages[qi], answerText, sentence);
+      return start !== undefined && precedingMissing(start, quotePages[qi], answerText, sentence, quoteLineEdges(start, quote, quotePages[qi]).last);
     };
     // Third round (2): a figure sentence is checked against a line that holds
     // its figures (the first word-covering line may be a sibling row).
@@ -1156,8 +1190,8 @@ function uncoveredReason(sentence: string, canonicalQuotes: string[], quotePages
   const whole = bound.filter(({ l, q, qi }) => {
     const raw = clauseReachesLineEnd(l, q);
     const start = clauseStartsLine(l, q);
-    return (raw === undefined || !continuationMissing(raw, quotePages[qi], answerText, sentence)) &&
-      (start === undefined || !precedingMissing(start, quotePages[qi], answerText, sentence));
+    return (raw === undefined || !continuationMissing(raw, quotePages[qi], answerText, sentence, quoteLineEdges(raw, q, quotePages[qi]).first)) &&
+      (start === undefined || !precedingMissing(start, quotePages[qi], answerText, sentence, quoteLineEdges(start, q, quotePages[qi]).last));
   });
   return whole.length === 0 ? "wrapped-fragment" : "figure-not-in-covering-line";
 }
