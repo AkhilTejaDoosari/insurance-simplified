@@ -10,12 +10,13 @@ services:
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_MODEL=${LLM_MODEL:-default}
-      # Embeddings for semantic retrieval + pgvector writes (required in
-      # production — resolves by Docker service name to the private ollama
-      # service below; lexical fallback only when unset)
-      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-http://ollama:11434}
+      # Embeddings for semantic retrieval + pgvector writes (D-012: Cloudflare
+      # Workers AI, OpenAI-compatible base URL
+      # https://api.cloudflare.com/client/v4/accounts/<account id>/ai/v1;
+      # 1024 dims). No local default: unset → logged keyword fallback.
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-}
       - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-qwen3-embedding:0.6b}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-@cf/qwen/qwen3-embedding-0.6b}
       # Supabase durability actually used by the app process
       - SUPABASE_URL=${SUPABASE_URL:-}
       - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY:-}
@@ -25,24 +26,9 @@ services:
       # runtime code never reads them. No NEXT_PUBLIC_* vars: the app
       # has no browser Supabase client. Never commit values.
     restart: unless-stopped
-    depends_on:
-      - ollama
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3333/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
-
-  # Private embedding provider: 1024-dim qwen3-embedding:0.6b served over
-  # the app Docker network only. No ports published — not reachable from
-  # the host, Caddy, or the internet.
-  # First boot (operator, once): docker compose exec ollama ollama pull qwen3-embedding:0.6b
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ollama-models:/root/.ollama
-    restart: unless-stopped
-
-volumes:
-  ollama-models:

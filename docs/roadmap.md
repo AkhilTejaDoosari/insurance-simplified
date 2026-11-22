@@ -32,7 +32,7 @@ Tested · Verified). Update this file at every milestone close.
 | Plan grouping across documents | Not started | Each document treated as its own plan |
 | OCR | Not started | Scanned PDFs rejected |
 | Direct signed upload (A-033) | Not started | Bytes pass through `/api/upload` |
-| Cloudflare production embeddings (D-012) | Not started | OpenAI-compatible adapter; Ollama locally |
+| Cloudflare production embeddings (D-012) | Partial | Unchanged OpenAI-compatible adapter (`app/lib/rag/embeddings.ts`) against `@cf/qwen/qwen3-embedding-0.6b`: 1024 dims, cosine ≥ 0.9994 to 40 stored vectors (local probe, 2026-11-22); no automated test or deployment config yet. No local runtime (`scripts/check-no-local-inference.sh`) |
 | `/api/health`, `/api/ready` | Implemented | Container port aligned at 3333 (M4 task 1; `tests/contract/container-port.test.ts`) |
 | CI | Tested (GitHub) | `.github/workflows/ci.yml`: private-data guard, unit/contract/integration, types, build, e2e against a local Supabase stack — green in CI run [44615419523](https://github.com/AkhilTejaDoosari/insurance-simplified/actions/runs/44615419523) at `aaba221` |
 | Production deployment | Not started | Never deployed |

@@ -4,7 +4,7 @@
 //
 // Structured output (EC-9, defect "No schema enforcement on LLM output"):
 // a caller that passes `schema` gets a strict `json_schema` response format
-// (OpenAI-compatible; Ollama and other local runtimes honour the same field)
+// (OpenAI-compatible endpoints honour the same field)
 // AND a runtime check of the parsed output against that schema. Off-schema
 // output is rejected as a whole — never repaired or partially used.
 
@@ -66,8 +66,8 @@ export async function completeJson(
     ? { type: "json_schema", json_schema: { name: opts.schema.name, strict: true, schema: opts.schema.schema } }
     : { type: "json_object" };
   // Opt-in reasoning control for providers that accept the OpenAI-style
-  // field (owner decision 2026-11-21: local qwen3 via Ollama, "none" turns
-  // its reasoning step off). Unset: the body is unchanged. Closed set only.
+  // field ("none" turns a reasoning model's reasoning step off; owner
+  // decision 2026-11-21). Unset: the body is unchanged. Closed set only.
   const reasoningEffort = process.env.LLM_REASONING_EFFORT?.trim();
   if (reasoningEffort && !REASONING_EFFORTS.has(reasoningEffort)) {
     throw new RangeError("LLM_REASONING_EFFORT must be one of none, minimal, low, medium, high");

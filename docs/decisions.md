@@ -162,7 +162,11 @@ pgvector = derived semantic index
 
 **Decision:** production embeddings use Cloudflare Workers AI with the approved Qwen3 embedding model and 1024-dimension contract.
 
-Local development may use Ollama behind the same adapter.
+No local model runtime in any environment (owner decision 2026-11-21,
+cloud-only inference; replaces "local development may use Ollama"). The
+Cloudflare model `@cf/qwen/qwen3-embedding-0.6b` matched the stored
+`qwen3-embedding:0.6b` vectors (cosine ≥ 0.99) before the switch, so stored
+vectors stay valid.
 
 **Revisit when:** provider quality, availability, model availability, privacy, or cost changes materially.
 

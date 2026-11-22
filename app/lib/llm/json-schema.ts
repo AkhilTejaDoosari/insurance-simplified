@@ -1,7 +1,7 @@
 // Runtime validator for the JSON-Schema subset used to constrain model output
 // (strict structured outputs). The same schema object is sent to the provider
-// (`response_format: json_schema`, honoured by OpenAI-compatible endpoints and
-// local runtimes such as Ollama) and checked here on every response: a
+// (`response_format: json_schema`, honoured by OpenAI-compatible endpoints)
+// and checked here on every response: a
 // provider that ignores the constraint cannot smuggle an off-schema payload
 // past the client. No dependency; no coercion; any violation rejects.
 //
