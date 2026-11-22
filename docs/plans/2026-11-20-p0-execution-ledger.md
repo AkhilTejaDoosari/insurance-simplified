@@ -835,6 +835,22 @@ Gates at `18d0caa`: tsc clean; npm test 1,866/22 skipped; real-PDF 1,988
 passed / 1 failed (documented missing-brochure gap) / 42 skipped; build 0;
 e2e 57/1 skipped. At `5d5788a`: full suite 1,868 passed on Node 22.
 
+## Pre-Phase-5 items 1–5 (2026-11-22)
+
+Resumed at `610a2da`; nothing was done after the usage-limit reset.
+
+| Item | Commit | Result |
+| --- | --- | --- |
+| 1 Cloudflare embeddings | probe (outside git); `62e6ba5` | `@cf/qwen/qwen3-embedding-0.6b`, 1024 dims, unit vectors; cosine to 40 stored `qwen3-embedding:0.6b` vectors min 0.99946 / median 0.99965 → no mixed-vector risk. Cloudflare rejects some 32-text batches (HTTP 400, 3030 "input too big"); the adapter now halves a rejected batch (`embeddings-batch-split.test.ts`). `.env.local` names the key `CLOUDFARE_API_KEY` (typo) and has no `EMBEDDING_BASE_URL`/`EMBEDDING_API_KEY`; probes mapped them in the child process only. |
+| 2 Swapped figures (BLOCKING) | `a376299`, `19a03fc`, `1c61cf5`, `b04c22b`, `e3897f4` | Figure–label binding in `coveringQuote`. Four review rounds found 9 + 10 + 5 + 1 further swaps; all are tests (`figure-label-binding.test.ts`, 72 cases). Reviewer final verdict: requirement met. Recorded exceptions: an all-lower-case line ("plan a $10 plan b $30"); label-first inheritance drops a column heading ("Specialist $500"); fail-closed refusals on ambiguous lines ("… $300 after deductible", "Plan pays 80% … Plan pays 80%"). |
+| 3 Maternity / geographic diagnosis | `18eefc1` | Not retrieval. Grid-first: maternity/ER/coinsurance rows are NEEDS VERIFICATION (correct fallback); no geographic concept and the row is NOT STATED. Model path: the prompt asked for a plan-label line (filename words) even with one document — uncoverable, rejected; fixed in the prompt. Geographic: home-country lines were in the prompt 3/3 runs and the model refused; a relevance rule was added. Maternity still rejected: the model joins a wrapped multi-line figure sentence (a verifier rule, not changed — owner decision). |
+| 4 Decision 7 | record outside git | 83 NOT STATED rows, each with its pages; 13 have fact vocabulary on a page, 12 honest on review, **1 defect: doc 02 geographic-restrictions is stated (p4, p9 item 12) but NOT STATED** (restriction on a wrapped line / under the exclusions heading). |
+| 5 Ollama cleanup | `681c9e2`, `19a03fc` | Removed from docker-compose, architecture, roadmap; D-012 amended (rule change per owner decision). `scripts/check-no-local-inference.sh` in CI (fails on hit and on grep error). |
+
+Eight questions × five documents (Nemotron, Cloudflare embeddings, ≥2 s between provider calls of each kind, < 30/min). Final commit `e3897f4`: doc 01 5/8 verified, doc 02 5/8, doc 03 3/8. Docs 04/05 at `681c9e2` (before the binding rework): 3/8 each; final-commit run not completed.
+
+Gates at `e3897f4`: `tsc` clean; `npm test` 1,946 passed / 22 skipped; real-PDF 2,068 passed / 1 failed (documented missing-brochure gap) / 42 skipped; build 0; guard ok. `test:e2e` 57 passed / 1 skipped at `62e6ba5` (verifier-only changes since).
+
 ## Next atomic step
 
-Owner review. Phase 5 is NO-GO.
+Owner decisions (see the milestone report). Phase 5 is NO-GO.
