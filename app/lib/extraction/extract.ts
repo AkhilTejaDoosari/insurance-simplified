@@ -484,9 +484,11 @@ const SENTENCE_MAX_LINES = 3;
  *  bounded on each side. Headings and other sentences are never joined. */
 function sentenceSpan(lines: readonly string[], idx: number): [number, number] {
   let start = idx;
-  while (start > 0 && idx - start < SENTENCE_MAX_LINES && CONTINUES.test(lines[start]) && !ENDS_SENTENCE.test(lines[start - 1])) start--;
+  // An ALL-CAPS line is a heading, never the start of the sentence below.
+  const heading = (line: string) => /[A-Z]/.test(line) && !/[a-z]/.test(line);
+  while (start > 0 && idx - start < SENTENCE_MAX_LINES && CONTINUES.test(lines[start]) && !ENDS_SENTENCE.test(lines[start - 1]) && !heading(lines[start - 1])) start--;
   let end = idx;
-  while (end < lines.length - 1 && end - idx < SENTENCE_MAX_LINES && !ENDS_SENTENCE.test(lines[end]) && CONTINUES.test(lines[end + 1])) end++;
+  while (end < lines.length - 1 && end - idx < SENTENCE_MAX_LINES && !heading(lines[end]) && !ENDS_SENTENCE.test(lines[end]) && CONTINUES.test(lines[end + 1])) end++;
   return [start, end];
 }
 
@@ -552,7 +554,13 @@ export function findAllMatchesWithHeaders(
             const quote = lines.slice(start, end + 1).join("\n");
             if (!results.some((r) => r.page === pageNum && r.quote === quote)) {
               const display = lines.slice(start, end + 1).join(" ");
-              results.push({ page: pageNum, quote, display, qualifiers: extractQualifiers(display) });
+              // Review S6: a footnote that decided the line is cited with it.
+              const notes = footnoted[lineIdx].footnotes.map((j) => lines[j]);
+              results.push({
+                page: pageNum, quote, display, qualifiers: extractQualifiers(display),
+                ...(notes.length ? { notes } : {}),
+                ...(footnoted[lineIdx].unresolved ? { unresolvedFootnote: true } : {}),
+              });
             }
             continue;
           }

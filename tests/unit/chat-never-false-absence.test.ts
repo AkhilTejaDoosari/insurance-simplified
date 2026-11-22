@@ -68,3 +68,14 @@ describe("a model refusal with useful retrieval is never 'not in your documents'
     expect(completeJson).not.toHaveBeenCalled();
   });
 });
+
+// Review (2026-11-22): after a model refusal, unrelated top passages are
+// never shown; with none relevant it is "cannot be confirmed" with none.
+describe("review: no unrelated passages after a model refusal", () => {
+  it("off-topic question, model refuses → cannot be confirmed, no passages, never the plain refusal", async () => {
+    semanticOn();
+    vi.mocked(completeJson).mockResolvedValueOnce({ cantAnswer: true, answerText: null, citations: null } as never);
+    const r = await answerViaLlm(DOCS, "What is the capital of France?");
+    expect(r).toEqual({ schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT });
+  });
+});

@@ -99,3 +99,41 @@ describe("plan-name header lines are stripped server-side", () => {
     expect(r.kind).toBe("refusal");
   });
 });
+
+// Review of 3c51c19 (2026-11-22): B3 header stripping removed condition lines.
+describe("review: only a line that is exactly a plan name is stripped", () => {
+  it.each([
+    "Acme Student Plus members if pre-authorised",
+    "Acme Student Plus: never",
+    "Acme Student Plus without waiting period",
+    "The Acme Student Plus applies outside the home country",
+  ])("keeps %s (so the unverifiable line rejects the answer)", async (line) => {
+    model({ cantAnswer: false, answerText: `Deductible per policy period $500\n${line}`, citations: [{ passageId: "P1", fromLine: 4, toLine: 4 }] });
+    const r = await answerViaLlm(DOCS, "What is the deductible?", { planNames: ["Acme Student Plus"] });
+    expect(r.kind).toBe("refusal");
+  });
+  it("strips 'The Acme Student Plus:' (exact name, article, colon)", async () => {
+    model({ cantAnswer: false, answerText: "The Acme Student Plus:\nDeductible per policy period $500", citations: [{ passageId: "P1", fromLine: 4, toLine: 4 }] });
+    const r = await answerViaLlm(DOCS, "What is the deductible?", { planNames: ["Acme Student Plus"] });
+    expect(r.kind === "answer" && r.answerText).toBe("Deductible per policy period $500");
+  });
+  it("line numbers must be numbers (true/'1' rejected)", async () => {
+    model({ cantAnswer: false, answerText: "Deductible per policy period $500", citations: [{ passageId: "P1", fromLine: true, toLine: "4" }] });
+    const r = await answerViaLlm(DOCS, "What is the deductible?");
+    expect(r.kind).toBe("refusal");
+  });
+});
+
+// Review (2026-11-22): a passage cut for the prompt budget is cut on a line
+// boundary, so a cited line is never half a line.
+describe("review: budget truncation keeps whole lines", () => {
+  it("never cuts inside a line", async () => {
+    const { MAX_CONTEXT_CHARS } = await import("@/app/lib/rag/answer");
+    const line = "Benefit line with an exception except when hospitalised; " + "x".repeat(200);
+    const quote = Array.from({ length: 400 }, () => line).join("\n");
+    const prompt = buildRetrievalPrompt([{ documentId: "doc-1", filename: "a.pdf", pageCount: 1, pages: [quote] }], [{ documentId: "doc-1", page: 1, chunkId: "c", quote, score: 1 }], "q");
+    expect(prompt.length).toBeLessThan(MAX_CONTEXT_CHARS + 6000);
+    const numbered = prompt.split("\n").filter((l) => /^\d+\| /.test(l));
+    for (const l of numbered) expect(l.replace(/^\d+\| /, "")).toBe(line);
+  });
+});

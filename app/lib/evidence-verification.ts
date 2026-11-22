@@ -675,13 +675,24 @@ function verbatimSpanLines(sentence: string, quote: string): string | undefined 
     for (const ch of line) { joined += ch; lineOf.push(i); }
   });
   const isWordChar = (c: string | undefined) => c !== undefined && /[A-Za-z0-9]/.test(c);
+  // Review B1: only a sentence wrapped onto continuation lines may be joined
+  // — each later line opens in lower case (not a list item) and the line
+  // above does not end a sentence; a new table row never continues one.
+  const listItem = /^\s*\(?(?:\d+|[a-z]|[ivxlc]+)[).]\s/i;
+  const continues = (k: number) =>
+    !listItem.test(lines[k]) && /^\s*(?:[a-z]|\([a-z])/.test(lines[k]) && !/[.;:!?]["'’”)\]]*\s*$/.test(lines[k - 1]);
   for (let at = joined.indexOf(target); at >= 0; at = joined.indexOf(target, at + 1)) {
     const end = at + target.length;
     if (isWordChar(joined[at - 1]) && isWordChar(joined[at])) continue;
     if (isWordChar(joined[end - 1]) && isWordChar(joined[end])) continue;
+    // Review B2: never start or end inside a number ("$1,000" in "$1,000,000").
+    if (/^[.,]\d/.test(joined.slice(end)) || /\d[.,]$/.test(joined.slice(0, at))) continue;
     const first = lineOf[at];
     const last = lineOf[end - 1];
     if (first === last) continue; // one line: the line rule already decided
+    let wrapped = true;
+    for (let k = first + 1; k <= last; k++) if (lines[k].trim() && !continues(k)) wrapped = false;
+    if (!wrapped) continue;
     return lines.slice(first, last + 1).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean).join(" ");
   }
   return undefined;

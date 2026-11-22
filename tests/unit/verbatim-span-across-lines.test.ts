@@ -54,3 +54,18 @@ describe("a span cannot drop a negation from the lines it spans", () => {
     expect(check("Benefits are not payable for dental implants $500 per year", quote)).toEqual({ ok: true });
   });
 });
+
+// Review of af2aa82 (2026-11-22): B1 a span stitched one table row's tail to
+// the next row's head; B2 a number cut at a thousands comma matched.
+describe("review: a span joins only wrapped continuation lines, never rows or partial numbers", () => {
+  it("rejects the tail of one row joined to the head of the next", () => {
+    expect(check("$30 copay Emergency room.", "Specialist visit\n$30 copay\nEmergency room\n$300 copay").ok).toBe(false);
+    expect(check("$30 copay Emergency room.", "$30 copay\nEmergency room").ok).toBe(false);
+  });
+  it("rejects a number cut at a thousands separator", () => {
+    expect(check("Annual maximum $1,000.", "Annual\nmaximum $1,000,000 per year and $1,000 per visit").ok).toBe(false);
+  });
+  it("a sentence wrapped onto lower-case continuation lines still verifies", () => {
+    expect(check(JOINED, WRAPPED)).toEqual({ ok: true });
+  });
+});

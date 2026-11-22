@@ -194,11 +194,20 @@ export function uncertainOutcome(
     : { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
 }
 
+/** General insurance vocabulary: a question topic and the words documents
+ *  use for it (owner decision 2026-11-22: a subject in other words is
+ *  relevant). Used only to choose which retrieved passages to show. */
+const TOPIC_WORDS: readonly [RegExp, string][] = [
+  [/\b(?:geographic\w*|location|region|area|territor\w*)\b/i, "country countries residence territory worldwide abroad outside"],
+  [/\b(?:maternity|pregnan\w*)\b/i, "maternity pregnancy childbirth prenatal newborn"],
+];
+
 /** Owner decision 2026-11-22 (blocker 2): once the model has been consulted
  *  on useful passages, the outcome is never "not in your documents". The
- *  passages shown are, in order: those the model cited (verbatim, by
- *  reference), those stating a concept of the question, then the top
- *  retrieved evidence passages (whole lines, at most MAX_WHOLE_PASSAGE). */
+ *  passages shown are those the model cited (verbatim, by reference), then
+ *  those stating a concept of the question (topic vocabulary included).
+ *  Review: no unrelated top-N passages; with none relevant the outcome is
+ *  "cannot be confirmed" without passages. */
 export function uncertainAfterModel(
   cited: readonly ChatCitation[],
   passages: readonly { documentId: string; page: number; quote: string }[],
@@ -211,20 +220,8 @@ export function uncertainAfterModel(
     out.push(c);
   };
   cited.forEach(add);
-  relevantPassages(passages, question).forEach(add);
-  if (out.length === 0) {
-    for (const p of passages) {
-      const lines = p.quote.split("\n");
-      if (isContentsPassage(lines)) continue;
-      let quote = "";
-      for (const line of lines) {
-        const next = quote ? `${quote}\n${line}` : line;
-        if (quote && next.length > MAX_WHOLE_PASSAGE) break;
-        quote = next;
-      }
-      if (quote.trim()) add({ documentId: p.documentId, page: p.page, quote });
-    }
-  }
+  const expanded = TOPIC_WORDS.reduce((q, [re, words]) => (re.test(question) ? `${q} ${words}` : q), question);
+  relevantPassages(passages, expanded).forEach(add);
   return out.length > 0
     ? { schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT, citations: out }
     : { schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT };
@@ -682,7 +679,16 @@ export function buildRetrievalContext(
   // truncated quote is still a prefix — an exact slice — of the page text).
   if (docBlocks.length === 1 && totalChars > MAX_CONTEXT_CHARS) {
     const limit = Math.max(1, Math.floor(MAX_CONTEXT_CHARS / docBlocks[0].items.length));
-    docBlocks[0].items = docBlocks[0].items.map((it) => ({ ...it, quote: it.quote.substring(0, limit) }));
+    // Review: cut on line boundaries — a half line could drop its "except".
+    docBlocks[0].items = docBlocks[0].items.map((it) => {
+      const lines = it.quote.split("\n");
+      let quote = lines[0];
+      for (const line of lines.slice(1)) {
+        if (quote.length + 1 + line.length > limit) break;
+        quote += `\n${line}`;
+      }
+      return { ...it, quote };
+    });
   }
 
   const refs = new Map<string, PassageRef>();
@@ -712,8 +718,9 @@ export function resolveCitationRefs(raw: unknown, refs: Map<string, PassageRef>)
   const out: ChatCitation[] = [];
   for (const c of raw as Array<Record<string, unknown>>) {
     const ref = refs.get(String(c?.passageId ?? ""));
-    const from = Number(c?.fromLine);
-    const to = Number(c?.toLine);
+    // Strict numbers (review: defence in depth behind the schema check).
+    const from = typeof c?.fromLine === "number" ? c.fromLine : NaN;
+    const to = typeof c?.toLine === "number" ? c.toLine : NaN;
     if (!ref || !Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to > ref.lines.length) return null;
     const quote = ref.lines.slice(from - 1, to).join("\n");
     if (!quote.trim()) return null;
@@ -724,24 +731,19 @@ export function resolveCitationRefs(raw: unknown, refs: Map<string, PassageRef>)
   return out;
 }
 
-/** Coverage / scoping wording: a line stating it is never a header. */
-const HEADER_CLAIM = /\b(?:covered|covers?|not|no|excluded|exclud\w*|except|unless|only|waived?|included|pays?|payable|limited|maximum|deductible|copay\w*|coinsurance)\b/i;
-
-/** Owner decision 2026-11-22: strip plan-name header lines server-side. A
- *  line is a header when it names a verified in-scope plan and states no
- *  figure and no coverage wording; it is removed, never rewritten. */
+/** Owner decision 2026-11-22: strip plan-name header lines server-side.
+ *  Review B3: a line is a header only when it is exactly a verified plan
+ *  name — an optional leading "The", parenthetical codes and trailing
+ *  punctuation aside. Anything else on the line keeps it (and the
+ *  unverifiable line then rejects the answer); lines are removed, never
+ *  rewritten. */
 export function stripPlanHeaders(answerText: string, planNames: readonly string[]): string {
   const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const names = planNames.map(norm).filter((n) => n.length >= 3);
-  if (names.length === 0) return answerText;
+  const names = new Set(planNames.map(norm).filter((n) => n.length >= 3));
+  if (names.size === 0) return answerText;
   return answerText
     .split("\n")
-    .filter((line) => {
-      const l = norm(line);
-      if (!l || /\d/.test(line.replace(/\([^()]*\)/g, "")) || HEADER_CLAIM.test(line)) return true;
-      if (l.split(" ").length > 12) return true;
-      return !names.some((n) => ` ${l} `.includes(` ${n} `));
-    })
+    .filter((line) => !names.has(norm(line.replace(/\([^()]*\)/g, " ")).replace(/^the /, "")))
     .join("\n")
     .trim();
 }
@@ -869,7 +871,10 @@ export async function answerViaLlm(
     throw new Error("Invalid chat response: answerText and citations are required");
   }
   const citations = resolveCitationRefs(raw.citations, refs);
-  const answerText = stripPlanHeaders(raw.answerText, opts.planNames ?? []);
+  // Headers are stripped only in a one-document answer; in a comparison the
+  // plan line keeps attribution (and must verify like any other line).
+  const oneDocument = !!citations && new Set(citations.map((c) => c.documentId)).size === 1;
+  const answerText = oneDocument ? stripPlanHeaders(raw.answerText, opts.planNames ?? []) : raw.answerText.trim();
   if (!citations || !answerText) {
     console.warn(`[chat-refusal] stage=citation-ref category=${citations ? "empty-after-header-strip" : "bad-reference"}`);
     return uncertainAfterModel(citations ?? [], passages, question);

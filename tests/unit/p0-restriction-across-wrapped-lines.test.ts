@@ -70,3 +70,12 @@ describe("enumerated items are separate sentences", () => {
     expect(row("geographic-restrictions", [a, b].join("\n")).verdict).toBe("NOT STATED");
   });
 });
+
+// Review (2026-11-22): a heading without a colon is never joined to the
+// lower-case line below it, in either direction.
+describe("review: headings are not sentences", () => {
+  it("HOME COUNTRY COVERAGE / excluded while visiting → not a restriction from the heading", () => {
+    const r = row("geographic-restrictions", ["HOME COUNTRY COVERAGE", "excluded while visiting relatives."].join("\n"));
+    for (const v of r.values) expect(v.evidence[0].quote).not.toContain("HOME COUNTRY COVERAGE");
+  });
+});
