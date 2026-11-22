@@ -33,7 +33,8 @@ Browser ──HTTPS──► Next.js app (Docker, Google Cloud Run, stateless)
 
 Inference is cloud-only in every environment (owner decision 2026-11-21):
 embeddings from Cloudflare Workers AI (D-012) and generation through the LLM
-adapter; no local model runtime. Coding tools (Claude Code, OpenCode, …) are never runtime components.
+adapter; no local model runtime.
+Coding tools (Claude Code, OpenCode, …) are never runtime components.
 
 **Not V1 components** (D-016, D-017): Redis, Kafka, queues, separate workers,
 Kubernetes, Pinecone, Qdrant, Milvus, Weaviate, FAISS, a second application

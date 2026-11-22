@@ -56,3 +56,33 @@ describe("controls: a figure stated with its own label still verifies", () => {
     expect(check(answer, line)).toEqual({ ok: true });
   });
 });
+
+// Independent review of a376299 (2026-11-22): swaps that still verified.
+describe("review: swaps across table separators, figure-first lines, label numbers, short labels", () => {
+  it.each([
+    ["Primary care $300.", "Primary care | $30 | Specialist | $300"],
+    ["Primary care $300.", "Primary care / $30 / Specialist / $300"],
+    ["Primary care $300.", "Primary care\t$30\tSpecialist\t$300"],
+    ["$300 for primary care.", "$30 for primary care $300 for specialists"],
+    ["Tier 1 drugs $40.", "Tier 1 drugs $10 Tier 2 drugs $40"],
+    ["Tier 2 drugs $10.", "Tier 1 drugs $10 Tier 2 drugs $40"],
+    ["ER visit $30.", "Office visit $30 ER visit $300"],
+    ["Primary care\n$300.", "Primary care $30 Specialist $300"],
+    ["Emergency room $300.", "Primary care $30 Specialist $300 Emergency room"],
+    ["Out-of-pocket maximum $2,000 per person.", "Out-of-pocket maximum $1,000 per person $2,000 per family"],
+  ])("rejects case %#", (answer, line) => {
+    expect(check(answer, line).ok).toBe(false);
+  });
+
+  it.each([
+    ["$30 for primary care.", "$30 for primary care $300 for specialists"],
+    ["Specialist $300.", "Primary care | $30 | Specialist | $300"],
+    ["Tier 2 drugs $40.", "Tier 1 drugs $10 Tier 2 drugs $40"],
+    ["ER visit $300.", "Office visit $30 ER visit $300"],
+    ["Out-of-pocket maximum $2,000 per family.", "Out-of-pocket maximum $1,000 per person $2,000 per family"],
+    ["Primary care $30 Specialist $300 Emergency room.", "Primary care $30 Specialist $300 Emergency room"],
+    ["Coinsurance out-of-network2 70% of usual & customary", "Coinsurance out-of-network2 70% of usual & customary"],
+  ])("verifies case %#", (answer, line) => {
+    expect(check(answer, line)).toEqual({ ok: true });
+  });
+});

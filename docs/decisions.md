@@ -166,7 +166,8 @@ No local model runtime in any environment (owner decision 2026-11-21,
 cloud-only inference; replaces "local development may use Ollama"). The
 Cloudflare model `@cf/qwen/qwen3-embedding-0.6b` matched the stored
 `qwen3-embedding:0.6b` vectors (cosine ≥ 0.99) before the switch, so stored
-vectors stay valid.
+vectors stay valid (owner-run local probe on 40 chunks, 2026-11-22; not an
+automated test).
 
 **Revisit when:** provider quality, availability, model availability, privacy, or cost changes materially.
 
