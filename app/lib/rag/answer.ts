@@ -21,7 +21,7 @@ import {
 import { retrievePersistentSemantic } from "@/app/lib/rag/persist-session";
 import type { RankedPassage } from "@/app/lib/rag/embeddings";
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
-import { completeCitations } from "@/app/lib/evidence/citation-unit";
+import { completeCitations, renderTableAnswer } from "@/app/lib/evidence/citation-unit";
 import {
   verifyAnswerClaims,
   type RejectionReason,
@@ -794,7 +794,7 @@ export function stripPlanHeaders(answerText: string, planNames: readonly string[
 /** Why a model-path turn ended in "cannot be confirmed" (diagnostics only;
  *  the text fields may quote the document and are never logged). */
 export interface ChatRejection {
-  stage: "contents-only" | "model-cannot-answer" | "bad-reference" | "empty-after-header-strip" | "verify" | "off-topic";
+  stage: "contents-only" | "model-cannot-answer" | "bad-reference" | "empty-after-header-strip" | "verify" | "off-topic" | "table-uncitable";
   reason?: RejectionReason;
   sentence?: string;
   sentenceIndex?: number;
@@ -943,6 +943,24 @@ export async function answerViaLlm(
     ? documents.filter((d) => d.documentId === citations[0].documentId).flatMap((d) => [d.filename, d.filename.replace(/\.pdf$/i, "")])
     : [];
   const answerText = oneDocument ? stripPlanHeaders(raw.answerText, [...(opts.planNames ?? []), ...fileLabels]) : raw.answerText.trim();
+  // Owner decision 2026-11-22 (5) rule 2: a citation that completes to a
+  // table row means the model selected that row; the server writes the
+  // answer from the row's own spans (label + column header + cell +
+  // governing footnote). The model's wording is not used for table values.
+  const table = referenced ? renderTableAnswer(documents, referenced) : undefined;
+  if (table === "uncitable") {
+    console.warn(`[chat-refusal] stage=table-render reason=uncitable`);
+    opts.onRejection?.({ stage: "table-uncitable", answerText: raw.answerText, citations: citations ?? [] });
+    return uncertainAfterModel(citations ?? [], passages, question);
+  }
+  if (table) {
+    if (!addressesQuestion(table.answerText, question)) {
+      console.warn(`[chat-refusal] stage=off-topic citationCount=${table.citations.length}`);
+      opts.onRejection?.({ stage: "off-topic", answerText: table.answerText, citations: table.citations });
+      return uncertainAfterModel([], passages, question);
+    }
+    return { schemaVersion: "v1", kind: "answer", answerText: table.answerText, citations: table.citations, grounding: "explicit" };
+  }
   if (!citations || !answerText) {
     console.warn(`[chat-refusal] stage=citation-ref category=${citations ? "empty-after-header-strip" : "bad-reference"}`);
     opts.onRejection?.({ stage: citations ? "empty-after-header-strip" : "bad-reference", answerText: raw.answerText });

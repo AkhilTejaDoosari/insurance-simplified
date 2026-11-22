@@ -121,3 +121,64 @@ export function completeCitations(documents: readonly UnitDocument[], citations:
   }
   return out;
 }
+
+/** Owner decision 2026-11-22 (5) rule 2: server-rendered table answers. When
+ *  a model citation completes to a table row (its quote overlaps a row's
+ *  label or cells), the model has only SELECTED that row: the server writes
+ *  each of its cells as "<row label> (<column header>): <cell>", plus the
+ *  row's governing footnotes, from the row's own spans — never the model's
+ *  wording. Every piece is cited verbatim (unique on its page, or by its
+ *  unique row line); a piece that cannot be cited fails the whole answer
+ *  closed (undefined result → the caller treats it as not answerable here).
+ *  Returns undefined when no citation touches a table. */
+export function renderTableAnswer(
+  documents: readonly UnitDocument[],
+  citations: readonly UnitCitation[],
+): { answerText: string; citations: UnitCitation[] } | undefined | "uncitable" {
+  const lines: string[] = [];
+  const cites: UnitCitation[] = [];
+  const cite = (documentId: string, page: number, quote: string) => {
+    if (!cites.some((c) => c.documentId === documentId && c.page === page && c.quote === quote)) cites.push({ documentId, page, quote });
+  };
+  let touched = false;
+  for (const c of citations) {
+    const doc = documents.find((d) => d.documentId === c.documentId);
+    const page = doc?.pages[c.page - 1];
+    if (!doc || typeof page !== "string") continue;
+    const start = page.indexOf(c.quote);
+    if (start < 0 || page.indexOf(c.quote, start + 1) >= 0) continue;
+    const end = start + c.quote.length;
+    for (const table of (doc.tables ?? []).filter((t) => t.page === c.page)) {
+      const hit = (t: LayoutText) => t.spans.some((s) => s.start < end && s.end > start);
+      for (const row of table.rows) {
+        if (!hit(row.label) && !row.cells.some(hit)) continue;
+        touched = true;
+        const label = ws(row.label.text);
+        const labelCites = textsOf(page, row.label);
+        if (!label || labelCites.length === 0) return "uncitable";
+        for (const cell of row.cells) {
+          const header = cell.columns.map((k) => ws(table.columns[k]?.text ?? "")).filter(Boolean).join(" / ");
+          const cellText = ws(cell.text);
+          const cellCites = textsOf(page, cell);
+          const headerCites = cell.columns.flatMap((k) => textsOf(page, table.columns[k]));
+          if (!header || !cellText || cellCites.length === 0 || headerCites.length === 0) return "uncitable";
+          const line = `${label} (${header}): ${cellText}`;
+          if (!lines.includes(line)) lines.push(line);
+          for (const q of [...labelCites, ...headerCites, ...cellCites]) cite(c.documentId, c.page, q);
+        }
+        // A governing footnote: its marker ends the row label or a cell.
+        for (const note of table.footnotes ?? []) {
+          const marked = [row.label.text, ...row.cells.map((x) => x.text)].some((t) => ws(t).endsWith(note.marker));
+          if (!marked) continue;
+          const noteCites = textsOf(page, note);
+          if (!note.complete || noteCites.length === 0) return "uncitable";
+          const text = ws(note.text);
+          if (!lines.includes(text)) lines.push(text);
+          for (const q of noteCites) cite(c.documentId, c.page, q);
+        }
+      }
+    }
+  }
+  if (!touched) return undefined;
+  return lines.length > 0 ? { answerText: lines.join("\n"), citations: cites } : "uncitable";
+}
