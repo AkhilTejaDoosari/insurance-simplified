@@ -656,6 +656,37 @@ function figuresBoundToLabels(sentence: string, line: string): boolean {
   return parseValues(line, false).plain || parseValues(sentence, false).plain ? boundUnder(sentence, line, true) : true;
 }
 
+/** The whole source lines (joined by one space) of the quote that contain
+ *  the sentence as a contiguous span, when the sentence equals that span
+ *  except for whitespace and line breaks — same case, words, figures and
+ *  punctuation, starting and ending on word boundaries. A trailing period
+ *  the answer adds to end its sentence is not part of the span. */
+function verbatimSpanLines(sentence: string, quote: string): string | undefined {
+  const target = sentence.replace(/\s+/g, " ").trim().replace(/(?<=[^.])\.$/, "");
+  if (!target) return undefined;
+  const lines = quote.split("\n");
+  // Joined text with each character mapped back to its line.
+  let joined = "";
+  const lineOf: number[] = [];
+  lines.forEach((raw, i) => {
+    const line = raw.replace(/\s+/g, " ").trim();
+    if (!line) return;
+    if (joined) { joined += " "; lineOf.push(i); }
+    for (const ch of line) { joined += ch; lineOf.push(i); }
+  });
+  const isWordChar = (c: string | undefined) => c !== undefined && /[A-Za-z0-9]/.test(c);
+  for (let at = joined.indexOf(target); at >= 0; at = joined.indexOf(target, at + 1)) {
+    const end = at + target.length;
+    if (isWordChar(joined[at - 1]) && isWordChar(joined[at])) continue;
+    if (isWordChar(joined[end - 1]) && isWordChar(joined[end])) continue;
+    const first = lineOf[at];
+    const last = lineOf[end - 1];
+    if (first === last) continue; // one line: the line rule already decided
+    return lines.slice(first, last + 1).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean).join(" ");
+  }
+  return undefined;
+}
+
 /** The cited quote that covers a sentence, or undefined. Review 2026-11-21
  *  (B1): coverage keeps meaning — the covering source line (or, failing
  *  that, the whole quote) must state exactly the sentence's negation,
@@ -677,6 +708,13 @@ function coveringQuote(sentence: string, canonicalQuotes: string[]): string | un
     // A sentence spread over several lines is covered by the whole quote
     // only when it states no figure.
     if (!statesFigure && tokensCovered(normSentence, quote) && sameMarkers(sentence, quote)) return quote;
+    // Owner decision 2026-11-22: a figure sentence that is the quote's own
+    // wording across line breaks — identical except whitespace — is covered
+    // by the whole lines it spans (figures stay bound to their labels).
+    if (statesFigure) {
+      const block = verbatimSpanLines(sentence, quote);
+      if (block !== undefined && sameMarkers(sentence, block) && figuresBoundToLabels(sentence, block)) return block;
+    }
   }
   return undefined;
 }
