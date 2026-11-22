@@ -78,3 +78,17 @@ describe("relevance needs the question's specific words, not a generic one", () 
     expect(r.kind).toBe("answer");
   });
 });
+
+// Follow-up review: short words matched by prefix ("out" → "outpatient"),
+// and one specific word was enough when the question named two.
+describe("follow-up: every specific word of the question (4+ letters)", () => {
+  it.each([
+    ["What is the out-of-pocket maximum?", "Outpatient surgery $500 copay."],
+    ["What is the ambulance copay out of network?", "In-network specialist copay $30."],
+    ["Is dental covered for children?", "Child vision exam $0."],
+  ])("%s → cannot be confirmed", async (question, answer) => {
+    vi.mocked(completeJson).mockImplementationOnce(answerCiting(answer, answer) as never);
+    const r = await answerViaLlm([{ ...DOCS[0], pages: [`${PAGE}\n${answer}`] }], question);
+    expect(r.kind).toBe("refusal");
+  });
+});

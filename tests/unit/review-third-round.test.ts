@@ -47,3 +47,19 @@ describe("S1: only lower-case function words continue a line", () => {
     ["Plan A Plan B Deductible $500", ["Plan A", "Plan B Deductible $500", "Plan A Deductible $250"]],
   ])("%s → rejected (rows not stitched)", (answer, page) => expect(check(answer, page)).toBe(false));
 });
+
+// Follow-up review of f299ff6: continuation lines that open with a figure or
+// a capitalised qualifier word were not treated as continuations.
+describe("follow-up: a figure or qualifier line continues an unfinished line", () => {
+  it.each([
+    ["Pre-existing conditions are covered.", ["Pre-existing conditions are covered", "50% of eligible expenses after 12 months.", "Ambulance $100"]],
+    ["Physiotherapy is covered", ["Physiotherapy is covered", "$500 maximum per year.", "Ambulance $100"]],
+    ["Dental is covered", ["Dental is covered", "Only for accidental injury.", "Ambulance $100"]],
+  ])("%s → rejected", (answer, page) => expect(check(answer, page)).toBe(false));
+  // The span path (which ACCEPTS answers) still joins a figure-led line only
+  // after an open phrase (fourth review, second round); the whole sentence
+  // above is therefore "cannot be confirmed" — fail-closed, not asserted here.
+  it("control: a figure row after a finished line is separate", () => {
+    expect(check("Ambulance $100 per trip.", ["Ambulance $100 per trip.", "$50 copay for each visit.", "Other"])).toBe(true);
+  });
+});

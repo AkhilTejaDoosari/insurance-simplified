@@ -209,14 +209,21 @@ const TOPIC_WORDS: readonly [RegExp, string][] = [
  *  S2: "ambulance copay" answered with "Specialist copay"). 5-letter stems. */
 const GENERIC_STEMS = new Set(["copay", "deduc", "coins", "benef", "limit", "maxim", "annua", "overa", "total", "amoun", "cost", "room", "visit", "servi", "charg", "expen", "pays", "pay", "polic", "insur", "plans", "condi", "exist", "pre", "rate", "per"]);
 
-/** The answer states a concept of the question (topic vocabulary included):
- *  one of its specific words when it has any, else one of its words. */
+/** The answer states a concept of the question. Specific words are the
+ *  question's non-generic words of 4+ letters (follow-up review: "out"
+ *  matched "outpatient"). Every specific word must appear in the answer
+ *  ("dental … children" is not answered by "Child vision"), except that a
+ *  question with topic vocabulary (geographic, maternity) is answered by
+ *  any of its words or that vocabulary. With no specific word, any of the
+ *  question's words. */
 export function addressesQuestion(answerText: string, question: string): boolean {
   const stems = conceptStems(question);
   const topic = TOPIC_WORDS.filter(([re]) => re.test(question)).flatMap(([, words]) => conceptStems(words));
-  const specific = [...stems.filter((st) => !GENERIC_STEMS.has(st)), ...topic];
-  const required = specific.length > 0 ? specific : stems;
-  return required.length === 0 || answerText.split("\n").some((line) => lineHasConcept(line, required));
+  const specific = stems.filter((st) => st.length >= 4 && !GENERIC_STEMS.has(st));
+  const has = (st: string) => answerText.split("\n").some((line) => lineHasConcept(line, [st]));
+  if (topic.length > 0) return [...specific, ...topic].some(has);
+  if (specific.length > 0) return specific.every(has);
+  return stems.length === 0 || stems.some(has);
 }
 
 /** Owner decision 2026-11-22 (blocker 2): once the model has been consulted

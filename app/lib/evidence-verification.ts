@@ -787,13 +787,24 @@ const ENDS_IN_FUNCTION_WORD = /\b(?:the|a|an|of|to|in|on|for|with|by|at|from|and
  *  sentence, at most three lines). Every occurrence on the page must pass;
  *  a line not found at the end of a page line is not a wrapped fragment. */
 const CONTINUATION_LIST_ITEM = /^\s*\(?(?:\d+|[a-z]|[ivxlc]+)[).]\s/i;
-const CONTINUATION_OPEN_PHRASE = /\b(?:up to|of|is|are|maximum|max|to|at|than|per|from|limit(?:ed to)?)\s*$/i;
 const lineEndsSentence = (l: string) => /[.;!?]["'’”)\]]*\s*$/.test(l);
-function continuesOnto(prev: string, next: string): boolean {
+// Follow-up review (third round): for the fragment rules (which only
+// REJECT), a line opening with any figure or with a qualifier word in any
+// case continues an unfinished line ("Physiotherapy is covered / $500
+// maximum per year.", "Dental is covered / Only for accidental injury.").
+// A figure opening: an amount, a percentage, or a number followed by a
+// lower-case word ("30 days"). A bare number before a capital ("1 Per
+// injury or sickness") is a footnote or list number, not a continuation.
+const FIGURE_OPENING = /^\s*(?:\$\s?\d|\d[\d,]*(?:\.\d+)?\s?%|\d[\d,]*(?:\.\d+)?\s+[a-z])/;
+const QUALIFIER_OPENING = /^\s*(?:only|except|excluding|unless|not|no|if|after|until|but|provided|however|subject to|limited to)\b/i;
+function continuesOnto(prev: string, next: string, forward = true): boolean {
+  // Backwards (the mirror rule) a figure or qualifier line under a heading
+  // or label is ordinary layout, not the middle of a sentence.
+  const widened = forward && (FIGURE_OPENING.test(next) || QUALIFIER_OPENING.test(next));
   return (
     !CONTINUATION_LIST_ITEM.test(next) &&
     !lineEndsSentence(prev) &&
-    (/^\s*(?:[a-z]|\([a-z])/.test(next) || (/^\s*\$?\d/.test(next) && CONTINUATION_OPEN_PHRASE.test(prev.trim())) || ENDS_IN_FUNCTION_WORD.test(prev))
+    (/^\s*(?:[a-z]|\([a-z])/.test(next) || widened || ENDS_IN_FUNCTION_WORD.test(prev))
   );
 }
 /** Words and figures (with "$"/"%"), lower case, punctuation as spaces. */
@@ -839,7 +850,7 @@ function precedingMissing(lineText: string, page: string | undefined, answerText
   for (let i = 1; i < pageLines.length; i++) {
     if (!pageLines[i].startsWith(head)) continue;
     const parts: string[] = [];
-    for (let j = i; j > 0 && parts.length < 3 && continuesOnto(pageLines[j - 1], pageLines[j]); j--) {
+    for (let j = i; j > 0 && parts.length < 3 && continuesOnto(pageLines[j - 1], pageLines[j], false); j--) {
       const prev = pageLines[j - 1];
       // Only the part of the line above after its last sentence end.
       const cut = Math.max(prev.lastIndexOf(". "), prev.lastIndexOf("; "), prev.lastIndexOf("? "), prev.lastIndexOf("! "));
@@ -924,10 +935,15 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
     // A sentence spread over several lines is covered by the whole quote
     // only when it states no figure (and the quote's last line is not a
     // fragment whose continuation the answer leaves out).
+    // Follow-up review: a sentence that one line already words (in order)
+    // but that failed a check on that line — a fragment, a marker, a
+    // figure — is never covered by the whole quote instead.
+    const wordedByOneLine = clausesOf(quote).some((l) => tokensCoveredInOrder(normSentence, l));
     const quoteLines = quote.split("\n").filter((l) => l.trim());
     const lastLine = quoteLines[quoteLines.length - 1] ?? "";
     if (
       !statesFigure &&
+      !wordedByOneLine &&
       tokensCoveredInOrder(normSentence, quote) &&
       sameMarkers(sentence, quote) &&
       !continuationMissing(lastLine, quotePages[qi], answerText, sentence) &&
