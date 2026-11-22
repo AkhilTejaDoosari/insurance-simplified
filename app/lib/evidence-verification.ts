@@ -661,18 +661,22 @@ function figuresBoundToLabels(sentence: string, line: string): boolean {
  *  except for whitespace and line breaks — same case, words, figures and
  *  punctuation, starting and ending on word boundaries. A trailing period
  *  the answer adds to end its sentence is not part of the span. */
-function verbatimSpanLines(sentence: string, quote: string): string | undefined {
+function verbatimSpanLines(sentence: string, quote: string, page?: string): string | undefined {
   const target = sentence.replace(/\s+/g, " ").trim().replace(/(?<=[^.])\.$/, "");
   if (!target) return undefined;
   const lines = quote.split("\n");
   // Joined text with each character mapped back to its line.
   let joined = "";
   const lineOf: number[] = [];
+  const lineStart = new Map<number, number>();
+  const lineEnd = new Map<number, number>();
   lines.forEach((raw, i) => {
     const line = raw.replace(/\s+/g, " ").trim();
     if (!line) return;
     if (joined) { joined += " "; lineOf.push(i); }
+    lineStart.set(i, joined.length);
     for (const ch of line) { joined += ch; lineOf.push(i); }
+    lineEnd.set(i, joined.length);
   });
   const isWordChar = (c: string | undefined) => c !== undefined && /[A-Za-z0-9]/.test(c);
   // Review B1: only a sentence wrapped onto continuation lines may be joined
@@ -693,9 +697,39 @@ function verbatimSpanLines(sentence: string, quote: string): string | undefined 
     let wrapped = true;
     for (let k = first + 1; k <= last; k++) if (lines[k].trim() && !continues(k)) wrapped = false;
     if (!wrapped) continue;
-    return lines.slice(first, last + 1).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean).join(" ");
+    // Third review (N1): the span must be a whole sentence on the PAGE — the
+    // model can cite exactly two lines of a table, so the cited quote alone
+    // cannot show that "$30 copay / emergency room" are two rows.
+    const startsSentence = at === lineStart.get(first) || /[.;:!?]["'’”)\]]*\s*$/.test(joined.slice(lineStart.get(first), at));
+    const endsSentence = end === lineEnd.get(last) || /[.;:!?]$/.test(joined.slice(at, end)) || /^\s*[.;:!?]/.test(joined.slice(end));
+    if (!startsSentence || !endsSentence) continue;
+    const spanned = lines.slice(first, last + 1).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
+    if (!wholeSentenceOnPage(spanned, at === lineStart.get(first), end === lineEnd.get(last), page)) continue;
+    return spanned.join(" ");
   }
   return undefined;
+}
+
+/** The spanned lines are one whole sentence on the page: the line before
+ *  them does not run on into the first, and the last does not run on into
+ *  the next (a following line opening in lower case or with a figure
+ *  continues the sentence or the row). Every occurrence on the page must
+ *  pass; a span not found on the page fails (fail-closed). */
+function wholeSentenceOnPage(spanned: string[], fromLineStart: boolean, toLineEnd: boolean, page: string | undefined): boolean {
+  if (page === undefined) return false;
+  const pageLines = page.split("\n").map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const ends = (l: string) => /[.;:!?]["'’”)\]]*$/.test(l);
+  const runsOn = (l: string) => /^(?:[a-z]|\([a-z]|\$?\d)/.test(l);
+  let found = false;
+  for (let i = 0; i + spanned.length <= pageLines.length; i++) {
+    if (!spanned.every((l, j) => pageLines[i + j] === l)) continue;
+    found = true;
+    const prev = pageLines[i - 1];
+    const next = pageLines[i + spanned.length];
+    if (fromLineStart && prev !== undefined && !ends(prev) && runsOn(spanned[0])) return false;
+    if (toLineEnd && next !== undefined && !ends(spanned[spanned.length - 1]) && runsOn(next)) return false;
+  }
+  return found;
 }
 
 /** The cited quote that covers a sentence, or undefined. Review 2026-11-21
@@ -704,11 +738,11 @@ function verbatimSpanLines(sentence: string, quote: string): string | undefined 
  *  exception and network markers ("Dental is covered" is not covered by
  *  "Dental treatment is not covered"). Fail-closed: a long quote whose
  *  markers differ from the sentence covers it only line by line. */
-function coveringQuote(sentence: string, canonicalQuotes: string[]): string | undefined {
+function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: (string | undefined)[] = []): string | undefined {
   const normSentence = normalizeForClaim(sentence);
   if (!normSentence) return undefined;
   const statesFigure = figuresOf(sentence).length > 0;
-  for (const quote of canonicalQuotes) {
+  for (const [qi, quote] of canonicalQuotes.entries()) {
     // The covering LINE is returned, so the sentence's figures are checked
     // against that line only (follow-up review: no borrowing a figure from
     // another line of the same quote).
@@ -723,7 +757,7 @@ function coveringQuote(sentence: string, canonicalQuotes: string[]): string | un
     // wording across line breaks — identical except whitespace — is covered
     // by the whole lines it spans (figures stay bound to their labels).
     if (statesFigure) {
-      const block = verbatimSpanLines(sentence, quote);
+      const block = verbatimSpanLines(sentence, quote, quotePages[qi]);
       if (block !== undefined && sameMarkers(sentence, block) && figuresBoundToLabels(sentence, block)) return block;
     }
   }
@@ -774,6 +808,7 @@ export function verifyAnswerClaims(
 
   // (c) Every citation must verify against the original page
   const canonicalQuotes: string[] = [];
+  const quotePages: string[] = [];
   for (const citation of citations) {
     const doc = sessionDocuments.find((d) => d.documentId === citation.documentId);
     if (!doc) {
@@ -800,6 +835,7 @@ export function verifyAnswerClaims(
       return { ok: false, rationale: `Citation not found in source page: ${citation.documentId} p${citation.page}` };
     }
     canonicalQuotes.push(strict.quote);
+    quotePages.push(pageText);
   }
 
   // (a) Every substantive generated sentence must be covered by >=1 citation.
@@ -816,7 +852,7 @@ export function verifyAnswerClaims(
     // pass against "not covered"); only a sentence with no word of more than
     // two characters and no figure is non-substantive.
     if (figures.length === 0 && !normalizeForClaim(sentence).split(/\s+/).some((t) => t.length > 2)) continue;
-    const quote = coveringQuote(sentence, canonicalQuotes);
+    const quote = coveringQuote(sentence, canonicalQuotes, quotePages);
     const quoteFigures = new Set(quote ? figuresOf(quote) : []);
     if (figures.some((f) => !quoteFigures.has(f))) {
       return { ok: false, rationale: `Unsupported claim: figure not in the covering passage` };

@@ -137,3 +137,13 @@ describe("review: budget truncation keeps whole lines", () => {
     for (const l of numbered) expect(l.replace(/^\d+\| /, "")).toBe(line);
   });
 });
+
+// Third review (2026-11-22): N2 a bracketed condition on a plan-name line was
+// dropped with the line. Only code-like brackets are decoration.
+describe("third review: bracketed conditions keep the line", () => {
+  it.each(["Acme Student Plus (not available in New York)", "Acme Student Plus (excluding dependants)"])("keeps %s", async (line) => {
+    model({ cantAnswer: false, answerText: `${line}\nDeductible per policy period $500`, citations: [{ passageId: "P1", fromLine: 4, toLine: 4 }] });
+    const r = await answerViaLlm(DOCS, "What is the deductible?", { planNames: ["Acme Student Plus"] });
+    expect(r.kind).toBe("refusal");
+  });
+});

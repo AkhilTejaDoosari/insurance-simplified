@@ -69,3 +69,25 @@ describe("review: a span joins only wrapped continuation lines, never rows or pa
     expect(check(JOINED, WRAPPED)).toEqual({ ok: true });
   });
 });
+
+// Third review (2026-11-22): N1 rows stitched when the next row's label is
+// lower case (the model can cite exactly those lines); a span starting
+// mid-sentence dropped a leading condition. The span must be a whole
+// sentence on the page.
+function checkOnPage(answer: string, quote: string, page: string) {
+  const docs = [{ documentId: "doc-1", pages: [page] }];
+  return verifyAnswerClaims(answer, [{ documentId: "doc-1", page: 1, quote }], [{ documentId: "doc-1", page: 1, quote: page }], docs);
+}
+describe("third review: a span is a whole sentence on the page", () => {
+  it.each([
+    ["$30 copay emergency room.", "$30 copay\nemergency room", "specialist visit\n$30 copay\nemergency room\n$300 copay"],
+    ["$30 copay emergency room.", "$30 copay\nemergency room", "Specialist visit\n$30 copay\nemergency room\n$300 copay"],
+    ["emergency care up to $50,000.", "emergency\ncare up to $50,000", "When admitted abroad, emergency\ncare up to $50,000\nSee terms."],
+  ])("rejects %s", (answer, quote, page) => {
+    expect(checkOnPage(answer, quote, page).ok).toBe(false);
+  });
+  it("the wrapped maternity sentence still verifies when the next page line starts a new row", () => {
+    const page = ["BENEFITS", WRAPPED, "Mental health: 50% in-network"].join("\n");
+    expect(checkOnPage(JOINED, WRAPPED, page)).toEqual({ ok: true });
+  });
+});

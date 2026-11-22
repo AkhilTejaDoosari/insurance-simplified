@@ -198,7 +198,8 @@ export function uncertainOutcome(
  *  use for it (owner decision 2026-11-22: a subject in other words is
  *  relevant). Used only to choose which retrieved passages to show. */
 const TOPIC_WORDS: readonly [RegExp, string][] = [
-  [/\b(?:geographic\w*|location|region|area|territor\w*)\b/i, "country countries residence territory worldwide abroad outside"],
+  // Third review: no bare "outside"/"area" (they matched hospitals and networks).
+  [/\b(?:geographic\w*|territor\w*|area of coverage|coverage area|service area)\b/i, "country countries residence territory worldwide abroad"],
   [/\b(?:maternity|pregnan\w*)\b/i, "maternity pregnancy childbirth prenatal newborn"],
 ];
 
@@ -743,7 +744,9 @@ export function stripPlanHeaders(answerText: string, planNames: readonly string[
   if (names.size === 0) return answerText;
   return answerText
     .split("\n")
-    .filter((line) => !names.has(norm(line.replace(/\([^()]*\)/g, " ")).replace(/^the /, "")))
+    // Third review (N2): only code-like brackets ("(PATAP)", "(GP-2)") are
+    // decoration; any other bracketed text keeps the line.
+    .filter((line) => !names.has(norm(line.replace(/\(\s*[A-Z0-9][A-Z0-9 .\-\/]{0,11}\)/g, " ")).replace(/^the /, "")))
     .join("\n")
     .trim();
 }
