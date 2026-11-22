@@ -851,6 +851,33 @@ Eight questions × five documents (Nemotron, Cloudflare embeddings, ≥2 s betwe
 
 Range review (`52e22c2`) found one swap (one end of a range); fixed in `0ab68dc` — a line with a range is always bound. Replay of all 40 captured answers at `0ab68dc`: no refusal that the pre-binding verifier would have accepted. Gates at `0ab68dc`: `tsc` clean; `npm test` 1,952 passed / 22 skipped; build 0; `test:e2e` 57 passed / 1 skipped. At `e3897f4`: real-PDF 2,068 passed / 1 failed (documented missing-brochure gap) / 42 skipped; build 0; guard ok. `test:e2e` 57 passed / 1 skipped at `62e6ba5` (verifier-only changes since).
 
+## Owner decisions 2026-11-22 (second round) — implemented
+
+| Decision | Commits | Evidence |
+| --- | --- | --- |
+| 1 Quote across line breaks (whitespace only) | `af2aa82`, review fixes `fde4348`, `3da9b3c`, `f58f6f5` | `verbatim-span-across-lines.test.ts`: exact words/figures/punctuation/case; joins only wrapped continuation lines; never inside a number; the span must be a whole sentence on the page (a cited two-line excerpt cannot stitch table rows); keeps every marker; figure binding on the block |
+| Citation by reference | `3c51c19`, `fde4348`, `f58f6f5`, `dd1be6b` | passages tagged `[Page N] passage P#` with numbered lines; model returns ids + line ranges; server fills quotes; bad reference = rejected answer; plan-name header lines stripped only when exactly a verified in-scope plan name in a one-document answer. Owner-directed assertion changes: retrieval-prompt (2), chat-prompt-framing (3); mock outputs converted (`tests/helpers/chat-refs.ts`) |
+| 2 Blocker 2: never "not in your documents" after the model | `65d1634`, `fde4348` | rejected answer → its cited passages; model refusal → relevant passages (small topic vocabulary) else cannot-be-confirmed without passages; route keeps cannot-be-confirmed when no passage verifies (owner-directed change: `chat-verify-boundary`) |
+| 2 Blocker 1: restriction on a wrapped line | `ca3f226`, `fde4348` | sentence read for facts with required markers; five-document diff +5 / −0 (doc 02 p4 target; doc 03 p6, p7 real; doc 05 p25, p26 benefit-specific, recorded) |
+| 3 `.env.local` names | — | names correct; `EMBEDDING_BASE_URL` contains literal `<` `>` around the account id → Cloudflare 404 (30 failures in one run); the benchmark launcher removed them in the child env only; owner to fix the file |
+
+Independent review: five rounds on this range (B1–B3, N1–N2, two label-line holes, bracket qualifiers); final verdict APPROVE (`f58f6f5`); its last should-fix done in `dd1be6b`. Recorded: label inheritance can drop a column heading; the single-line rule ignores a condition on the next line (pre-existing).
+
+Scoring at `dd1be6b` (answerability key from the documents first: 34 answerable, 6 not stated; per-question table outside git):
+
+| Doc | Verified | Correct outcome | Wrong | Cannot be confirmed on an answerable fact | Verified, not an answer |
+| --- | --- | --- | --- | --- | --- |
+| 01 | 5 | 3 | 1 | 2 | 2 |
+| 02 | 6 | 6 | 0 | 2 | 0 |
+| 03 | 4 | 5 | 0 | 3 | 0 |
+| 04 | 3 | 4 | 0 | 3 | 1 |
+| 05 | 3 | 4 | 0 | 4 | 0 |
+| Total | 21 | 22/40 | 1 | 14 | 3 |
+
+False "not in your documents": 0. The wrong outcome (doc 01 ER) is a verified verbatim fragment of a wrapped table cell whose next line carries the word that gives it meaning — the recorded single-line-rule defect, now observed on a real document.
+
+Gates at `dd1be6b`: `tsc` clean; `npm test` 2,013 passed / 22 skipped; real-PDF 2,135 passed / 1 failed (documented missing-brochure gap) / 42 skipped; build 0; `test:e2e` 57 passed / 1 skipped; guard ok.
+
 ## Next atomic step
 
 Owner decisions (see the milestone report). Phase 5 is NO-GO.
