@@ -478,6 +478,80 @@ function sameMarkers(a: string, b: string): boolean {
   return x.size === y.size && [...x].every((m) => y.has(m)) && qualifierKey(a) === qualifierKey(b);
 }
 
+/** Figure–label binding (owner directive 2026-11-22, blocking): on a line that
+ *  states two or more figures, each figure owns its own label words. A line
+ *  is split into clause pieces at list separators; inside a piece each figure
+ *  owns the words since the previous figure (label first, "Primary care $30
+ *  Specialist $300"), the words after the last figure, and a run of unit
+ *  words directly after it ("12 months", "per visit"). Figure-free pieces are
+ *  shared context. Fail-closed: a header word that only sits in another
+ *  figure's segment rejects the sentence. */
+const BINDING_SEPARATOR = /,\s+|\s*[|•·\t/]\s*|\s{2,}/;
+const UNIT_WORD = /^(?:days?|weeks?|months?|years?|hours?|visits?|times?|percent)$/;
+const UNIT_LEAD = /^(?:per|each|every)$/;
+const BINDING_FILLER = new Set(["the", "and", "for", "are", "you", "your", "with", "this", "that", "from", "has", "have", "will", "its", "was"]);
+
+type BindingToken = { figure: string } | { word: string };
+
+interface FigureBindings {
+  figures: Map<string, string[]>;
+  shared: string[];
+}
+
+function figureBindings(text: string): FigureBindings {
+  const figures = new Map<string, string[]>();
+  const shared: string[] = [];
+  const bind = (figure: string, words: string[]) => figures.set(figure, [...(figures.get(figure) ?? []), ...words]);
+  for (const piece of text.split(BINDING_SEPARATOR)) {
+    const tokens: BindingToken[] = [...piece.matchAll(/\d[\d,]*(?:\.\d+)?|[a-z]+/gi)].map((m) =>
+      /\d/.test(m[0]) ? { figure: m[0].replace(/,/g, "").replace(/\.0+$/, "") } : { word: m[0].toLowerCase() },
+    );
+    if (!tokens.some((t) => "figure" in t)) {
+      for (const t of tokens) if ("word" in t) shared.push(t.word);
+      continue;
+    }
+    let pending: string[] = [];
+    let last: string | null = null;
+    let unitRun = false;
+    let afterLead = false;
+    for (const t of tokens) {
+      if ("figure" in t) {
+        bind(t.figure, pending);
+        pending = [];
+        last = t.figure;
+        unitRun = true;
+        afterLead = false;
+        continue;
+      }
+      if (last !== null && unitRun && (afterLead || UNIT_WORD.test(t.word) || UNIT_LEAD.test(t.word))) {
+        bind(last, [t.word]);
+        afterLead = UNIT_LEAD.test(t.word);
+      } else {
+        unitRun = false;
+      }
+      pending.push(t.word);
+    }
+    if (last !== null && pending.length > 0) bind(last, pending);
+  }
+  return { figures, shared };
+}
+
+/** True unless the sentence ties a figure to label words that the line ties
+ *  to a different figure. Lines with fewer than two figures are unaffected. */
+function figuresBoundToLabels(sentence: string, line: string): boolean {
+  const lineBindings = figureBindings(line);
+  if (lineBindings.figures.size < 2) return true;
+  const said = figureBindings(sentence);
+  for (const [figure, words] of said.figures) {
+    const allowed = [...(lineBindings.figures.get(figure) ?? []), ...lineBindings.shared];
+    for (const w of [...words, ...said.shared]) {
+      if (w.length <= 2 || BINDING_FILLER.has(w)) continue;
+      if (!allowed.some((a) => a.startsWith(w))) return false;
+    }
+  }
+  return true;
+}
+
 /** The cited quote that covers a sentence, or undefined. Review 2026-11-21
  *  (B1): coverage keeps meaning — the covering source line (or, failing
  *  that, the whole quote) must state exactly the sentence's negation,
@@ -492,7 +566,9 @@ function coveringQuote(sentence: string, canonicalQuotes: string[]): string | un
     // The covering LINE is returned, so the sentence's figures are checked
     // against that line only (follow-up review: no borrowing a figure from
     // another line of the same quote).
-    const line = clausesOf(quote).find((l) => tokensCovered(normSentence, l) && sameMarkers(sentence, l));
+    const line = clausesOf(quote).find(
+      (l) => tokensCovered(normSentence, l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l),
+    );
     if (line) return line;
     // A sentence spread over several lines is covered by the whole quote
     // only when it states no figure.
