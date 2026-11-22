@@ -119,15 +119,15 @@ describe("POST /api/chat evidence verification boundary", () => {
     expect(getEvidenceRecord(session.sessionId, body.citations[0].evidenceId)?.page).toBe(1);
   });
 
-  it("returns the plain refusal when no passage verifies", async () => {
+  // Owner decision 2026-11-22 (blocker 2): with no passage left it is still
+  // "cannot be confirmed" (no passages shown), never "not in your documents".
+  it("returns cannot-be-confirmed without passages when no passage verifies", async () => {
     const { session, capability } = seedSession();
     mockedAnswer.mockReturnValue(
       uncertain([{ documentId: "doc-1", page: 1, quote: "Fabricated passage here." }, { documentId: "other", page: 1, quote: "Annual deductible: $250 in-network." }]) as never
     );
-    expect(await (await post(session.sessionId, capability)).json()).toEqual({
-      schemaVersion: "v1",
-      kind: "refusal",
-      refusalText: REFUSAL_TEXT,
-    });
+    const body = await (await post(session.sessionId, capability)).json();
+    expect(body).toEqual({ schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT });
+    expect(JSON.stringify(body)).not.toContain(REFUSAL_TEXT);
   });
 });

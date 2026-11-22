@@ -194,6 +194,42 @@ export function uncertainOutcome(
     : { schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT };
 }
 
+/** Owner decision 2026-11-22 (blocker 2): once the model has been consulted
+ *  on useful passages, the outcome is never "not in your documents". The
+ *  passages shown are, in order: those the model cited (verbatim, by
+ *  reference), those stating a concept of the question, then the top
+ *  retrieved evidence passages (whole lines, at most MAX_WHOLE_PASSAGE). */
+export function uncertainAfterModel(
+  cited: readonly ChatCitation[],
+  passages: readonly { documentId: string; page: number; quote: string }[],
+  question: string,
+): ChatResponse {
+  const out: ChatCitation[] = [];
+  const add = (c: ChatCitation) => {
+    if (out.length >= MAX_UNCERTAIN_PASSAGES) return;
+    if (out.some((x) => x.documentId === c.documentId && x.page === c.page && (x.quote.includes(c.quote) || c.quote.includes(x.quote)))) return;
+    out.push(c);
+  };
+  cited.forEach(add);
+  relevantPassages(passages, question).forEach(add);
+  if (out.length === 0) {
+    for (const p of passages) {
+      const lines = p.quote.split("\n");
+      if (isContentsPassage(lines)) continue;
+      let quote = "";
+      for (const line of lines) {
+        const next = quote ? `${quote}\n${line}` : line;
+        if (quote && next.length > MAX_WHOLE_PASSAGE) break;
+        quote = next;
+      }
+      if (quote.trim()) add({ documentId: p.documentId, page: p.page, quote });
+    }
+  }
+  return out.length > 0
+    ? { schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT, citations: out }
+    : { schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT };
+}
+
 const STOPWORDS = new Set(
   "a,an,the,of,in,on,for,to,is,are,was,were,be,been,do,does,did,what,which,who,how,much,many,my,our,your,this,that,these,those,and,or,with,by,at,from,as,it,its,plan,coverage,cover,covered,four,between,compare".split(
     ",",
@@ -822,7 +858,7 @@ export async function answerViaLlm(
 
   if (raw.cantAnswer === true) {
     console.warn(`[chat-refusal] stage=llm-cantAnswer`);
-    return uncertainOutcome(passages, question);
+    return uncertainAfterModel([], passages, question);
   }
 
   // Citation by reference: the server fills every quote from the cited
@@ -836,7 +872,7 @@ export async function answerViaLlm(
   const answerText = stripPlanHeaders(raw.answerText, opts.planNames ?? []);
   if (!citations || !answerText) {
     console.warn(`[chat-refusal] stage=citation-ref category=${citations ? "empty-after-header-strip" : "bad-reference"}`);
-    return uncertainOutcome(passages, question);
+    return uncertainAfterModel(citations ?? [], passages, question);
   }
   const response = validateChatResponse({
     schemaVersion: "v1",
@@ -874,8 +910,8 @@ export async function answerViaLlm(
       `[chat-refusal] stage=verifyAnswerClaims category=${verification.rationale?.split(":")[0] ?? "unknown"} failedPage=${failedCitation?.[1] ?? "n/a"} citationCount=${answerResponse.citations.length}`,
     );
     // ANY failure -> no answer (NO repair): "cannot be confirmed" with the
-    // relevant passages, never the unverified text.
-    return uncertainOutcome(passages, question);
+    // passages the model cited (verbatim), never the unverified text.
+    return uncertainAfterModel(answerResponse.citations, passages, question);
   }
 
   return {

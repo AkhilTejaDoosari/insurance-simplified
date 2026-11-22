@@ -376,9 +376,11 @@ export async function POST(request: NextRequest) {
         });
         // Owner decision 2026-11-21: a rejected answer is never shown; the
         // refusal carries the cited passages that DO verify on their page
-        // and in scope ("cannot be confirmed"), or the plain refusal if none.
+        // and in scope ("cannot be confirmed"). Owner decision 2026-11-22:
+        // with none left it is still "cannot be confirmed" (no passages),
+        // never the plain refusal — the model did find an answer here.
         if (canonical.length === 0) {
-          return NextResponse.json({ schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT });
+          return NextResponse.json({ schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT });
         }
         return NextResponse.json({
           schemaVersion: "v1",
@@ -406,8 +408,9 @@ export async function POST(request: NextRequest) {
     if (validated.citations?.length) {
       // P0-02 "cannot be confirmed": the passages are sources to check, not an
       // answer. Each one is verified on its page and in the chat scope on its
-      // own; an unverifiable passage is dropped, and with none left the
-      // plain refusal is returned.
+      // own; an unverifiable passage is dropped. With none left it is still
+      // "cannot be confirmed" without passages (owner decision 2026-11-22:
+      // never "not in your documents" once passages were judged relevant).
       const canonical = validated.citations.flatMap((citation) => {
         const verified = verifyEvidenceCitation(session.documents, citation);
         const inScope = verifyEvidenceCitation(scopedDocuments, citation);
@@ -420,7 +423,7 @@ export async function POST(request: NextRequest) {
         refusalReason: "cannot-be-confirmed",
       });
       if (canonical.length === 0) {
-        return NextResponse.json({ schemaVersion: "v1", kind: "refusal", refusalText: REFUSAL_TEXT });
+        return NextResponse.json({ schemaVersion: "v1", kind: "refusal", refusalText: UNCERTAIN_TEXT });
       }
       return NextResponse.json({
         ...validated,
