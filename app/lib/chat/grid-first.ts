@@ -175,26 +175,48 @@ export async function gridFirstAnswer(input: {
   // Review (third round, S3): a value with no known owner in a table with
   // plans could belong to any of them — never shown unlabelled.
   if ((input.table.plans ?? []).length > 0 && used.some(({ value }) => ownerOf(value, input.table.plans ?? []) === undefined)) return fallback("unknown-owner");
-  const groups = new Set(used.map(({ value }) => `${value.documentId}|${ownerOf(value, input.table.plans ?? []) ?? "?"}|${value.qualifiers.planTier ?? ""}`));
+  const groups = new Set(used.map(({ value }) => `${value.documentId}|${ownerOf(value, input.table.plans ?? []) ?? "?"}`));
   if (groups.size > 1) return fallback("several-plans-or-tiers");
+  // Owner decision 2026-11-22 (4): the tiers of ONE plan are shown with their
+  // tier names — only when every value is a table cell whose claim names its
+  // own tier (its column heading, a verbatim citation of the same row's
+  // table). Otherwise the tiers cannot be told apart: fall back.
+  const isCell = (v: CellValue) => v.anchor?.kind === "table-cell";
+  if (new Set(used.map(({ value }) => value.qualifiers.planTier ?? "")).size > 1) {
+    const named = used.every(({ value, factName }) => {
+      const tier = value.qualifiers.planTier;
+      const claim = describeFact(value, factName).claim;
+      return !!tier && isCell(value) && !!claim && claim.toLowerCase().includes(tier.toLowerCase());
+    });
+    if (!named) return fallback("tiers-without-names");
+  }
   // Review S7: values that differ by age band need the user's context.
   if (new Set(used.map(({ value }) => value.qualifiers.ageBand ?? "")).size > 1) return fallback("age-bands");
   // Review S5: an unconfirmed claim is never shown as an answer.
   if (used.some(({ value, factName }) => describeFact(value, factName).status === "unconfirmed")) return fallback("unconfirmed-claim");
 
   const lines: string[] = [];
+  const lineValueLines: string[] = [];
   const citations: ChatCitation[] = [];
   for (const { value, factName, cites } of used) {
-    for (const line of valueLines(value, factName)) if (!lines.includes(line)) lines.push(line);
+    for (const line of valueLines(value, factName)) {
+      if (!lines.includes(line)) lines.push(line);
+      if (!isCell(value) && !lineValueLines.includes(line)) lineValueLines.push(line);
+    }
     for (const c of cites) if (!citations.some((x) => x.documentId === c.documentId && x.page === c.page && x.quote === c.quote)) citations.push(c);
   }
   if (lines.length === 0) return fallback("no-supported-value");
 
   const verbatim = lines.join("\n");
   const sessionDocs = input.sessionDocuments.map((d) => ({ documentId: d.documentId, pages: d.pages }));
-  // The verbatim answer itself must pass the same gate as any answer.
-  const gate = verifyAnswerClaims(verbatim, citations, citations, sessionDocs);
-  if (!gate.ok) return fallback(`verbatim-rejected:${gate.reason ?? "unknown"}`);
+  // The verbatim lines of line values pass the same gate as any answer. A
+  // table cell's claim is composed of verbatim pieces of one row (label,
+  // column heading, cell) and is grounded structurally by describeFact
+  // above (status not "unconfirmed"), with every citation re-verified.
+  if (lineValueLines.length > 0) {
+    const gate = verifyAnswerClaims(lineValueLines.join("\n"), citations, citations, sessionDocs);
+    if (!gate.ok) return fallback(`verbatim-rejected:${gate.reason ?? "unknown"}`);
+  }
   const answer = (answerText: string, cites: ChatCitation[]) => ({
     schemaVersion: "v1" as const,
     kind: "answer" as const,

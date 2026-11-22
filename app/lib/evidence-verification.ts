@@ -445,8 +445,10 @@ export type RejectionReason =
 
 /** Split text into sentences using regex boundaries. */
 function splitSentences(text: string): string[] {
+  // Owner decision (4): an initialism ("U.S. Department") does not end a
+  // sentence.
   return text
-    .split(/\n+|(?<=[.!?])\s+(?=[A-Z0-9"(])/)
+    .split(/\n+|(?<=[.!?])(?<!\b[A-Z]\.[A-Z]\.)\s+(?=[A-Z0-9"(])/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -690,7 +692,23 @@ function figuresBoundToLabels(sentence: string, line: string): boolean {
  *  except for whitespace and line breaks — same case, words, figures and
  *  punctuation, starting and ending on word boundaries. A trailing period
  *  the answer adds to end its sentence is not part of the span. */
-function verbatimSpanLines(sentence: string, quote: string, page?: string): string | undefined {
+/** Owner decision (4): a same-line "LABEL:" prefix ("(5) MATERNITY AND
+ *  NEWBORN CARE: ") — at most eight words, ending in ":", no sentence end —
+ *  is a heading: the sentence after it starts there. Never when the label
+ *  states a negation, exception, network scope or qualifier word ("NOT
+ *  COVERED:"): then it is part of the meaning. */
+function isLabelPrefix(prefix: string): boolean {
+  const p = prefix.trim();
+  return (
+    /:$/.test(p) &&
+    !/[.;!?]\s/.test(p) &&
+    p.split(/\s+/).length <= 8 &&
+    !statesScopingMarker(p) &&
+    qualifierKey(p) === ""
+  );
+}
+
+function verbatimSpanLines(sentence: string, quote: string, page?: string): { block: string; span: string } | undefined {
   const target = sentence.replace(/\s+/g, " ").trim().replace(/(?<=[^.])\.$/, "");
   if (!target) return undefined;
   const lines = quote.split("\n");
@@ -736,14 +754,18 @@ function verbatimSpanLines(sentence: string, quote: string, page?: string): stri
     // Third review (N1): the span must be a whole sentence on the PAGE — the
     // model can cite exactly two lines of a table, so the cited quote alone
     // cannot show that "$30 copay / emergency room" are two rows.
-    const startsHere = at === lineStart.get(first) || endsSentence(joined.slice(lineStart.get(first), at));
+    const before = joined.slice(lineStart.get(first), at);
+    const startsHere = at === lineStart.get(first) || endsSentence(before) || isLabelPrefix(before);
     const endsHere = end === lineEnd.get(last) || /[.;!?]$/.test(joined.slice(at, end)) || /^\s*[.;!?]/.test(joined.slice(end));
     if (!startsHere || !endsHere) continue;
     const spanned = lines.slice(first, last + 1).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
     // Reaching the line end apart from trailing punctuation counts as the end.
     const toLineEnd = /^[\s.,;:!?"'’”)\]]*$/.test(joined.slice(end, lineEnd.get(last)));
     if (!wholeSentenceOnPage(spanned, at === lineStart.get(first), toLineEnd, page)) continue;
-    return spanned.join(" ");
+    // Owner decision (4): the unit is the sentence span (it starts at a line
+    // start, a sentence end or a label, and ends at a sentence end or a
+    // line end checked above) — not other sentences sharing its lines.
+    return { block: spanned.join(" "), span: joined.slice(at, end) };
   }
   return undefined;
 }
@@ -789,7 +811,7 @@ const ENDS_IN_FUNCTION_WORD = /\b(?:the|a|an|of|to|in|on|for|with|by|at|from|and
  *  sentence, at most three lines). Every occurrence on the page must pass;
  *  a line not found at the end of a page line is not a wrapped fragment. */
 const CONTINUATION_LIST_ITEM = /^\s*\(?(?:\d+|[a-z]|[ivxlc]+)[).]\s/i;
-const lineEndsSentence = (l: string) => /[.;!?]["'’”)\]]*\s*$/.test(l);
+export const lineEndsSentence = (l: string) => /[.;!?]["'’”)\]]*\s*$/.test(l);
 // Follow-up review (third round): for the fragment rules (which only
 // REJECT), a line opening with any figure or with a qualifier word in any
 // case continues an unfinished line ("Physiotherapy is covered / $500
@@ -808,7 +830,7 @@ const FIGURE_OPENING = new RegExp(
   ].join("|"),
 );
 const QUALIFIER_OPENING = /^\s*(?:only|except|excluding|unless|not|no|if|after|until|but|provided|however|subject to|limited to|notwithstanding|save as|other than|in addition to)\b/i;
-function continuesOnto(prev: string, next: string, forward = true, prevPrev?: string): boolean {
+export function continuesOnto(prev: string, next: string, forward = true, prevPrev?: string): boolean {
   // Backwards (the mirror rule) a figure or qualifier line under a heading
   // or label is ordinary layout, not the middle of a sentence.
   // Third follow-up: backwards, a line above that opens with a qualifier
@@ -957,7 +979,7 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
     // by the whole lines it spans (figures stay bound to their labels).
     {
       const block = verbatimSpanLines(sentence, quote, quotePages[qi]);
-      if (block !== undefined && sameMarkers(sentence, block) && figuresBoundToLabels(sentence, block)) return block;
+      if (block !== undefined && sameMarkers(sentence, block.span) && figuresBoundToLabels(sentence, block.span)) return block.block;
     }
   }
   return undefined;

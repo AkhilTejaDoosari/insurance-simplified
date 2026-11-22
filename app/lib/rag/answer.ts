@@ -20,6 +20,8 @@ import {
 } from "@/app/lib/rag/fusion";
 import { retrievePersistentSemantic } from "@/app/lib/rag/persist-session";
 import type { RankedPassage } from "@/app/lib/rag/embeddings";
+import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
+import { completeCitations } from "@/app/lib/evidence/citation-unit";
 import {
   verifyAnswerClaims,
   type RejectionReason,
@@ -31,6 +33,9 @@ export interface RagDocument {
   filename: string;
   pageCount: number;
   pages: string[];
+  /** Detected layout tables (session documents carry them); used only to
+   *  complete a table-row citation with its cells and column headings. */
+  tables?: LayoutTable[];
 }
 
 export interface ChatCitation {
@@ -200,7 +205,7 @@ export function uncertainOutcome(
  *  relevant). Used only to choose which retrieved passages to show. */
 const TOPIC_WORDS: readonly [RegExp, string][] = [
   // Third review: no bare "outside"/"area" (they matched hospitals and networks).
-  [/\b(?:geographic\w*|territor\w*|area of coverage|coverage area|service area)\b/i, "country countries residence territory worldwide abroad"],
+  [/\b(?:geographic\w*|territor\w*|area of coverage|coverage area|service area)\b/i, "country countries residence territory worldwide abroad region regions"],
   [/\b(?:maternity|pregnan\w*)\b/i, "maternity pregnancy childbirth prenatal newborn"],
 ];
 
@@ -923,7 +928,12 @@ export async function answerViaLlm(
   if (typeof raw.answerText !== "string" || !Array.isArray(raw.citations) || raw.citations.length === 0) {
     throw new Error("Invalid chat response: answerText and citations are required");
   }
-  const citations = resolveCitationRefs(raw.citations, refs);
+  // Owner decision 2026-11-22 (4): server-side citation completion — each
+  // referenced citation is expanded to its complete unit (whole sentence /
+  // table row with its column headings) before verification; the completed
+  // units are what the user sees. Strictness is unchanged.
+  const referenced = resolveCitationRefs(raw.citations, refs);
+  const citations = referenced ? completeCitations(documents, referenced) : referenced;
   // Headers are stripped only in a one-document answer; in a comparison the
   // plan line keeps attribution (and must verify like any other line).
   const oneDocument = !!citations && new Set(citations.map((c) => c.documentId)).size === 1;
@@ -954,11 +964,11 @@ export async function answerViaLlm(
   };
 
   // Convert passages to supplied chunks format for verification
-  const suppliedChunks = passages.map((p) => ({
-    documentId: p.documentId,
-    page: p.page,
-    quote: p.quote,
-  }));
+  // Completed units are server-derived page text: supplied like passages.
+  const suppliedChunks = [
+    ...passages.map((p) => ({ documentId: p.documentId, page: p.page, quote: p.quote })),
+    ...answerResponse.citations.map((c) => ({ documentId: c.documentId, page: c.page, quote: c.quote })),
+  ];
 
   // Verify claims: (a) substantive sentences covered, (b) citations in supplied context, (c) citations verify vs source
   const verification = verifyAnswerClaims(
