@@ -22,6 +22,7 @@ import { retrievePersistentSemantic } from "@/app/lib/rag/persist-session";
 import type { RankedPassage } from "@/app/lib/rag/embeddings";
 import {
   verifyAnswerClaims,
+  type RejectionReason,
   classifyGrounding,
 } from "@/app/lib/evidence-verification";
 
@@ -209,6 +210,13 @@ const TOPIC_WORDS: readonly [RegExp, string][] = [
  *  those stating a concept of the question (topic vocabulary included).
  *  Review: no unrelated top-N passages; with none relevant the outcome is
  *  "cannot be confirmed" without passages. */
+/** The answer states a concept of the question (topic vocabulary included). */
+export function addressesQuestion(answerText: string, question: string): boolean {
+  const expanded = TOPIC_WORDS.reduce((q, [re, words]) => (re.test(question) ? `${q} ${words}` : q), question);
+  const stems = conceptStems(expanded);
+  return stems.length === 0 || answerText.split("\n").some((line) => lineHasConcept(line, stems));
+}
+
 export function uncertainAfterModel(
   cited: readonly ChatCitation[],
   passages: readonly { documentId: string; page: number; quote: string }[],
@@ -757,6 +765,17 @@ export function stripPlanHeaders(answerText: string, planNames: readonly string[
     .trim();
 }
 
+/** Why a model-path turn ended in "cannot be confirmed" (diagnostics only;
+ *  the text fields may quote the document and are never logged). */
+export interface ChatRejection {
+  stage: "contents-only" | "model-cannot-answer" | "bad-reference" | "empty-after-header-strip" | "verify" | "off-topic";
+  reason?: RejectionReason;
+  sentence?: string;
+  sentenceIndex?: number;
+  answerText?: string;
+  citations?: readonly ChatCitation[];
+}
+
 /** LLM answer using retrieval-fed context (selected retriever: semantic-only).
  *  Empty retrieval -> refusal WITHOUT LLM call (short-circuit).
  *  Budget enforced: lowest-rank chunks dropped first, page tags intact.
@@ -764,7 +783,7 @@ export function stripPlanHeaders(answerText: string, planNames: readonly string[
 export async function answerViaLlm(
   documents: RagDocument[],
   question: string,
-  opts: { sessionId?: string; planNames?: readonly string[] } = {},
+  opts: { sessionId?: string; planNames?: readonly string[]; onRejection?: (d: ChatRejection) => void } = {},
 ): Promise<ChatResponse> {
   // Semantic-first (P2): try healthy semantic retrieval when embeddings are
   // configured; lexical line-overlap is ONLY a fallback on semantic
@@ -856,7 +875,10 @@ export async function answerViaLlm(
   }
   // Contents/index passages are navigation, not evidence (P0-02).
   const evidencePassages = passages.filter((p) => !isContentsPassage(p.quote.split("\n")));
-  if (evidencePassages.length === 0) return uncertainOutcome(passages, question);
+  if (evidencePassages.length === 0) {
+    opts.onRejection?.({ stage: "contents-only" });
+    return uncertainOutcome(passages, question);
+  }
   passages = evidencePassages;
   // Build prompt from top-K retrieved chunks with budget enforcement
   const { prompt, refs } = buildRetrievalContext(documents, passages, question);
@@ -869,6 +891,7 @@ export async function answerViaLlm(
 
   if (raw.cantAnswer === true) {
     console.warn(`[chat-refusal] stage=llm-cantAnswer`);
+    opts.onRejection?.({ stage: "model-cannot-answer" });
     return uncertainAfterModel([], passages, question);
   }
 
@@ -886,6 +909,7 @@ export async function answerViaLlm(
   const answerText = oneDocument ? stripPlanHeaders(raw.answerText, opts.planNames ?? []) : raw.answerText.trim();
   if (!citations || !answerText) {
     console.warn(`[chat-refusal] stage=citation-ref category=${citations ? "empty-after-header-strip" : "bad-reference"}`);
+    opts.onRejection?.({ stage: citations ? "empty-after-header-strip" : "bad-reference", answerText: raw.answerText });
     return uncertainAfterModel(citations ?? [], passages, question);
   }
   const response = validateChatResponse({
@@ -920,12 +944,33 @@ export async function answerViaLlm(
 
   if (!verification.ok) {
     const failedCitation = /p(\d+)/.exec(verification.rationale ?? "");
+    // Owner decision 2026-11-22 (third round, 2): every rejection logs its
+    // reason code and sentence position; the sentence itself (model text that
+    // may quote the document) goes only to an explicit diagnostics callback.
     console.warn(
-      `[chat-refusal] stage=verifyAnswerClaims category=${verification.rationale?.split(":")[0] ?? "unknown"} failedPage=${failedCitation?.[1] ?? "n/a"} citationCount=${answerResponse.citations.length}`,
+      `[chat-refusal] stage=verifyAnswerClaims category=${verification.rationale?.split(":")[0] ?? "unknown"} reason=${verification.reason ?? "unknown"} sentence=${verification.sentenceIndex ?? "n/a"}/${verification.sentenceCount ?? "n/a"} failedPage=${failedCitation?.[1] ?? "n/a"} citationCount=${answerResponse.citations.length}`,
     );
+    opts.onRejection?.({
+      stage: "verify",
+      reason: verification.reason,
+      sentence: verification.sentence,
+      sentenceIndex: verification.sentenceIndex,
+      answerText: answerResponse.answerText,
+      citations: answerResponse.citations,
+    });
     // ANY failure -> no answer (NO repair): "cannot be confirmed" with the
     // passages the model cited (verbatim), never the unverified text.
     return uncertainAfterModel(answerResponse.citations, passages, question);
+  }
+
+  // Owner decision 2026-11-22 (third round, 2): a verified answer must
+  // address the question — at least one line states a concept of the
+  // question (its words or the topic vocabulary). Otherwise it is not an
+  // answer: "cannot be confirmed" with the passages relevant to the question.
+  if (!addressesQuestion(answerResponse.answerText, question)) {
+    console.warn(`[chat-refusal] stage=off-topic citationCount=${answerResponse.citations.length}`);
+    opts.onRejection?.({ stage: "off-topic" });
+    return uncertainAfterModel([], passages, question);
   }
 
   return {

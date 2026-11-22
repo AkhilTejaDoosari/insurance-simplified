@@ -421,7 +421,27 @@ export function checkDisplayGrounding(
 export interface VerifyClaimsResult {
   ok: boolean;
   rationale?: string;
+  /** Owner decision 2026-11-22 (third round, 2): why the answer was rejected,
+   *  as a closed code (safe to log). */
+  reason?: RejectionReason;
+  /** The rejected sentence (model text that may quote the document): for an
+   *  explicit diagnostics callback only — never logged (operations.md). */
+  sentence?: string;
+  /** 1-based position of the rejected sentence and the sentence count. */
+  sentenceIndex?: number;
+  sentenceCount?: number;
 }
+
+export type RejectionReason =
+  | "citation-not-supplied"
+  | "citation-not-on-page"
+  | "citation-invalid"
+  | "figure-not-in-covering-line"
+  | "words-not-in-citations"
+  | "qualifier-mismatch"
+  | "figure-label-binding"
+  | "wrapped-fragment"
+  | "figure-sentence-across-lines";
 
 /** Split text into sentences using regex boundaries. */
 function splitSentences(text: string): string[] {
@@ -833,6 +853,27 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
   return undefined;
 }
 
+/** Diagnosis only (never a verification decision): the first check that a
+ *  sentence fails on its best candidate line, in the order coveringQuote
+ *  applies them. */
+function uncoveredReason(sentence: string, canonicalQuotes: string[], quotePages: (string | undefined)[], answerText: string): RejectionReason {
+  const norm = normalizeForClaim(sentence);
+  const lines = canonicalQuotes.flatMap((q, qi) => clausesOf(q).map((l) => ({ l, q, qi })));
+  const worded = lines.filter(({ l }) => tokensCovered(norm, l));
+  if (worded.length === 0) {
+    return figuresOf(sentence).length > 0 && canonicalQuotes.some((q) => tokensCovered(norm, q)) ? "figure-sentence-across-lines" : "words-not-in-citations";
+  }
+  const marked = worded.filter(({ l }) => sameMarkers(sentence, l));
+  if (marked.length === 0) return "qualifier-mismatch";
+  const bound = marked.filter(({ l }) => figuresBoundToLabels(sentence, l));
+  if (bound.length === 0) return "figure-label-binding";
+  const whole = bound.filter(({ l, q, qi }) => {
+    const raw = clauseReachesLineEnd(l, q);
+    return raw === undefined || !continuationMissing(raw, quotePages[qi], answerText);
+  });
+  return whole.length === 0 ? "wrapped-fragment" : "figure-not-in-covering-line";
+}
+
 /** Verify claims in answerText against supplied citations and chunk context.
  *  Returns { ok: true } if all checks pass, else { ok: false, rationale }.
  *  Any failure -> fixed refusal. No repair.
@@ -870,6 +911,7 @@ export function verifyAnswerClaims(
       })();
       return {
         ok: false,
+        reason: "citation-not-supplied",
         rationale: `Citation not in supplied context: ${citation.documentId} p${citation.page} suppliedDoc=${suppliedDoc} sourceDoc=${sourceDoc}`,
       };
     }
@@ -881,17 +923,17 @@ export function verifyAnswerClaims(
   for (const citation of citations) {
     const doc = sessionDocuments.find((d) => d.documentId === citation.documentId);
     if (!doc) {
-      return { ok: false, rationale: `Citation document not found: ${citation.documentId}` };
+      return { ok: false, reason: "citation-invalid", rationale: `Citation document not found: ${citation.documentId}` };
     }
     if (!Number.isInteger(citation.page) || citation.page < 1 || citation.page > doc.pages.length) {
-      return { ok: false, rationale: `Citation page out of range: ${citation.documentId} p${citation.page}` };
+      return { ok: false, reason: "citation-invalid", rationale: `Citation page out of range: ${citation.documentId} p${citation.page}` };
     }
     const pageText = doc.pages[citation.page - 1];
     if (typeof pageText !== "string" || !pageText.trim()) {
-      return { ok: false, rationale: `Citation page empty: ${citation.documentId} p${citation.page}` };
+      return { ok: false, reason: "citation-invalid", rationale: `Citation page empty: ${citation.documentId} p${citation.page}` };
     }
     if (typeof citation.quote !== "string" || !citation.quote.trim()) {
-      return { ok: false, rationale: `Citation quote empty` };
+      return { ok: false, reason: "citation-invalid", rationale: `Citation quote empty` };
     }
     // Owner decision 2026-11-21: the SAME strict verbatim rule as every other
     // citation check (verifyEvidenceCitation: exact, unique, contiguous;
@@ -901,7 +943,7 @@ export function verifyAnswerClaims(
       citation,
     );
     if (!strict.ok) {
-      return { ok: false, rationale: `Citation not found in source page: ${citation.documentId} p${citation.page}` };
+      return { ok: false, reason: "citation-not-on-page", rationale: `Citation not found in source page: ${citation.documentId} p${citation.page}` };
     }
     canonicalQuotes.push(strict.quote);
     quotePages.push(pageText);
@@ -915,7 +957,8 @@ export function verifyAnswerClaims(
   // Review B1/S8: a short sentence is skipped only when it states neither a
   // figure nor coverage; figures must come from the COVERING passage.
   const sentences = splitSentences(answerText);
-  for (const sentence of sentences) {
+  for (const [si, sentence] of sentences.entries()) {
+    const at = { sentence, sentenceIndex: si + 1, sentenceCount: sentences.length };
     const figures = figuresOf(sentence);
     // No short-sentence skip (confirmation review: "Dental is free." must not
     // pass against "not covered"); only a sentence with no word of more than
@@ -924,10 +967,10 @@ export function verifyAnswerClaims(
     const quote = coveringQuote(sentence, canonicalQuotes, quotePages, answerText);
     const quoteFigures = new Set(quote ? figuresOf(quote) : []);
     if (figures.some((f) => !quoteFigures.has(f))) {
-      return { ok: false, rationale: `Unsupported claim: figure not in the covering passage` };
+      return { ok: false, reason: quote ? "figure-not-in-covering-line" : uncoveredReason(sentence, canonicalQuotes, quotePages, answerText), rationale: `Unsupported claim: figure not in the covering passage`, ...at };
     }
     if (!quote) {
-      return { ok: false, rationale: `Unsupported claim: "${sentence}"` };
+      return { ok: false, reason: uncoveredReason(sentence, canonicalQuotes, quotePages, answerText), rationale: `Unsupported claim: "${sentence}"`, ...at };
     }
   }
 

@@ -15,6 +15,7 @@ vi.mock("@/app/lib/rag/embeddings", async (importOriginal) => {
 });
 
 import {
+  retrieve,
   answerQuestionSemantic,
   answerViaLlm,
   REFUSAL_TEXT,
@@ -75,9 +76,15 @@ describe("P2 semantic-first correction", () => {
 
   it("(1b) lexical-empty + semantic-useful -> answerViaLlm succeeds via semantic with one LLM call", async () => {
     mockHealthyEmbeddings();
-    const page = SEMANTIC_ONLY_DOCS[0].pages[0];
+    // Owner decision 2026-11-22 (third round, 2): an answer must address the
+    // question, so the semantic-only page is now on topic (no word shared
+    // with the question; related through the topic vocabulary) instead of
+    // unrelated text. The retrieval-leg assertions are unchanged.
+    const docs = [{ ...SEMANTIC_ONLY_DOCS[0], pages: ["Childbirth expenses are payable as for any sickness."] }];
+    const page = docs[0].pages[0];
+    expect(retrieve(docs, "Is maternity covered?")).toHaveLength(0); // still lexical-empty
     mockedCompleteJson.mockImplementationOnce(answerCiting(page, page) as never);
-    const result = await answerViaLlm(SEMANTIC_ONLY_DOCS, QUESTION);
+    const result = await answerViaLlm(docs, "Is maternity covered?");
     expect(result.kind).toBe("answer");
     expect(mockedCompleteJson).toHaveBeenCalledTimes(1);
   });

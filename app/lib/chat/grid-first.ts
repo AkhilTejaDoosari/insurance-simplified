@@ -76,13 +76,20 @@ export interface GridSelection {
 /** Review B2: a value is used only when it belongs to the selection — its
  *  plan (or, unattributed on a legacy table, its document) is selected and
  *  its tier, when it has one, is the tier chosen for that plan. */
-function inSelection(value: CellValue, selection: GridSelection | undefined, plans: readonly { planId: string; sources: readonly { documentId: string }[] }[]): boolean {
-  if (!selection) return true;
-  // An unattributed value belongs to a plan only when its document is the
-  // source of exactly one plan (a single-plan document); on a legacy table
-  // without plans the selection names documents. Mixed documents fail closed.
+type PlanSources = readonly { planId: string; sources: readonly { documentId: string }[] }[];
+
+/** The plan a value belongs to. An unattributed value belongs to a plan only
+ *  when its document is the source of exactly one plan (a single-plan
+ *  document); on a legacy table without plans the owner is the document.
+ *  Mixed documents: undefined (fail closed). */
+function ownerOf(value: CellValue, plans: PlanSources): string | undefined {
   const owners = plans.filter((p) => p.sources.some((s) => s.documentId === value.documentId)).map((p) => p.planId);
-  const owner = value.planId ?? (plans.length === 0 ? value.documentId : owners.length === 1 ? owners[0] : undefined);
+  return value.planId ?? (plans.length === 0 ? value.documentId : owners.length === 1 ? owners[0] : undefined);
+}
+
+function inSelection(value: CellValue, selection: GridSelection | undefined, plans: PlanSources): boolean {
+  if (!selection) return true;
+  const owner = ownerOf(value, plans);
   if (!owner || !selection.planIds.includes(owner)) return false;
   const tier = selection.tiers[owner];
   return !tier || !value.qualifiers.planTier || value.qualifiers.planTier.toLowerCase() === tier.toLowerCase();
@@ -140,10 +147,17 @@ export async function gridFirstAnswer(input: {
 }): Promise<Extract<ChatResponse, { kind: "answer" }> | undefined> {
   const concept = conceptForQuestion(input.question);
   if (!concept) return undefined;
+  // Diagnostics (owner decision 2026-11-22, third round, 2): why a concept
+  // question left the grid — reason code and concept only, never text.
+  const fallback = (reason: string) => {
+    console.warn(`[chat-grid] fallback=${reason} concept=${concept.id}`);
+    return undefined;
+  };
   const rows = input.table.rows.filter((r) => concept.facts.includes(r.factName));
   // Uncertainty is never hidden behind a confident answer: an uncertain row,
   // or withheld source lines for the concept (review S5), fall back.
-  if (rows.some((r) => (UNCERTAIN_VERDICTS.has(r.verdict) && r.values.length > 0) || (r.withheld?.length ?? 0) > 0)) return undefined;
+  if (rows.some((r) => UNCERTAIN_VERDICTS.has(r.verdict) && r.values.length > 0)) return fallback("uncertain-row");
+  if (rows.some((r) => (r.withheld?.length ?? 0) > 0)) return fallback("withheld-lines");
 
   const used: { value: CellValue; factName: string; cites: ChatCitation[] }[] = [];
   for (const row of rows) {
@@ -156,12 +170,14 @@ export async function gridFirstAnswer(input: {
   }
   // Review B3: values of more than one plan, document or tier would need a
   // per-plan label the claim verifier cannot check — fall back instead.
-  const groups = new Set(used.map(({ value }) => `${value.documentId}|${value.planId ?? ""}|${value.qualifiers.planTier ?? ""}`));
-  if (groups.size > 1) return undefined;
+  // Owner decision 2026-11-22 (third round, 2): the plan is the value's owner
+  // (ownerOf), so a single-plan document's unattributed values join its plan.
+  const groups = new Set(used.map(({ value }) => `${value.documentId}|${ownerOf(value, input.table.plans ?? []) ?? "?"}|${value.qualifiers.planTier ?? ""}`));
+  if (groups.size > 1) return fallback("several-plans-or-tiers");
   // Review S7: values that differ by age band need the user's context.
-  if (new Set(used.map(({ value }) => value.qualifiers.ageBand ?? "")).size > 1) return undefined;
+  if (new Set(used.map(({ value }) => value.qualifiers.ageBand ?? "")).size > 1) return fallback("age-bands");
   // Review S5: an unconfirmed claim is never shown as an answer.
-  if (used.some(({ value, factName }) => describeFact(value, factName).status === "unconfirmed")) return undefined;
+  if (used.some(({ value, factName }) => describeFact(value, factName).status === "unconfirmed")) return fallback("unconfirmed-claim");
 
   const lines: string[] = [];
   const citations: ChatCitation[] = [];
@@ -169,12 +185,13 @@ export async function gridFirstAnswer(input: {
     for (const line of valueLines(value, factName)) if (!lines.includes(line)) lines.push(line);
     for (const c of cites) if (!citations.some((x) => x.documentId === c.documentId && x.page === c.page && x.quote === c.quote)) citations.push(c);
   }
-  if (lines.length === 0) return undefined;
+  if (lines.length === 0) return fallback("no-supported-value");
 
   const verbatim = lines.join("\n");
   const sessionDocs = input.sessionDocuments.map((d) => ({ documentId: d.documentId, pages: d.pages }));
   // The verbatim answer itself must pass the same gate as any answer.
-  if (!verifyAnswerClaims(verbatim, citations, citations, sessionDocs).ok) return undefined;
+  const gate = verifyAnswerClaims(verbatim, citations, citations, sessionDocs);
+  if (!gate.ok) return fallback(`verbatim-rejected:${gate.reason ?? "unknown"}`);
   const answer = (answerText: string, cites: ChatCitation[]) => ({
     schemaVersion: "v1" as const,
     kind: "answer" as const,

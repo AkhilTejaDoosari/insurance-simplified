@@ -184,3 +184,27 @@ describe("follow-up review: concept scope and two-plan documents", () => {
     expect(await gridFirstAnswer({ question: "What is the annual maximum?", table: t, scopedDocuments: docs, sessionDocuments: docs, selection: { planIds: ["p-1"], tiers: {} } })).toBeUndefined();
   });
 });
+
+// Owner decision 2026-11-22 (third round, 2): grid-first did not answer
+// single-plan documents where some values carry the plan id and others do
+// not (observed on two real documents). An unattributed value of a document
+// that is the source of exactly one plan belongs to that plan — the same
+// ownership rule inSelection already applies.
+describe("an unattributed value of a single-plan document belongs to its plan", () => {
+  const withPlans = (plans: { planId: string; sources: { documentId: string }[] }[]) => {
+    const t = table();
+    const row = t.rows.find((r) => r.factName === "per-illness-deductible")!;
+    row.values[0] = { ...row.values[0], planId: plans[0].planId };
+    return { rows: t.rows, plans };
+  };
+  it("one plan from the document → one group → answered", async () => {
+    const r = await gridFirstAnswer({ question: "What is the deductible?", table: withPlans([{ planId: "plan-1", sources: [{ documentId: "doc-1" }] }]), scopedDocuments: DOCS, sessionDocuments: DOCS });
+    expect(r?.kind).toBe("answer");
+    expect(r?.kind === "answer" && r.answerText).toContain("Deductible1 elsewhere $100");
+  });
+  it("two plans from the same document → the owner is unknown → falls back", async () => {
+    const plans = [{ planId: "plan-1", sources: [{ documentId: "doc-1" }] }, { planId: "plan-2", sources: [{ documentId: "doc-1" }] }];
+    const r = await gridFirstAnswer({ question: "What is the deductible?", table: withPlans(plans), scopedDocuments: DOCS, sessionDocuments: DOCS });
+    expect(r).toBeUndefined();
+  });
+});
