@@ -161,8 +161,13 @@ describe("grid-first review fixes", () => {
       gridFirstAnswer({ question: "What is the emergency room copay?", table: table(), scopedDocuments: DOCS, sessionDocuments: DOCS, rephrase: async (f) => ({ answerText: text, citations: f.citations }) });
     const dropped = await ask("Emergency room copay $300");
     expect(dropped?.kind === "answer" && dropped.answerText).toBe("Emergency room copay (waived if admitted) $300");
-    const kept = await ask("Emergency room copay $300 (waived if admitted)");
-    expect(kept?.kind === "answer" && kept.answerText).toBe("Emergency room copay $300 (waived if admitted)");
+    // Review (third round, B2): coverage keeps the source's word order, so
+    // the kept-condition rephrase is in source order (a reordered one now
+    // falls back to the exact wording — also safe).
+    const kept = await ask("Emergency room copay (waived if admitted): $300");
+    expect(kept?.kind === "answer" && kept.answerText).toBe("Emergency room copay (waived if admitted): $300");
+    const reordered = await ask("Emergency room copay $300 (waived if admitted)");
+    expect(reordered?.kind === "answer" && reordered.answerText).toBe("Emergency room copay (waived if admitted) $300");
   });
 });
 
@@ -205,6 +210,18 @@ describe("an unattributed value of a single-plan document belongs to its plan", 
   it("two plans from the same document → the owner is unknown → falls back", async () => {
     const plans = [{ planId: "plan-1", sources: [{ documentId: "doc-1" }] }, { planId: "plan-2", sources: [{ documentId: "doc-1" }] }];
     const r = await gridFirstAnswer({ question: "What is the deductible?", table: withPlans(plans), scopedDocuments: DOCS, sessionDocuments: DOCS });
+    expect(r).toBeUndefined();
+  });
+});
+
+// Review (third round, S3): in a document that is the source of two plans,
+// unattributed values have no known owner; shown together they would read as
+// one plan's answer. Falls back.
+describe("unattributed values of a multi-plan document fall back", () => {
+  it("two plans from one document, no plan ids on the values", async () => {
+    const t = table();
+    const plans = [{ planId: "plan-1", sources: [{ documentId: "doc-1" }] }, { planId: "plan-2", sources: [{ documentId: "doc-1" }] }];
+    const r = await gridFirstAnswer({ question: "What is the deductible?", table: { rows: t.rows, plans }, scopedDocuments: DOCS, sessionDocuments: DOCS });
     expect(r).toBeUndefined();
   });
 });

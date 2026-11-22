@@ -58,3 +58,23 @@ describe("controls: on-topic answers stay answers", () => {
     expect(r.kind).toBe("answer");
   });
 });
+
+// Review (third round, S2): a shared generic word ("copay", "room") is not
+// relevance; the question's specific words (or topic vocabulary) must appear.
+describe("relevance needs the question's specific words, not a generic one", () => {
+  it.each([
+    ["What is the ambulance copay?", "Specialist copay $60 per visit."],
+    ["What is the emergency room copay?", "Room and board $500 per day."],
+  ])("%s → cannot be confirmed", async (question, answer) => {
+    vi.mocked(completeJson).mockImplementationOnce(answerCiting(answer, answer) as never);
+    const extra = { ...DOCS[0], pages: [`${PAGE}\nSpecialist copay $60 per visit.\nRoom and board $500 per day.`] };
+    const r = await answerViaLlm([extra], question);
+    expect(r.kind).toBe("refusal");
+  });
+  it("control: a question of generic words only accepts a generic match", async () => {
+    const docs = [{ ...DOCS[0], pages: ["SCHEDULE\nAnnual maximum $1,000,000\nOther terms."] }];
+    vi.mocked(completeJson).mockImplementationOnce(answerCiting("Annual maximum $1,000,000", "Annual maximum $1,000,000") as never);
+    const r = await answerViaLlm(docs, "What is the annual maximum?");
+    expect(r.kind).toBe("answer");
+  });
+});

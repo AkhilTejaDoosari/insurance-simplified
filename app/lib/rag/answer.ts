@@ -204,19 +204,27 @@ const TOPIC_WORDS: readonly [RegExp, string][] = [
   [/\b(?:maternity|pregnan\w*)\b/i, "maternity pregnancy childbirth prenatal newborn"],
 ];
 
+/** Generic insurance words: a match on one of these alone is not relevance
+ *  when the question also names something specific (review, third round,
+ *  S2: "ambulance copay" answered with "Specialist copay"). 5-letter stems. */
+const GENERIC_STEMS = new Set(["copay", "deduc", "coins", "benef", "limit", "maxim", "annua", "overa", "total", "amoun", "cost", "room", "visit", "servi", "charg", "expen", "pays", "pay", "polic", "insur", "plans", "condi", "exist", "pre", "rate", "per"]);
+
+/** The answer states a concept of the question (topic vocabulary included):
+ *  one of its specific words when it has any, else one of its words. */
+export function addressesQuestion(answerText: string, question: string): boolean {
+  const stems = conceptStems(question);
+  const topic = TOPIC_WORDS.filter(([re]) => re.test(question)).flatMap(([, words]) => conceptStems(words));
+  const specific = [...stems.filter((st) => !GENERIC_STEMS.has(st)), ...topic];
+  const required = specific.length > 0 ? specific : stems;
+  return required.length === 0 || answerText.split("\n").some((line) => lineHasConcept(line, required));
+}
+
 /** Owner decision 2026-11-22 (blocker 2): once the model has been consulted
  *  on useful passages, the outcome is never "not in your documents". The
  *  passages shown are those the model cited (verbatim, by reference), then
  *  those stating a concept of the question (topic vocabulary included).
  *  Review: no unrelated top-N passages; with none relevant the outcome is
  *  "cannot be confirmed" without passages. */
-/** The answer states a concept of the question (topic vocabulary included). */
-export function addressesQuestion(answerText: string, question: string): boolean {
-  const expanded = TOPIC_WORDS.reduce((q, [re, words]) => (re.test(question) ? `${q} ${words}` : q), question);
-  const stems = conceptStems(expanded);
-  return stems.length === 0 || answerText.split("\n").some((line) => lineHasConcept(line, stems));
-}
-
 export function uncertainAfterModel(
   cited: readonly ChatCitation[],
   passages: readonly { documentId: string; page: number; quote: string }[],
@@ -948,7 +956,9 @@ export async function answerViaLlm(
   );
 
   if (!verification.ok) {
-    const failedCitation = /p(\d+)/.exec(verification.rationale ?? "");
+    // Review nit: a page number is read only from a citation failure (an
+    // unsupported-claim rationale quotes the sentence).
+    const failedCitation = verification.reason?.startsWith("citation") ? /p(\d+)/.exec(verification.rationale ?? "") : null;
     // Owner decision 2026-11-22 (third round, 2): every rejection logs its
     // reason code and sentence position; the sentence itself (model text that
     // may quote the document) goes only to an explicit diagnostics callback.

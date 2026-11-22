@@ -172,6 +172,9 @@ export async function gridFirstAnswer(input: {
   // per-plan label the claim verifier cannot check — fall back instead.
   // Owner decision 2026-11-22 (third round, 2): the plan is the value's owner
   // (ownerOf), so a single-plan document's unattributed values join its plan.
+  // Review (third round, S3): a value with no known owner in a table with
+  // plans could belong to any of them — never shown unlabelled.
+  if ((input.table.plans ?? []).length > 0 && used.some(({ value }) => ownerOf(value, input.table.plans ?? []) === undefined)) return fallback("unknown-owner");
   const groups = new Set(used.map(({ value }) => `${value.documentId}|${ownerOf(value, input.table.plans ?? []) ?? "?"}|${value.qualifiers.planTier ?? ""}`));
   if (groups.size > 1) return fallback("several-plans-or-tiers");
   // Review S7: values that differ by age band need the user's context.

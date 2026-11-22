@@ -456,7 +456,11 @@ const COVERAGE_STATEMENT = /\b(?:covered|covers?|cover|provided|not|no|excluded|
 
 /** Whole figures a text states ("$1,000,000" → "1000000", "80%" → "80"). */
 function figuresOf(text: string): string[] {
-  return [...text.matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((m) => m[0].replace(/,/g, "").replace(/\.0+$/, ""));
+  // Review (third round, B3): "$" and "%" are part of a figure — "$20" is
+  // not "20%".
+  return [...text.matchAll(/(\$\s?)?(\d[\d,]*(?:\.\d+)?)(\s?%)?/g)].map(
+    (m) => `${m[1] ? "$" : ""}${m[2].replace(/,/g, "").replace(/\.0+$/, "")}${m[3] ? "%" : ""}`,
+  );
 }
 
 /** Count whitespace-separated tokens in a segment. */
@@ -539,7 +543,7 @@ function bindingTokens(text: string, plainAsValues: boolean, letterLabels = fals
   const raw = [...text.matchAll(new RegExp(String.raw`${rangeRe.source}|\$\s?${NUM}|(?<![a-z0-9])${NUM}|[a-z][a-z0-9']*`, "gi"))].map((m) => m[0]);
   const isNumber = (t: string) => /^[$\d]/.test(t);
   const norm = (t: string) =>
-    t.split(/\s*(?:-|–|—|to)\s*(?=[$\d])/i).map((p) => p.replace(/[$%,\s]/g, "").replace(/\.0+$/, "")).join("-");
+    t.split(/\s*(?:-|–|—|to)\s*(?=[$\d])/i).map((p) => p.replace(/[,\s]/g, "").replace(/\.0+(?=%?$)/, "")).join("-");
   const marked = raw.map((t, i) =>
     isNumber(t) && (t.startsWith("$") || t.endsWith("%") || /,\d{3}/.test(t) || /\.\d/.test(t) || UNIT_WORD.test((raw[i + 1] ?? "").toLowerCase())),
   );
@@ -773,7 +777,7 @@ function wholeSentenceOnPage(spanned: string[], fromLineStart: boolean, toLineEn
  *  word (article, preposition, conjunction, auxiliary) cannot end a sentence
  *  or a table row, so the next line continues it even when that line opens
  *  with a capital ("… prior to the / Effective Date …") or a figure. */
-const ENDS_IN_FUNCTION_WORD = /\b(?:the|a|an|of|to|in|on|for|with|by|at|from|and|or|nor|that|which|who|whose|is|are|was|were|be|been|than|as|into|under|within|any|each|such|your|their|its|his|her|our|this|these|those)\s*$/i;
+const ENDS_IN_FUNCTION_WORD = /\b(?:the|a|an|of|to|in|on|for|with|by|at|from|and|or|nor|that|which|who|whose|is|are|was|were|be|been|than|as|into|under|within|any|each|such|your|their|its|his|her|our|this|these|those)\s*$/;
 
 /** Owner decision 2026-11-22 (third round, 1): a covering source line that
  *  reaches the end of its page line, where the next page line continues the
@@ -792,13 +796,22 @@ function continuesOnto(prev: string, next: string): boolean {
     (/^\s*(?:[a-z]|\([a-z])/.test(next) || (/^\s*\$?\d/.test(next) && CONTINUATION_OPEN_PHRASE.test(prev.trim())) || ENDS_IN_FUNCTION_WORD.test(prev))
   );
 }
-function continuationMissing(lineText: string, page: string | undefined, answerText: string): boolean {
+/** Words and figures (with "$"/"%"), lower case, punctuation as spaces. */
+function wordRun(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9$%\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+/** Review (third round, B1): `first` directly followed by `second`, every
+ *  word, as one contiguous run of the answer. */
+function followsDirectly(answerText: string, first: string, second: string): boolean {
+  return ` ${wordRun(answerText)} `.includes(` ${wordRun(first)} ${wordRun(second)} `);
+}
+
+function continuationMissing(lineText: string, page: string | undefined, answerText: string, sentence: string): boolean {
   if (page === undefined) return false;
   const ws = (s: string) => s.replace(/\s+/g, " ").trim();
   const tail = ws(lineText);
   if (!tail) return false;
   const pageLines = page.split("\n").map(ws).filter(Boolean);
-  const answerFigures = new Set(figuresOf(answerText));
   for (let i = 0; i < pageLines.length; i++) {
     if (!pageLines[i].endsWith(tail)) continue;
     const parts: string[] = [];
@@ -807,10 +820,7 @@ function continuationMissing(lineText: string, page: string | undefined, answerT
       if (lineEndsSentence(pageLines[j])) break;
     }
     if (parts.length === 0) continue;
-    const cont = parts.join(" ");
-    const norm = normalizeForClaim(cont);
-    const wordsOk = !norm.split(/\s+/).some((t) => t.length > 2) || tokensCovered(norm, answerText);
-    if (!wordsOk || figuresOf(cont).some((f) => !answerFigures.has(f))) return true;
+    if (!followsDirectly(answerText, sentence, parts.join(" "))) return true;
   }
   return false;
 }
@@ -820,13 +830,12 @@ function continuationMissing(lineText: string, page: string | undefined, answerT
  *  sentence and runs on into it). It covers a sentence only when the answer
  *  also states every word and figure of that sentence's start (from the
  *  last sentence end, at most three lines back). */
-function precedingMissing(lineText: string, page: string | undefined, answerText: string): boolean {
+function precedingMissing(lineText: string, page: string | undefined, answerText: string, sentence: string): boolean {
   if (page === undefined) return false;
   const ws = (s: string) => s.replace(/\s+/g, " ").trim();
   const head = ws(lineText);
   if (!head) return false;
   const pageLines = page.split("\n").map(ws).filter(Boolean);
-  const answerFigures = new Set(figuresOf(answerText));
   for (let i = 1; i < pageLines.length; i++) {
     if (!pageLines[i].startsWith(head)) continue;
     const parts: string[] = [];
@@ -838,10 +847,7 @@ function precedingMissing(lineText: string, page: string | undefined, answerText
       if (cut >= 0) break;
     }
     if (parts.length === 0) continue;
-    const before = parts.join(" ");
-    const norm = normalizeForClaim(before);
-    const wordsOk = !norm.split(/\s+/).some((t) => t.length > 2) || tokensCovered(norm, answerText);
-    if (!wordsOk || figuresOf(before).some((f) => !answerFigures.has(f))) return true;
+    if (!followsDirectly(answerText, parts.join(" "), sentence)) return true;
   }
   return false;
 }
@@ -897,9 +903,9 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
   for (const [qi, quote] of canonicalQuotes.entries()) {
     const fragment = (l: string) => {
       const raw = clauseReachesLineEnd(l, quote);
-      if (raw !== undefined && continuationMissing(raw, quotePages[qi], answerText)) return true;
+      if (raw !== undefined && continuationMissing(raw, quotePages[qi], answerText, sentence)) return true;
       const start = clauseStartsLine(l, quote);
-      return start !== undefined && precedingMissing(start, quotePages[qi], answerText);
+      return start !== undefined && precedingMissing(start, quotePages[qi], answerText, sentence);
     };
     // Third round (2): a figure sentence is checked against a line that holds
     // its figures (the first word-covering line may be a sibling row).
@@ -912,7 +918,7 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
     // against that line only (follow-up review: no borrowing a figure from
     // another line of the same quote).
     const line = clausesOf(quote).find(
-      (l) => tokensCovered(normSentence, l) && holdsFigures(l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l) && !fragment(l),
+      (l) => tokensCoveredInOrder(normSentence, l) && holdsFigures(l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l) && !fragment(l),
     );
     if (line) return line;
     // A sentence spread over several lines is covered by the whole quote
@@ -924,8 +930,8 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
       !statesFigure &&
       tokensCoveredInOrder(normSentence, quote) &&
       sameMarkers(sentence, quote) &&
-      !continuationMissing(lastLine, quotePages[qi], answerText) &&
-      !precedingMissing(quoteLines[0] ?? "", quotePages[qi], answerText)
+      !continuationMissing(lastLine, quotePages[qi], answerText, sentence) &&
+      !precedingMissing(quoteLines[0] ?? "", quotePages[qi], answerText, sentence)
     ) return quote;
     // Owner decision 2026-11-22: a figure sentence that is the quote's own
     // wording across line breaks — identical except whitespace — is covered
@@ -944,19 +950,22 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
 function uncoveredReason(sentence: string, canonicalQuotes: string[], quotePages: (string | undefined)[], answerText: string): RejectionReason {
   const norm = normalizeForClaim(sentence);
   const lines = canonicalQuotes.flatMap((q, qi) => clausesOf(q).map((l) => ({ l, q, qi })));
-  const worded = lines.filter(({ l }) => tokensCovered(norm, l));
+  const worded = lines.filter(({ l }) => tokensCoveredInOrder(norm, l));
   if (worded.length === 0) {
     return figuresOf(sentence).length > 0 && canonicalQuotes.some((q) => tokensCovered(norm, q)) ? "figure-sentence-across-lines" : "words-not-in-citations";
   }
-  const marked = worded.filter(({ l }) => sameMarkers(sentence, l));
+  const figs = figuresOf(sentence);
+  const withFigures = worded.filter(({ l }) => figs.every((f) => figuresOf(l).includes(f)));
+  if (withFigures.length === 0) return "figure-not-in-covering-line";
+  const marked = withFigures.filter(({ l }) => sameMarkers(sentence, l));
   if (marked.length === 0) return "qualifier-mismatch";
   const bound = marked.filter(({ l }) => figuresBoundToLabels(sentence, l));
   if (bound.length === 0) return "figure-label-binding";
   const whole = bound.filter(({ l, q, qi }) => {
     const raw = clauseReachesLineEnd(l, q);
     const start = clauseStartsLine(l, q);
-    return (raw === undefined || !continuationMissing(raw, quotePages[qi], answerText)) &&
-      (start === undefined || !precedingMissing(start, quotePages[qi], answerText));
+    return (raw === undefined || !continuationMissing(raw, quotePages[qi], answerText, sentence)) &&
+      (start === undefined || !precedingMissing(start, quotePages[qi], answerText, sentence));
   });
   return whole.length === 0 ? "wrapped-fragment" : "figure-not-in-covering-line";
 }
