@@ -744,27 +744,84 @@ function wholeSentenceOnPage(spanned: string[], fromLineStart: boolean, toLineEn
   return found;
 }
 
+/** Owner decision 2026-11-22 (third round, 1): a covering source line that
+ *  reaches the end of its page line, where the next page line continues the
+ *  same sentence (the wrapped-continuation rule of verbatimSpanLines), is a
+ *  fragment. It covers a sentence only when the answer also states every
+ *  word and figure of the continuation (up to the line that ends the
+ *  sentence, at most three lines). Every occurrence on the page must pass;
+ *  a line not found at the end of a page line is not a wrapped fragment. */
+const CONTINUATION_LIST_ITEM = /^\s*\(?(?:\d+|[a-z]|[ivxlc]+)[).]\s/i;
+const CONTINUATION_OPEN_PHRASE = /\b(?:up to|of|is|are|maximum|max|to|at|than|per|from|limit(?:ed to)?)\s*$/i;
+const lineEndsSentence = (l: string) => /[.;!?]["'’”)\]]*\s*$/.test(l);
+function continuesOnto(prev: string, next: string): boolean {
+  return (
+    !CONTINUATION_LIST_ITEM.test(next) &&
+    !lineEndsSentence(prev) &&
+    (/^\s*(?:[a-z]|\([a-z])/.test(next) || (/^\s*\$?\d/.test(next) && CONTINUATION_OPEN_PHRASE.test(prev.trim())))
+  );
+}
+function continuationMissing(lineText: string, page: string | undefined, answerText: string): boolean {
+  if (page === undefined) return false;
+  const ws = (s: string) => s.replace(/\s+/g, " ").trim();
+  const tail = ws(lineText);
+  if (!tail) return false;
+  const pageLines = page.split("\n").map(ws).filter(Boolean);
+  const answerFigures = new Set(figuresOf(answerText));
+  for (let i = 0; i < pageLines.length; i++) {
+    if (!pageLines[i].endsWith(tail)) continue;
+    const parts: string[] = [];
+    for (let j = i + 1; j < pageLines.length && parts.length < 3 && continuesOnto(pageLines[j - 1], pageLines[j]); j++) {
+      parts.push(pageLines[j]);
+      if (lineEndsSentence(pageLines[j])) break;
+    }
+    if (parts.length === 0) continue;
+    const cont = parts.join(" ");
+    const norm = normalizeForClaim(cont);
+    const wordsOk = !norm.split(/\s+/).some((t) => t.length > 2) || tokensCovered(norm, answerText);
+    if (!wordsOk || figuresOf(cont).some((f) => !answerFigures.has(f))) return true;
+  }
+  return false;
+}
+
+/** The covering clause reaches the end of its quote line (nothing after it
+ *  but non-sentence punctuation), so the line's sentence may run on. */
+function clauseReachesLineEnd(clause: string, quote: string): string | undefined {
+  for (const raw of quote.split("\n")) {
+    const at = raw.lastIndexOf(clause);
+    if (at < 0) continue;
+    if (/^[\s,:"'’”)\]-]*$/.test(raw.slice(at + clause.length))) return raw;
+  }
+  return undefined;
+}
+
 /** The cited quote that covers a sentence, or undefined. Review 2026-11-21
  *  (B1): coverage keeps meaning — the covering source line (or, failing
  *  that, the whole quote) must state exactly the sentence's negation,
  *  exception and network markers ("Dental is covered" is not covered by
  *  "Dental treatment is not covered"). Fail-closed: a long quote whose
  *  markers differ from the sentence covers it only line by line. */
-function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: (string | undefined)[] = []): string | undefined {
+function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: (string | undefined)[] = [], answerText = sentence): string | undefined {
   const normSentence = normalizeForClaim(sentence);
   if (!normSentence) return undefined;
   const statesFigure = figuresOf(sentence).length > 0;
   for (const [qi, quote] of canonicalQuotes.entries()) {
+    const fragment = (l: string) => {
+      const raw = clauseReachesLineEnd(l, quote);
+      return raw !== undefined && continuationMissing(raw, quotePages[qi], answerText);
+    };
     // The covering LINE is returned, so the sentence's figures are checked
     // against that line only (follow-up review: no borrowing a figure from
     // another line of the same quote).
     const line = clausesOf(quote).find(
-      (l) => tokensCovered(normSentence, l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l),
+      (l) => tokensCovered(normSentence, l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l) && !fragment(l),
     );
     if (line) return line;
     // A sentence spread over several lines is covered by the whole quote
-    // only when it states no figure.
-    if (!statesFigure && tokensCovered(normSentence, quote) && sameMarkers(sentence, quote)) return quote;
+    // only when it states no figure (and the quote's last line is not a
+    // fragment whose continuation the answer leaves out).
+    const lastLine = quote.split("\n").filter((l) => l.trim()).pop() ?? "";
+    if (!statesFigure && tokensCovered(normSentence, quote) && sameMarkers(sentence, quote) && !continuationMissing(lastLine, quotePages[qi], answerText)) return quote;
     // Owner decision 2026-11-22: a figure sentence that is the quote's own
     // wording across line breaks — identical except whitespace — is covered
     // by the whole lines it spans (figures stay bound to their labels).
@@ -864,7 +921,7 @@ export function verifyAnswerClaims(
     // pass against "not covered"); only a sentence with no word of more than
     // two characters and no figure is non-substantive.
     if (figures.length === 0 && !normalizeForClaim(sentence).split(/\s+/).some((t) => t.length > 2)) continue;
-    const quote = coveringQuote(sentence, canonicalQuotes, quotePages);
+    const quote = coveringQuote(sentence, canonicalQuotes, quotePages, answerText);
     const quoteFigures = new Set(quote ? figuresOf(quote) : []);
     if (figures.some((f) => !quoteFigures.has(f))) {
       return { ok: false, rationale: `Unsupported claim: figure not in the covering passage` };
