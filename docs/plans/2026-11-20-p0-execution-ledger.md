@@ -849,7 +849,7 @@ Resumed at `610a2da`; nothing was done after the usage-limit reset.
 
 Eight questions × five documents (Nemotron, Cloudflare embeddings, ≥2 s between provider calls of each kind, < 30/min), run at `e3897f4`: verified 5/8 (doc 01), 5/8 (02), 3/8 (03), 1/8 (04), 2/8 (05) = 16/40; "space tourism" refused on all five. Replaying every captured model answer through the pre-binding verifier (`610a2da`): the binding caused exactly one refusal — doc 04's verbatim range line "$0 - $5,000" — fixed by reading a range as one value; every other refusal is also rejected by the old verifier (model variance; plan-name label lines still added on docs 04/05; citations not verbatim on docs 03/04; meta sentences). With that fix the replayed count is 17/40.
 
-Gates at the range fix: `tsc` clean; `npm test` 1,949 passed / 22 skipped. At `e3897f4`: real-PDF 2,068 passed / 1 failed (documented missing-brochure gap) / 42 skipped; build 0; guard ok. `test:e2e` 57 passed / 1 skipped at `62e6ba5` (verifier-only changes since).
+Range review (`52e22c2`) found one swap (one end of a range); fixed in `0ab68dc` — a line with a range is always bound. Replay of all 40 captured answers at `0ab68dc`: no refusal that the pre-binding verifier would have accepted. Gates at `0ab68dc`: `tsc` clean; `npm test` 1,952 passed / 22 skipped; build 0; `test:e2e` 57 passed / 1 skipped. At `e3897f4`: real-PDF 2,068 passed / 1 failed (documented missing-brochure gap) / 42 skipped; build 0; guard ok. `test:e2e` 57 passed / 1 skipped at `62e6ba5` (verifier-only changes since).
 
 ## Next atomic step
 
