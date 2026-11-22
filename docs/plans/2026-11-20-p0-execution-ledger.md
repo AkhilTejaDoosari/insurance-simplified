@@ -32,7 +32,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | 3 Presentation contract | 7 | Checkpoints `5c6efdd`, `1af706d`; owner accepted as engineering checkpoint |
 | 4 Chatbot correction | 8–10 | Checkpoints `c57db34`, `2ae2d63`; owner accepted as engineering checkpoint (2026-11-21) |
 | 4b Pre-Phase-5 fixes | A-026, doc 02 fixes 1–3, chat speed | Checkpoints `435fca1` … (see "Pre-Phase-5 fixes"); owner review pending |
-| 5 Real-document acceptance | 11 | NO-GO at `f04aa73` (21/40 correct, 0 wrong; see "third round") |
+| 5 Real-document acceptance | 11 | NO-GO at `ad24293` (29/40 correct, 0 wrong; open review BLOCKING B1′/B4; see "decisions (4)") |
 
 ## Audit validation (at `de4efe4`)
 
@@ -945,6 +945,60 @@ failed; real-PDF 2,223 passed / 1 failed (documented missing-brochure gap) /
 42 skipped; `npm run build` 0; `test:e2e` 57 passed / 1 skipped (local
 Supabase `supabase-int`, port 3344); private-data guard ok on every commit.
 
+## Owner decisions 2026-11-22 (4) — citation completion — implemented
+
+| Item | Commits | Evidence |
+| --- | --- | --- |
+| Server-side citation completion | `4ccd625`, review fixes `ad24293` | `app/lib/evidence/citation-unit.ts`; `citation-completion.test.ts` (logged shapes, red before). Each model-referenced citation is expanded before verification and shown as completed: prose → whole lines of its sentence (continuation rules; a same-line topic "LABEL:" prefix included); table row → its label, cells, column headings, section heading and header line as further verbatim citations (each unique on its page; a repeating cell is cited by its unique row line, else omitted). Never across a sentence end; a line ending in a value is not joined to a next line stating its own amount |
+| Verification against the unit | `4ccd625`, `ad24293` | a span may start after a same-line topic label; never after a scope label (plan, option, rider, tier, class, group, age, network/provider, limitation/exclusion list, single-letter or numbered name) — and a one-line answer that leaves such a label out is rejected (pre-existing hole); markers and figure binding are checked on the sentence span; an initialism ("U.S.") does not end an answer sentence; geographic topic vocabulary adds "region" |
+| Grid-first tier rows | `4ccd625`, `ad24293` | `grid-tier-rows.test.ts`: one plan's tiers shown when every value is a table cell whose claim names its tier as a whole word (column heading cited); table-cell claims gated structurally (describeFact), line values by verifyAnswerClaims; a row with an empty cell gives no tier answer (pinned) |
+
+Independent review of the completion range: first round request changes
+(B1 scope labels dropped; S1 repeating cells; S2 pin; two nits) — fixed in
+`ad24293`. Second round: S1, S2 and nits confirmed; **BLOCKING, open,
+owner decision needed** (pre-existing, not introduced by completion):
+
+- **B1′** one-line coverage lets an answer skip non-marker words, so a
+  scope named any way other than the listed words is dropped ("Under the
+  Gold plan maternity is covered." → "Maternity is covered.";
+  "Gold:"/"Employee:" labels; "… for employees" dropped).
+- **B4** a table-row line lets an answer drop a column's value and so its
+  plan ("Ambulance $0 Up to $500" → "Ambulance Up to $500").
+
+Strict fix prepared but **not applied** (patch in the private archive,
+`option-whole-clause.patch`): a sentence covered by one line states that
+clause's every word (articles, list marker, ALL-CAPS topic heading aside).
+It changes 27 existing accepted assertions (figure-binding suites: one
+labelled value from a multi-value line; reordered forms) — an
+authoritative-behaviour change, so stopped for the owner. Replayed on the
+run-9 answers it rejects 3 of 18 verified model answers (doc 01 deductible,
+doc 01 and doc 05 pre-existing; all correct today) → 26/40.
+
+### Benchmark at `ad24293` (run 9; same 40 questions, semantic leg on every model-path question, 0 CHAT_FAILED)
+
+| Doc | Verified | Correct | Wrong / misleading | Not correct (unlabelled tiers) | Cannot be confirmed (answerable) |
+| --- | --- | --- | --- | --- | --- |
+| 01 | 5 | 6 (5 + space refusal) | 0 | 0 | 2 |
+| 02 | 6 | 7 | 0 | 0 | 1 |
+| 03 | 6 | 6 | 0 | 1 (overall maximum, model path) | 1 |
+| 04 | 3 | 5 (incl. maternity NOT STATED, space) | 0 | 0 | 3 |
+| 05 | 4 | 5 | 0 | 0 | 3 |
+| Total | 24 | **29/40** | **0** | 1 | 10 |
+
+False "not in your documents": 0. Remaining causes (10): answer without its
+column label (off-topic) 3; wrapped table label with a capitalised second
+line 2; figure row omitted from a wrapped sentence 1 (correct rejection);
+paraphrase 1; definition list 1; two-column line 1; bad reference 1.
+
+**GO/NO-GO: NO-GO** — 29/40 < 30, and the independent review has an open
+BLOCKING (B1′/B4) awaiting the owner's decision.
+
+Gates at `ad24293`: `tsc` clean; `npm test` 2,126 passed / 22 skipped / 0
+failed; real-PDF 2,248 passed / 1 failed (documented missing-brochure gap) /
+42 skipped; build 0; `test:e2e` 57 passed / 1 skipped; guard ok. Local
+Supabase stack stopped after the run.
+
 ## Next atomic step
 
-Owner decision on the answer rate (see the milestone report). Phase 5 is NO-GO.
+Owner decision on B1′/B4 (apply the whole-clause rule, accept the 27
+assertion changes and its answer-rate cost, or another rule). Phase 5 is NO-GO.
