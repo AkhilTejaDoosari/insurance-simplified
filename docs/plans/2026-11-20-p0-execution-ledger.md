@@ -32,7 +32,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | 3 Presentation contract | 7 | Checkpoints `5c6efdd`, `1af706d`; owner accepted as engineering checkpoint |
 | 4 Chatbot correction | 8–10 | Checkpoints `c57db34`, `2ae2d63`; owner accepted as engineering checkpoint (2026-11-21) |
 | 4b Pre-Phase-5 fixes | A-026, doc 02 fixes 1–3, chat speed | Checkpoints `435fca1` … (see "Pre-Phase-5 fixes"); owner review pending |
-| 5 Real-document acceptance | 11 | Not started — the five files are confirmed (doc 02 replaced, doc 03 confirmed) |
+| 5 Real-document acceptance | 11 | NO-GO at `f04aa73` (21/40 correct, 0 wrong; see "third round") |
 
 ## Audit validation (at `de4efe4`)
 
@@ -878,6 +878,73 @@ False "not in your documents": 0. The wrong outcome (doc 01 ER) is a verified ve
 
 Gates at `dd1be6b`: `tsc` clean; `npm test` 2,013 passed / 22 skipped; real-PDF 2,135 passed / 1 failed (documented missing-brochure gap) / 42 skipped; build 0; `test:e2e` 57 passed / 1 skipped; guard ok.
 
+## Owner decisions 2026-11-22 (third round) — implemented
+
+Resumed at `613d17b`. The previous benchmark answer key and per-question
+scores were in the session scratchpad and were lost in a reboot (nothing to
+move). The key was rebuilt from the five documents (34 answerable, 6 not
+stated — the same split as before) and saved, with every run, in the private
+archive `~/Repositories/_insurance-simplified-archive/p0-benchmark-2026-11-22/`
+(mode 700, outside git). Question wording was not recoverable; the eight
+topics are the same. Harness: `.p0probe/bench.test.ts` (git-excluded) drives
+the real extract and chat routes in-process; provider calls spaced ≥ 2.1 s
+apart across all hosts (< 30/min).
+
+| Decision | Commits | Evidence |
+| --- | --- | --- |
+| 1 Misleading fragment (blocking) | `e5c95d2`, review fixes `f299ff6`, `02e8fd5`, `5341f2f`, `9b80539`, `f04aa73` | `misleading-fragment.test.ts` (5 red before); mirror rule (a line whose sentence began above); the continuation must follow the line directly in the answer, every word and figure; continuation openings: lower case, amount, %, number + unit word, bare number, spelled number, qualifier word; a line ending in a lower-case function word continues; backwards, a qualifier line runs on unless it continues the row above. The span path and the fragment rules share these rules |
+| 2 Rejection log | `e171aa9` | `rejection-reasons.test.ts`: closed reason codes; the log carries code + sentence position only (operations.md: no document text, quotes or questions); the sentence goes only to the opt-in `onRejection` callback (benchmark harness; no production caller) |
+| 2 Grid-first diagnosis and widening | `e171aa9`, `f299ff6` | fallback reason logged (code only). On the five documents grid-first answered 4 of 35 concept questions: coinsurance rows (5/5) and doc 02 ER/maternity are NEEDS VERIFICATION by extraction safety rules (whose share a % is; uncertain care rules) — **not widened**; tier columns of one plan (docs 03, 04) need the user's tier — **not widened** (review B3 of the grid work); unattributed values of a single-plan document now join its plan (`ownerOf`, widened, safe); values with no known owner in a multi-plan table fall back (S3); line fragments now fail the verbatim gate (decision 1) |
+| 2 Relevance | `e171aa9`, `02e8fd5`, `5341f2f` | `answer-relevance.test.ts`: a verified answer must contain every non-generic 4+-letter word of the question (topic words may be answered by their vocabulary); else "cannot be confirmed" |
+| 2 General rules for common causes | `fa2958d` | `answer-rate-rules.test.ts`, `definition-is-any.test.ts`, `filename-header.test.ts`: figure sentence checked against the line holding its figures; identical sentence/line is figure-bound; "<term> is any / is defined as / refers to" is a definition line (five-document diff: one doc 04 value withheld, nothing else); one-document answer's file-name header line stripped |
+
+Verification tightened along the way (independent review, five rounds,
+final verdict APPROVE at `f04aa73`): one-line coverage keeps word order
+(pre-existing inversion hole); `$` and `%` are part of a figure
+(pre-existing); the unordered whole-quote coverage path is removed (a
+sentence over several lines verifies only as verbatim wording across line
+breaks). Recorded, not changed (reviewer: not misleading): the answer may put
+a full stop between a line and its continuation ("… are covered. If
+admitted."); a qualifier line that continues the row above does not block the
+next sentence. Dropped: a rule for one-line sentences containing ";" (a
+two-column line has no general sentence end).
+
+**Test changes (review/owner-directed, listed for owner review):**
+`semantic-first.test.ts` (1b) fixture is now an on-topic page (relevance
+rule); its assertions unchanged and lexical-empty now asserted.
+`grid-first.test.ts` "B1: a rephrase that reverses or drops a condition": the
+kept-condition rephrase is in source order; a reordered rephrase is asserted
+to fall back to the exact wording (word-order rule). Own new assertions
+corrected during the work: `answer-relevance` (passages may contain the
+off-topic line; the answer text may not), `review-third-round` (a figure-led
+whole sentence is fail-closed, not asserted to verify).
+
+### Benchmark — 8 questions × 5 documents (Nemotron, Cloudflare embeddings)
+
+Semantic retrieval confirmed: the `semantic` leg on every model-path question
+(not one lexical fallback); 0 CHAT_FAILED. Per-question table outside git.
+
+| Run | Verified | Correct | Wrong / misleading | Cannot be confirmed (answerable) | False "not in documents" |
+| --- | --- | --- | --- | --- | --- |
+| `dd1be6b` (previous) | 21 | 22/40 | 1 | 14 | 0 |
+| `e171aa9` (decision 1 + diagnostics) | 19 | 23/40 | 2 (doc 02 pre-existing: a line starting mid-sentence; doc 04 pre-existing: a definition) | 15 | 0 |
+| `f04aa73` (final) | 17 | **21/40** | **0** (2 flagged: doc 03 maximum and ER copay are verbatim four-tier rows without tier labels — nothing false, not counted correct) | 17 | **0** |
+
+Final-run causes of the 17 "cannot be confirmed" on answerable facts:
+verbatim sentence across lines rejected by the span rules 8 (2 of them start
+after a "LABEL:" prefix on the same line); answer without its column label
+(off-topic) 3; wrapped table label with a capitalised second line 2; model
+paraphrase 1; two-column line 1; age-band row with a figure-led next line
+(fragment rule) 1; bad citation reference 1.
+
+**GO/NO-GO for Phase 5: NO-GO** — 0 wrong ✓, 0 false absence ✓, correct
+21/40 < 30 ✗.
+
+Gates at `f04aa73`: `tsc` clean; `npm test` 2,101 passed / 22 skipped / 0
+failed; real-PDF 2,223 passed / 1 failed (documented missing-brochure gap) /
+42 skipped; `npm run build` 0; `test:e2e` 57 passed / 1 skipped (local
+Supabase `supabase-int`, port 3344); private-data guard ok on every commit.
+
 ## Next atomic step
 
-Owner decisions (see the milestone report). Phase 5 is NO-GO.
+Owner decision on the answer rate (see the milestone report). Phase 5 is NO-GO.
