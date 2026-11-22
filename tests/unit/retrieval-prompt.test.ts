@@ -13,8 +13,10 @@ describe("R5 retrieval-fed prompt assembly", () => {
       { documentId: "doc-2", page: 1, chunkId: "c2", quote: "Copay $25.", score: 0.8 },
     ];
     const prompt = buildRetrievalPrompt(DOCS, passages, "What is deductible?");
-    expect(prompt).toContain('[Page 1]\nAnnual deductible $250.');
-    expect(prompt).toContain('[Page 1]\nCopay $25.');
+    // Owner decision 2026-11-22 (citation by reference): each passage is
+    // tagged with its page and id, and its lines are numbered.
+    expect(prompt).toContain('[Page 1] passage P1\n1| Annual deductible $250.');
+    expect(prompt).toContain('[Page 1] passage P2\n1| Copay $25.');
     expect(prompt).toContain('<<<DOCUMENT id="doc-1" name="a.pdf" >>>');
     expect(prompt).toContain('<<<DOCUMENT id="doc-2" name="b.pdf" >>>');
     expect(prompt.indexOf("Annual deductible $250.")).toBeLessThan(prompt.indexOf("Copay $25."));

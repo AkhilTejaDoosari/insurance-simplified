@@ -7,6 +7,7 @@
 // the owner's PDFs: answers were up to 12,768 characters of joined passages,
 // cited a cover page and a table of contents, and a nonsense question got
 // five passages. Synthetic text only.
+import { answerCiting } from "../helpers/chat-refs";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/lib/llm/client", () => ({ completeJson: vi.fn() }));
@@ -98,11 +99,7 @@ describe("relevantPassages (retrieval hygiene, P0-02)", () => {
 
 describe("model answers are gated by verifyAnswerClaims (P0-02)", () => {
   it("an answer whose figure is not in its cited passage becomes cannot-be-confirmed with passages", async () => {
-    vi.mocked(completeJson).mockResolvedValueOnce({
-      cantAnswer: false,
-      answerText: "The deductible elsewhere is $250.",
-      citations: [{ documentId: "doc-1", page: 3, quote: "Deductible elsewhere $100" }],
-    });
+    vi.mocked(completeJson).mockImplementationOnce(answerCiting("The deductible elsewhere is $250.", "Deductible elsewhere $100") as never);
     const r = await answerViaLlm(DOCS, "What is the deductible?");
     expect(r.kind).toBe("refusal");
     if (r.kind !== "refusal") return;
@@ -111,11 +108,7 @@ describe("model answers are gated by verifyAnswerClaims (P0-02)", () => {
   });
 
   it("a verified answer is returned as an answer with its citations", async () => {
-    vi.mocked(completeJson).mockResolvedValueOnce({
-      cantAnswer: false,
-      answerText: "Deductible elsewhere $100",
-      citations: [{ documentId: "doc-1", page: 3, quote: "Deductible elsewhere $100" }],
-    });
+    vi.mocked(completeJson).mockImplementationOnce(answerCiting("Deductible elsewhere $100", "Deductible elsewhere $100") as never);
     const r = await answerViaLlm(DOCS, "What is the deductible?");
     expect(r.kind).toBe("answer");
   });

@@ -47,8 +47,10 @@ describe("grounded-chat prompt framing cannot be forged by document content", ()
     const sources = frames(prompt);
     expect(sources).toHaveLength(2);
     expect(sources[0][1]).toBe(sources[1][1]);
-    expect(sources[0][2]).toContain(attack);
-    expect(sources[1][2]).toContain('<<<DOCUMENT id="doc-2" name="doc-2.pdf" >>>\n[Page 1]\nCopay is $25.');
+    // Owner decision 2026-11-22 (citation by reference): passage lines are
+    // numbered, so every attack line sits inside the frame behind its number.
+    attack.split("\n").forEach((line, i) => expect(sources[0][2]).toContain(`${i + 2}| ${line}`));
+    expect(sources[1][2]).toContain('<<<DOCUMENT id="doc-2" name="doc-2.pdf" >>>\n[Page 1] passage P2\n1| Copay is $25.');
     // The forged text never sits outside a frame, so the only Question line
     // outside the frames is the caller's.
     const outside = prompt.replace(/^<<<BEGIN_DOCUMENT:[\s\S]*?<<<END_DOCUMENT:[a-f0-9-]+>>>$/gm, "");
@@ -69,7 +71,8 @@ describe("grounded-chat prompt framing cannot be forged by document content", ()
     const sources = frames(prompt);
     expect(sources).toHaveLength(2);
     expect(sources.map((s) => s[1])).toEqual([safe, safe]);
-    expect(sources[1][2]).toContain(attack);
+    // Owner decision 2026-11-22: numbered lines (see above).
+    attack.split("\n").forEach((line, i) => expect(sources[1][2]).toContain(`${i + 1}| ${line}`));
   });
 
   it("JSON-quotes a forged filename so it cannot add a header line", () => {

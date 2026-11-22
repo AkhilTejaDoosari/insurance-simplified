@@ -310,9 +310,21 @@ export async function POST(request: NextRequest) {
       // would read as a statement about the documents. A model answer that
       // verifyAnswerClaims rejects is NOT a failure: answerViaLlm returns
       // "cannot be confirmed" with the cited passages.
+      // Owner decision 2026-11-22: plan-name header lines are stripped
+      // server-side; only names of plans re-verified under this request
+      // whose sources are in the chat scope are used.
+      const planNames = await (async () => {
+        const record = await loadStored();
+        if (!record || record.documentFingerprint !== documentFingerprint(session.documents)) return [];
+        const inScope = new Set(scopedDocuments.map((d) => d.documentId));
+        return (confirmStored(record).table.plans ?? [])
+          .filter((p) => p.sources.some((s) => inScope.has(s.documentId)))
+          .map((p) => p.name);
+      })();
       response = await timeAsync("chat.answerViaLlm", () =>
         answerViaLlm(scopedDocuments, question, {
           sessionId,
+          planNames,
         }),
       );
     } else {

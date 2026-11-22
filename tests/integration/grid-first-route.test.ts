@@ -84,3 +84,19 @@ describe("grid-first chat route", () => {
     expect(answerQuestionSemantic).toHaveBeenCalledTimes(1);
   });
 });
+
+// Owner decision 2026-11-22: plan-name header lines are stripped server-side.
+// The model path receives exactly the names of the plans re-verified under
+// this request whose sources are in the chat scope.
+describe("model path receives the verified in-scope plan names", () => {
+  it("passes the stored result's re-verified plan names to answerViaLlm", async () => {
+    process.env.LLM_BASE_URL = "https://llm.test/v1";
+    process.env.LLM_API_KEY = "test-key";
+    vi.mocked(answerViaLlm).mockResolvedValueOnce({ schemaVersion: "v1", kind: "refusal", refusalText: "x" } as never);
+    const { sessionId, capability, table } = await extractedSession(created);
+    const names = (table.plans ?? []).map((p: { name: string }) => p.name);
+    expect(names.length).toBeGreaterThan(0);
+    await chat(post("/api/chat", { sessionId, question: "Tell me about travel abroad?" }, capability));
+    expect(vi.mocked(answerViaLlm).mock.calls[0][2]).toMatchObject({ planNames: names });
+  });
+});

@@ -1,5 +1,6 @@
 // Chat LLM call is schema-constrained (EC-9 strict structured output); the
 // provider is mocked — no network, no paid call.
+import { answerCiting } from "../helpers/chat-refs";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/lib/llm/client", () => ({ completeJson: vi.fn() }));
@@ -49,7 +50,7 @@ describe("M5 chat call uses strict structured output", () => {
       validateJsonSchema(s, {
         cantAnswer: false,
         answerText: "Annual deductible: $250 in-network",
-        citations: [{ documentId: "doc-1", page: 1, quote: QUOTE }],
+        citations: [{ passageId: "P1", fromLine: 1, toLine: 1 }],
       }),
     ).toEqual([]);
     expect(validateJsonSchema(s, { cantAnswer: true })).not.toEqual([]);
@@ -71,11 +72,7 @@ describe("M5 chat call uses strict structured output", () => {
   });
 
   it("passes the schema to completeJson and still validates + verifies the answer", async () => {
-    vi.mocked(completeJson).mockResolvedValueOnce({
-      cantAnswer: false,
-      answerText: "Annual deductible: $250 in-network / $500 out-of-network.",
-      citations: [{ documentId: "doc-1", page: 1, quote: QUOTE }],
-    });
+    vi.mocked(completeJson).mockImplementationOnce(answerCiting("Annual deductible: $250 in-network / $500 out-of-network.", QUOTE) as never);
     const result = await answerViaLlm(DOCS, "What is the annual deductible?");
     // Owner decision 2026-11-21: chat requests also carry the output cap.
     expect(vi.mocked(completeJson).mock.calls[0][2]).toEqual({

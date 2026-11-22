@@ -1,3 +1,4 @@
+import { answerCiting } from "../helpers/chat-refs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/app/lib/llm/client", () => ({
@@ -75,10 +76,7 @@ describe("P2 semantic-first correction", () => {
   it("(1b) lexical-empty + semantic-useful -> answerViaLlm succeeds via semantic with one LLM call", async () => {
     mockHealthyEmbeddings();
     const page = SEMANTIC_ONLY_DOCS[0].pages[0];
-    mockedCompleteJson.mockResolvedValueOnce({
-      answerText: page,
-      citations: [{ documentId: "doc-1", page: 1, quote: page }],
-    });
+    mockedCompleteJson.mockImplementationOnce(answerCiting(page, page) as never);
     const result = await answerViaLlm(SEMANTIC_ONLY_DOCS, QUESTION);
     expect(result.kind).toBe("answer");
     expect(mockedCompleteJson).toHaveBeenCalledTimes(1);
@@ -98,10 +96,7 @@ describe("P2 semantic-first correction", () => {
     mockedConfigured.mockReturnValue(true);
     mockedEmbed.mockRejectedValue(new Error("Ollama down"));
     const page = LEXICAL_DOCS[0].pages[0];
-    mockedCompleteJson.mockResolvedValueOnce({
-      answerText: page,
-      citations: [{ documentId: "doc-1", page: 1, quote: page }],
-    });
+    mockedCompleteJson.mockImplementationOnce(answerCiting(page, page) as never);
     const result = await answerViaLlm(LEXICAL_DOCS, QUESTION);
     expect(result.kind).toBe("answer");
     expect(mockedCompleteJson).toHaveBeenCalledTimes(1);

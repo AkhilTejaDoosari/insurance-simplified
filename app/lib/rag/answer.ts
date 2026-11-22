@@ -547,11 +547,13 @@ export const CHAT_ANSWER_SCHEMA: NamedJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["documentId", "page", "quote"],
+          // Owner decision 2026-11-22: citation by reference. The model names
+          // a retrieved passage and a line range; it never types a quote.
+          required: ["passageId", "fromLine", "toLine"],
           properties: {
-            documentId: { type: "string", minLength: 1 },
-            page: { type: "integer", minimum: 1 },
-            quote: { type: "string", minLength: 1 },
+            passageId: { type: "string", minLength: 1 },
+            fromLine: { type: "integer", minimum: 1 },
+            toLine: { type: "integer", minimum: 1 },
           },
         },
       },
@@ -563,14 +565,15 @@ const CHAT_INSTRUCTIONS = [
   "You answer questions about insurance documents.",
   "Use ONLY the DOCUMENT blocks below. Every substantive claim MUST be backed by a cited passage.",
   'If nothing is relevant, return ONLY {"cantAnswer": true, "answerText": null, "citations": null} with no other text.',
-  'Otherwise return ONLY a JSON object: {"cantAnswer": false, "answerText": string, "citations": [{documentId, page, quote}]}.',
+  'Otherwise return ONLY a JSON object: {"cantAnswer": false, "answerText": string, "citations": [{"passageId": string, "fromLine": integer, "toLine": integer}]}.',
+  "Each passage below starts with a tag like \"[Page N] passage P#\" and its lines are numbered (\"1| …\"). Cite a passage by its id and the first and last line numbers that support your answer; never copy quotes into citations — the server reads the cited lines from the page.",
   "ANSWER FORMATTING (required for verification):",
   "- Each sentence of answerText MUST be composed ONLY of words that appear in the passages you cite for it. Copy the source wording near-verbatim; do not paraphrase or add connective words that are not in the source.",
   '- Do not add meta commentary (e.g. "According to the documents", "Based on the provided passages").',
-  "- Each quote MUST be copied exactly (character-for-character) from a DOCUMENT block, including whitespace and line breaks as they appear. Preserve every punctuation mark exactly as written (commas, colons, semicolons, periods, dollar signs and digit groupings); when joining wrapped lines into one line, keep each comma and colon that was before the line break — never drop or add punctuation.",
-  "- Each DOCUMENT block has a name attribute (the uploaded filename). When the question names or compares plans or insurers and there is more than one DOCUMENT block, answerText MUST include a short label line for each plan discussed: copy name wording from a passage you cite (and include that passage in citations) alone on its own line as a 2-3 word label, before any sentence about that plan's values; never combine a plan name with values in one sentence unless every word of that sentence appears in a single cited passage. With one DOCUMENT block, write no plan or document name line.",
+  "- The wording of answerText MUST be copied exactly (character-for-character) from the cited lines, without the line numbers; keep every punctuation mark, dollar sign and digit grouping as written.",
+  "- Each DOCUMENT block has a name attribute (the uploaded filename). When the question names or compares plans or insurers and there is more than one DOCUMENT block, answerText MUST include a short label line for each plan discussed: copy name wording from a passage you cite (and cite its lines) alone on its own line as a 2-3 word label, before any sentence about that plan's values; never combine a plan name with values in one sentence unless every word of that sentence appears in a single cited passage. With one DOCUMENT block, write no plan or document name line.",
   "- Set cantAnswer ONLY when no DOCUMENT block contains any information relevant to the question. If any relevant passage exists, answer from it.",
-  "- A passage is relevant when it states the subject of the question in different words (for example, a question about geographic restrictions is answered by passages about the home country, travel outside a country or an area of coverage). Quote such passages exactly; do not restate them in the question's words.",
+  "- A passage is relevant when it states the subject of the question in different words (for example, a question about geographic restrictions is answered by passages about the home country, travel outside a country or an area of coverage). Answer from such passages in their own words; do not restate them in the question's words.",
 ].join("\n");
 
 /** Max characters for retrieved context in LLM prompt (budget enforcement).
@@ -590,6 +593,14 @@ export const MAX_CONTEXT_CHARS = 48000;
  *  at the cap fails closed (finish_reason=length → CHAT_FAILED). */
 export const CHAT_MAX_OUTPUT_TOKENS = 1024;
 
+/** One referenceable passage of the prompt: its lines are exact slices of
+ *  the page text (retrieved chunk text is a raw page slice). */
+export interface PassageRef {
+  documentId: string;
+  page: number;
+  lines: string[];
+}
+
 /** Build LLM prompt from top-K retrieved chunks with budget enforcement.
  *  Truncates lowest-rank chunks first while keeping page tags intact. */
 export function buildRetrievalPrompt(
@@ -597,85 +608,106 @@ export function buildRetrievalPrompt(
   passages: RankedPassage[],
   question: string,
 ): string {
-  // Group passages by documentId
-  const byDoc = new Map<
-    string,
-    { documentId: string; filename: string; passages: RankedPassage[] }
-  >();
+  return buildRetrievalContext(documents, passages, question).prompt;
+}
+
+/** The prompt plus the passage references it defines (owner decision
+ *  2026-11-22: citation by reference). Each passage is tagged
+ *  "[Page N] passage P#" with numbered lines; documents are grouped, pages
+ *  ascending within a document, lowest-ranked documents dropped first. */
+export function buildRetrievalContext(
+  documents: RagDocument[],
+  passages: RankedPassage[],
+  question: string,
+): { prompt: string; refs: Map<string, PassageRef> } {
+  const byDoc = new Map<string, { documentId: string; filename: string; passages: RankedPassage[] }>();
   for (const p of passages) {
-    if (
-      !documents.some(
-        (d) =>
-          d.documentId === p.documentId && p.page >= 1 && p.page <= d.pageCount,
-      )
-    )
-      continue;
+    if (!documents.some((d) => d.documentId === p.documentId && p.page >= 1 && p.page <= d.pageCount)) continue;
     if (!byDoc.has(p.documentId)) {
       const doc = documents.find((d) => d.documentId === p.documentId);
-      byDoc.set(p.documentId, {
-        documentId: p.documentId,
-        filename: doc?.filename ?? p.documentId,
-        passages: [],
-      });
+      byDoc.set(p.documentId, { documentId: p.documentId, filename: doc?.filename ?? p.documentId, passages: [] });
     }
     byDoc.get(p.documentId)!.passages.push(p);
   }
+  const blockText = (id: string, page: number, lines: string[]) =>
+    `[Page ${page}] passage ${id}\n${lines.map((l, i) => `${i + 1}| ${l}`).join("\n")}`;
 
-  // Build per-document context with page tags
-  const docBlocks: Array<{
-    documentId: string;
-    filename: string;
-    pages: string[];
-  }> = [];
+  const docBlocks: Array<{ documentId: string; filename: string; items: Array<{ page: number; quote: string }> }> = [];
   let totalChars = 0;
-
-  for (const {
-    documentId,
-    filename,
-    passages: docPassages,
-  } of byDoc.values()) {
-    const pageMap = new Map<number, string>();
-    for (const p of docPassages) {
-      const tagged = `[Page ${p.page}]\n${p.quote}`;
-      const existing = pageMap.get(p.page);
-      pageMap.set(p.page, existing ? `${existing}\n\n${tagged}` : tagged);
-    }
-    const pages = Array.from(pageMap.entries())
-      .sort(([a], [b]) => a - b)
-      .map(([, text]) => text);
-    const body = pages.join("\n\n");
-    const block = `${documentHeader({ id: documentId, name: filename })}\n${body}`;
-    if (totalChars + block.length > MAX_CONTEXT_CHARS && docBlocks.length > 0) {
-      break; // budget exceeded, stop adding documents (lowest rank first)
-    }
-    totalChars += block.length;
-    docBlocks.push({ documentId, filename, pages });
+  for (const { documentId, filename, passages: docPassages } of byDoc.values()) {
+    const items = [...docPassages].sort((x, y) => x.page - y.page).map((p) => ({ page: p.page, quote: p.quote }));
+    const size = `${documentHeader({ id: documentId, name: filename })}\n`.length +
+      items.reduce((n, it) => n + it.quote.length + it.quote.split("\n").length * 6 + 32, 0);
+    if (totalChars + size > MAX_CONTEXT_CHARS && docBlocks.length > 0) break; // budget: lowest rank first
+    totalChars += size;
+    docBlocks.push({ documentId, filename, items });
   }
-
-  // If even the first document exceeds budget, truncate its content
+  // If even the first document exceeds budget, truncate its passages (each
+  // truncated quote is still a prefix — an exact slice — of the page text).
   if (docBlocks.length === 1 && totalChars > MAX_CONTEXT_CHARS) {
-    const first = docBlocks[0];
-    const pages = first.pages.map((p) =>
-      p.substring(0, Math.max(1, MAX_CONTEXT_CHARS / first.pages.length)),
-    );
-    docBlocks[0] = {
-      documentId: first.documentId,
-      filename: first.filename,
-      pages,
-    };
+    const limit = Math.max(1, Math.floor(MAX_CONTEXT_CHARS / docBlocks[0].items.length));
+    docBlocks[0].items = docBlocks[0].items.map((it) => ({ ...it, quote: it.quote.substring(0, limit) }));
   }
 
-  const payloads = docBlocks.map(
-    ({ documentId, filename, pages }) =>
-      `${documentHeader({ id: documentId, name: filename })}\n${pages.join("\n\n")}`,
-  );
+  const refs = new Map<string, PassageRef>();
+  const payloads = docBlocks.map(({ documentId, filename, items }) => {
+    const blocks = items.map((it) => {
+      const id = `P${refs.size + 1}`;
+      const lines = it.quote.split("\n");
+      refs.set(id, { documentId, page: it.page, lines });
+      return blockText(id, it.page, lines);
+    });
+    return `${documentHeader({ id: documentId, name: filename })}\n${blocks.join("\n\n")}`;
+  });
 
   // EVIDENCE-vs-INSTRUCTION SEPARATOR (P3-E prompt-injection boundary):
   // trusted task instructions come first; retrieved passages are UNTRUSTED
   // uploaded-PDF data inside the same collision-checked per-call frames as
   // extraction (llm/safe-prompt.ts). No code path reads frame contents as
   // instructions; the model output is validated + verified below.
-  return frameSources(`${CHAT_INSTRUCTIONS}\nQuestion: ${question}`, payloads);
+  return { prompt: frameSources(`${CHAT_INSTRUCTIONS}\nQuestion: ${question}`, payloads), refs };
+}
+
+/** Resolve the model's passage references to verbatim citations. Returns
+ *  null when any reference is unknown or out of range (the answer is then
+ *  treated as rejected — never repaired). Any typed text is ignored. */
+export function resolveCitationRefs(raw: unknown, refs: Map<string, PassageRef>): ChatCitation[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out: ChatCitation[] = [];
+  for (const c of raw as Array<Record<string, unknown>>) {
+    const ref = refs.get(String(c?.passageId ?? ""));
+    const from = Number(c?.fromLine);
+    const to = Number(c?.toLine);
+    if (!ref || !Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to > ref.lines.length) return null;
+    const quote = ref.lines.slice(from - 1, to).join("\n");
+    if (!quote.trim()) return null;
+    if (!out.some((x) => x.documentId === ref.documentId && x.page === ref.page && x.quote === quote)) {
+      out.push({ documentId: ref.documentId, page: ref.page, quote });
+    }
+  }
+  return out;
+}
+
+/** Coverage / scoping wording: a line stating it is never a header. */
+const HEADER_CLAIM = /\b(?:covered|covers?|not|no|excluded|exclud\w*|except|unless|only|waived?|included|pays?|payable|limited|maximum|deductible|copay\w*|coinsurance)\b/i;
+
+/** Owner decision 2026-11-22: strip plan-name header lines server-side. A
+ *  line is a header when it names a verified in-scope plan and states no
+ *  figure and no coverage wording; it is removed, never rewritten. */
+export function stripPlanHeaders(answerText: string, planNames: readonly string[]): string {
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const names = planNames.map(norm).filter((n) => n.length >= 3);
+  if (names.length === 0) return answerText;
+  return answerText
+    .split("\n")
+    .filter((line) => {
+      const l = norm(line);
+      if (!l || /\d/.test(line.replace(/\([^()]*\)/g, "")) || HEADER_CLAIM.test(line)) return true;
+      if (l.split(" ").length > 12) return true;
+      return !names.some((n) => ` ${l} `.includes(` ${n} `));
+    })
+    .join("\n")
+    .trim();
 }
 
 /** LLM answer using retrieval-fed context (selected retriever: semantic-only).
@@ -685,7 +717,7 @@ export function buildRetrievalPrompt(
 export async function answerViaLlm(
   documents: RagDocument[],
   question: string,
-  opts: { sessionId?: string } = {},
+  opts: { sessionId?: string; planNames?: readonly string[] } = {},
 ): Promise<ChatResponse> {
   // Semantic-first (P2): try healthy semantic retrieval when embeddings are
   // configured; lexical line-overlap is ONLY a fallback on semantic
@@ -780,7 +812,7 @@ export async function answerViaLlm(
   if (evidencePassages.length === 0) return uncertainOutcome(passages, question);
   passages = evidencePassages;
   // Build prompt from top-K retrieved chunks with budget enforcement
-  const prompt = buildRetrievalPrompt(documents, passages, question);
+  const { prompt, refs } = buildRetrievalContext(documents, passages, question);
   const raw = stripNullProperties(
     await completeJson([{ role: "user", content: prompt }], undefined, {
       schema: CHAT_ANSWER_SCHEMA,
@@ -793,13 +825,24 @@ export async function answerViaLlm(
     return uncertainOutcome(passages, question);
   }
 
-  // cantAnswer is a model-side flag, not part of chat-api v1.
-  const { cantAnswer: _cantAnswer, ...answerFields } = raw;
-  void _cantAnswer;
+  // Citation by reference: the server fills every quote from the cited
+  // passage lines. A bad reference is a rejected answer (no repair).
+  // Off-schema output (no answer text, no citation array) is a model failure
+  // (A-026 → CHAT_FAILED), exactly as before; a bad reference is not.
+  if (typeof raw.answerText !== "string" || !Array.isArray(raw.citations) || raw.citations.length === 0) {
+    throw new Error("Invalid chat response: answerText and citations are required");
+  }
+  const citations = resolveCitationRefs(raw.citations, refs);
+  const answerText = stripPlanHeaders(raw.answerText, opts.planNames ?? []);
+  if (!citations || !answerText) {
+    console.warn(`[chat-refusal] stage=citation-ref category=${citations ? "empty-after-header-strip" : "bad-reference"}`);
+    return uncertainOutcome(passages, question);
+  }
   const response = validateChatResponse({
     schemaVersion: "v1",
     kind: "answer",
-    ...answerFields,
+    answerText,
+    citations,
   });
 
   // validateChatResponse guarantees kind === "answer" here (cantAnswer handled above)
