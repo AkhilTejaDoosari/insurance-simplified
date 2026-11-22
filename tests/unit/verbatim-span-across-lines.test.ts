@@ -91,3 +91,23 @@ describe("third review: a span is a whole sentence on the page", () => {
     expect(checkOnPage(JOINED, WRAPPED, page)).toEqual({ ok: true });
   });
 });
+
+// Fourth review (2026-11-22): a label line ending in ":" or "." with its value
+// on the next page line; a sentence wrapping onto a line that opens with
+// its figure ("payable up to / $5,000 per pregnancy.").
+describe("fourth review: label lines and figure continuation lines", () => {
+  it.each([
+    ["$30 copay emergency room.", "$30 copay\nemergency room:", "Specialist:\n$30 copay\nemergency room:\n$300 copay"],
+    ["$30 copay emergency room.", "$30 copay\nemergency room.", "Specialist.\n$30 copay\nemergency room.\n$300 copay"],
+  ])("rejects %s", (answer, quote, page) => {
+    expect(checkOnPage(answer, quote, page).ok).toBe(false);
+  });
+  it("verifies a sentence wrapped onto a line that opens with its figure", () => {
+    const quote = "Maternity benefits are payable up to\n$5,000 per pregnancy.";
+    expect(checkOnPage("Maternity benefits are payable up to $5,000 per pregnancy.", quote, ["BENEFITS", quote, "Dental: not covered."].join("\n"))).toEqual({ ok: true });
+  });
+  it("still rejects a figure line borrowed by the wrong label across that wrap", () => {
+    const page = "Specialist visits are payable up to\n$30 copay\nEmergency room $300 copay";
+    expect(checkOnPage("Emergency room visits are payable up to $30 copay.", "Specialist visits are payable up to\n$30 copay", page).ok).toBe(false);
+  });
+});

@@ -746,7 +746,13 @@ export function stripPlanHeaders(answerText: string, planNames: readonly string[
     .split("\n")
     // Third review (N2): only code-like brackets ("(PATAP)", "(GP-2)") are
     // decoration; any other bracketed text keeps the line.
-    .filter((line) => !names.has(norm(line.replace(/\(\s*[A-Z0-9][A-Z0-9 .\-\/]{0,11}\)/g, " ")).replace(/^the /, "")))
+    // Fourth review: a code is one token without spaces and never a
+    // qualifier word ("(NOT IN NY)", "(EXCL. NY)", "(ONLY)" keep the line).
+    .filter((line) => {
+      const decoded = line.replace(/\(\s*([A-Z0-9][A-Z0-9.\-\/]{0,11})\s*\)/g, (m, code: string) =>
+        /^(?:NOT?|NON|EXCL\.?|EXCEPT|EXCLUDING|ONLY|WITHOUT|NONE)$/.test(code) ? m : " ");
+      return !names.has(norm(decoded).replace(/^the /, ""));
+    })
     .join("\n")
     .trim();
 }

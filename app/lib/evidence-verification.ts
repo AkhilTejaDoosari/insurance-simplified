@@ -683,8 +683,15 @@ function verbatimSpanLines(sentence: string, quote: string, page?: string): stri
   // — each later line opens in lower case (not a list item) and the line
   // above does not end a sentence; a new table row never continues one.
   const listItem = /^\s*\(?(?:\d+|[a-z]|[ivxlc]+)[).]\s/i;
+  // Fourth review: ":" is never a sentence end here (a label line ends in
+  // ":"); a line opening with a figure continues only an open phrase
+  // ("payable up to / $5,000 per pregnancy.").
+  const endsSentence = (l: string) => /[.;!?]["'’”)\]]*\s*$/.test(l);
+  const openPhrase = /\b(?:up to|of|is|are|maximum|max|to|at|than|per|from|limit(?:ed to)?)\s*$/i;
   const continues = (k: number) =>
-    !listItem.test(lines[k]) && /^\s*(?:[a-z]|\([a-z])/.test(lines[k]) && !/[.;:!?]["'’”)\]]*\s*$/.test(lines[k - 1]);
+    !listItem.test(lines[k]) &&
+    !endsSentence(lines[k - 1]) &&
+    (/^\s*(?:[a-z]|\([a-z])/.test(lines[k]) || (/^\s*\$?\d/.test(lines[k]) && openPhrase.test(lines[k - 1].trim())));
   for (let at = joined.indexOf(target); at >= 0; at = joined.indexOf(target, at + 1)) {
     const end = at + target.length;
     if (isWordChar(joined[at - 1]) && isWordChar(joined[at])) continue;
@@ -700,11 +707,13 @@ function verbatimSpanLines(sentence: string, quote: string, page?: string): stri
     // Third review (N1): the span must be a whole sentence on the PAGE — the
     // model can cite exactly two lines of a table, so the cited quote alone
     // cannot show that "$30 copay / emergency room" are two rows.
-    const startsSentence = at === lineStart.get(first) || /[.;:!?]["'’”)\]]*\s*$/.test(joined.slice(lineStart.get(first), at));
-    const endsSentence = end === lineEnd.get(last) || /[.;:!?]$/.test(joined.slice(at, end)) || /^\s*[.;:!?]/.test(joined.slice(end));
-    if (!startsSentence || !endsSentence) continue;
+    const startsHere = at === lineStart.get(first) || endsSentence(joined.slice(lineStart.get(first), at));
+    const endsHere = end === lineEnd.get(last) || /[.;!?]$/.test(joined.slice(at, end)) || /^\s*[.;!?]/.test(joined.slice(end));
+    if (!startsHere || !endsHere) continue;
     const spanned = lines.slice(first, last + 1).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
-    if (!wholeSentenceOnPage(spanned, at === lineStart.get(first), end === lineEnd.get(last), page)) continue;
+    // Reaching the line end apart from trailing punctuation counts as the end.
+    const toLineEnd = /^[\s.,;:!?"'’”)\]]*$/.test(joined.slice(end, lineEnd.get(last)));
+    if (!wholeSentenceOnPage(spanned, at === lineStart.get(first), toLineEnd, page)) continue;
     return spanned.join(" ");
   }
   return undefined;
@@ -718,8 +727,9 @@ function verbatimSpanLines(sentence: string, quote: string, page?: string): stri
 function wholeSentenceOnPage(spanned: string[], fromLineStart: boolean, toLineEnd: boolean, page: string | undefined): boolean {
   if (page === undefined) return false;
   const pageLines = page.split("\n").map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);
-  const ends = (l: string) => /[.;:!?]["'’”)\]]*$/.test(l);
+  const ends = (l: string) => /[.;!?]["'’”)\]]*$/.test(l); // ":" is a label, not an end
   const runsOn = (l: string) => /^(?:[a-z]|\([a-z]|\$?\d)/.test(l);
+  const opensWithFigure = (l: string) => /^\$?\d/.test(l);
   let found = false;
   for (let i = 0; i + spanned.length <= pageLines.length; i++) {
     if (!spanned.every((l, j) => pageLines[i + j] === l)) continue;
@@ -728,6 +738,8 @@ function wholeSentenceOnPage(spanned: string[], fromLineStart: boolean, toLineEn
     const next = pageLines[i + spanned.length];
     if (fromLineStart && prev !== undefined && !ends(prev) && runsOn(spanned[0])) return false;
     if (toLineEnd && next !== undefined && !ends(spanned[spanned.length - 1]) && runsOn(next)) return false;
+    // A figure on the next line belongs to this row whatever ends the line.
+    if (toLineEnd && next !== undefined && opensWithFigure(next)) return false;
   }
   return found;
 }

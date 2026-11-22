@@ -147,3 +147,12 @@ describe("third review: bracketed conditions keep the line", () => {
     expect(r.kind).toBe("refusal");
   });
 });
+
+// Fourth review (2026-11-22): ALL-CAPS bracketed qualifiers are not codes.
+describe("fourth review: capital-letter bracketed qualifiers keep the line", () => {
+  it.each(["Acme Student Plus (NOT IN NY)", "Acme Student Plus (EXCL. NY)", "Acme Student Plus (ONLY)"])("keeps %s", async (line) => {
+    model({ cantAnswer: false, answerText: `${line}\nDeductible per policy period $500`, citations: [{ passageId: "P1", fromLine: 4, toLine: 4 }] });
+    const r = await answerViaLlm(DOCS, "What is the deductible?", { planNames: ["Acme Student Plus"] });
+    expect(r.kind).toBe("refusal");
+  });
+});
