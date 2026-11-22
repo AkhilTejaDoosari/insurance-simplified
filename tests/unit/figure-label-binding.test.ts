@@ -144,3 +144,14 @@ describe("second follow-up review: colon labels, lower-case letter labels, edge 
     expect(check(answer, line)).toEqual({ ok: true });
   });
 });
+
+// Third review (b04c22b): on a figure-first line, a value with no label of
+// its own owns nothing (it may belong to the previous line after a wrap).
+describe("third review: figure-first value without a label", () => {
+  it("is rejected rather than inheriting the next label", () => {
+    expect(check("$250 primary care.", "$250 $30 primary care $300 specialist").ok).toBe(false);
+  });
+  it("the labelled value still verifies", () => {
+    expect(check("$300 specialist.", "$250 $30 primary care $300 specialist")).toEqual({ ok: true });
+  });
+});

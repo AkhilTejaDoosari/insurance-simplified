@@ -495,9 +495,10 @@ function sameMarkers(a: string, b: string): boolean {
  *  - Layout: words, then values, ending on a value → label-first (each
  *    value owns the words before it); starting on a value and ending on
  *    words → figure-first (the words after it); otherwise ambiguous: the
- *    sentence must repeat the words on both sides, each on its own side. A
- *    value with no label of its own inherits its neighbour's
- *    ("Out-of-pocket maximum $1,000 per person $2,000 per family").
+ *    sentence must repeat the words on both sides, each on its own side. On
+ *    a label-first line a value with no label of its own inherits the
+ *    previous one ("Out-of-pocket maximum $1,000 per person $2,000 per
+ *    family"); elsewhere such a value owns nothing and is rejected.
  *  - Unit words directly after a value ("per visit") are that value's own.
  *  - A sentence names at least one label word of its value (a figure-only
  *    sentence such as "$300." is rejected); a sentence with several values
@@ -589,8 +590,10 @@ function parseValues(text: string, plainAsValues: boolean, letterLabels = false)
       return { ...v, ...sides, own, required: [] };
     }
     if (mode === "figure") {
-      const own = meaningful(runs[i + 1]).length > 0 ? runs[i + 1] : [...runs[i + 1], ...inherit(i + 1, 1)];
-      return { ...v, ...sides, own, required: [] };
+      // No inheritance here (third review): a leading value without its own
+      // words may belong to the previous line after a wrap — it owns nothing.
+      if (meaningful(runs[i + 1]).length === 0) return { ...v, ...sides, own: [], units: [], required: [] };
+      return { ...v, ...sides, own: runs[i + 1], required: [] };
     }
     // A value with no words on one side cannot be bound (undecidable):
     // it owns nothing, so any sentence stating it is rejected.
