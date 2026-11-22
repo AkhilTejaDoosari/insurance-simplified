@@ -511,7 +511,7 @@ const BINDING_FILLER = new Set([
 
 type BindingToken = { value: string } | { word: string };
 
-function bindingTokens(text: string, plainAsValues: boolean): { tokens: BindingToken[]; plain: boolean } {
+function bindingTokens(text: string, plainAsValues: boolean, letterLabels = false): { tokens: BindingToken[]; plain: boolean } {
   const raw = [...text.matchAll(/\$\s?\d[\d,]*(?:\.\d+)?%?|(?<![a-z0-9])\d[\d,]*(?:\.\d+)?%?|[a-z][a-z0-9']*/gi)].map((m) => m[0]);
   const isNumber = (t: string) => /^[$\d]/.test(t);
   const norm = (t: string) => t.replace(/[$%,\s]/g, "").replace(/\.0+$/, "");
@@ -522,8 +522,8 @@ function bindingTokens(text: string, plainAsValues: boolean): { tokens: BindingT
   const plain = raw.some((t, i) => isNumber(t) && !marked[i]);
   const tokens = raw.map((t, i): BindingToken => {
     if (isNumber(t)) return marked[i] || !anyMarked || plainAsValues ? { value: norm(t) } : { word: norm(t) };
-    const letterLabel = /^[A-Z]$/.test(t) && i > 0 && !isNumber(raw[i - 1]);
-    return { word: letterLabel ? t : t.toLowerCase() };
+    const letterLabel = (letterLabels ? /^[a-z]$/i : /^[A-Z]$/).test(t) && i > 0 && !isNumber(raw[i - 1]);
+    return { word: letterLabel ? t.toUpperCase() : t.toLowerCase() };
   });
   return { tokens, plain: plain && anyMarked };
 }
@@ -548,8 +548,8 @@ interface ParsedLine {
 
 const meaningful = (words: readonly string[]) => words.filter((w) => !BINDING_FILLER.has(w));
 
-function parseValues(text: string, plainAsValues: boolean): ParsedLine {
-  const { tokens, plain } = bindingTokens(text, plainAsValues);
+function parseValues(text: string, plainAsValues: boolean, letterLabels = false): ParsedLine {
+  const { tokens, plain } = bindingTokens(text, plainAsValues, letterLabels);
   const values: { value: string; units: string[] }[] = [];
   const runs: string[][] = [[]];
   let unitRun = false;
@@ -572,7 +572,8 @@ function parseValues(text: string, plainAsValues: boolean): ParsedLine {
   }
   const k = values.length;
   // "Copays: $30 …" — words before a colon that precedes the first value.
-  const header = k > 0 && /^[^$\d]*:\s*[^a-z]*\$?\d/i.test(text) ? runs[0] : [];
+  // A second colon means "Label: $X, Label: $Y" — labels, not a header.
+  const header = k > 0 && (text.match(/:/g) ?? []).length === 1 && /^[^$\d]*:\s*[^a-z]*\$?\d/i.test(text) ? runs[0] : [];
   if (header.length > 0) runs[0] = [];
   const first = runs[0].length > 0;
   const last = runs[k].length > 0;
@@ -591,6 +592,9 @@ function parseValues(text: string, plainAsValues: boolean): ParsedLine {
       const own = meaningful(runs[i + 1]).length > 0 ? runs[i + 1] : [...runs[i + 1], ...inherit(i + 1, 1)];
       return { ...v, ...sides, own, required: [] };
     }
+    // A value with no words on one side cannot be bound (undecidable):
+    // it owns nothing, so any sentence stating it is rejected.
+    if (meaningful(runs[i]).length === 0 || meaningful(runs[i + 1]).length === 0) return { ...v, ...sides, own: [], units: [], required: [] };
     const own = [...runs[i], ...runs[i + 1]];
     return { ...v, ...sides, own, required: meaningful(own) };
   });
@@ -608,8 +612,12 @@ const allMatch = (words: readonly string[], allowed: readonly string[]) =>
 function boundUnder(sentence: string, line: string, plainAsValues: boolean): boolean {
   const L = parseValues(line, plainAsValues);
   if (L.slots.length < 2) return true;
-  const S = parseValues(sentence, plainAsValues);
+  const lineHasLetterLabels = bindingTokens(line, plainAsValues).tokens.some((t) => "word" in t && /^[A-Z]$/.test(t.word));
+  const S = parseValues(sentence, plainAsValues, lineHasLetterLabels);
   if (S.slots.length === 0) return true;
+  // A multi-value sentence's header must be the line's header (a single-value
+  // sentence's header words are checked against the value's own label below).
+  if (S.slots.length > 1 && !allMatch(S.header, L.header)) return false;
   if (S.slots.length > 1) {
     const lineSeq = L.slots.map((s) => s.value);
     const said = S.slots.map((s) => s.value);

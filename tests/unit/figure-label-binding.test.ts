@@ -121,3 +121,26 @@ describe("follow-up review: letter labels, repeated values, plain numbers, side 
     expect(check(answer, line)).toEqual({ ok: true });
   });
 });
+
+// Second follow-up review of 1c61cf5 (2026-11-22).
+describe("second follow-up review: colon labels, lower-case letter labels, edge values", () => {
+  it.each([
+    ["$30 specialist.", "Primary care: $30, Specialist: $300"],
+    ["Primary care specialist $300.", "Primary care: $30, Specialist: $300"],
+    ["Part a deductible $240.", "Part A deductible $1,600 Part B deductible $240"],
+    ["Plan a $30.", "Plan A $10 Plan B $30"],
+    ["$250 primary care.", "$250 Primary care $30 Specialist $300"],
+    ["Specialist: $30 primary care $300 specialist.", "Primary care $30 Specialist $300"],
+  ])("rejects case %#", (answer, line) => {
+    expect(check(answer, line).ok).toBe(false);
+  });
+
+  it.each([
+    ["Primary care: $30.", "Primary care: $30, Specialist: $300"],
+    ["Specialist: $300.", "Primary care: $30, Specialist: $300"],
+    ["Plan B $30.", "Plan A $10 Plan B $30"],
+    ["Is there a deductible of $500?", "Is there a deductible of $500?"],
+  ])("verifies case %#", (answer, line) => {
+    expect(check(answer, line)).toEqual({ ok: true });
+  });
+});
