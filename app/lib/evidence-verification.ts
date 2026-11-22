@@ -765,8 +765,10 @@ function wholeSentenceOnPage(spanned: string[], fromLineStart: boolean, toLineEn
     found = true;
     const prev = pageLines[i - 1];
     const next = pageLines[i + spanned.length];
-    if (fromLineStart && prev !== undefined && !ends(prev) && runsOn(spanned[0], prev)) return false;
-    if (toLineEnd && next !== undefined && !ends(spanned[spanned.length - 1]) && runsOn(next, spanned[spanned.length - 1])) return false;
+    // Third follow-up review: the same continuation rules as the fragment
+    // checks (forward widened; backward with a qualifier line above).
+    if (fromLineStart && prev !== undefined && !ends(prev) && (runsOn(spanned[0], prev) || continuesOnto(prev, spanned[0], false))) return false;
+    if (toLineEnd && next !== undefined && !ends(spanned[spanned.length - 1]) && (runsOn(next, spanned[spanned.length - 1]) || continuesOnto(spanned[spanned.length - 1], next, true))) return false;
     // A figure on the next line belongs to this row whatever ends the line.
     if (toLineEnd && next !== undefined && opensWithFigure(next)) return false;
   }
@@ -809,7 +811,11 @@ const QUALIFIER_OPENING = /^\s*(?:only|except|excluding|unless|not|no|if|after|u
 function continuesOnto(prev: string, next: string, forward = true): boolean {
   // Backwards (the mirror rule) a figure or qualifier line under a heading
   // or label is ordinary layout, not the middle of a sentence.
-  const widened = forward && (FIGURE_OPENING.test(next) || QUALIFIER_OPENING.test(next));
+  // Third follow-up: backwards, a line above that opens with a qualifier
+  // ("Except as stated below") and does not end a sentence runs on.
+  // Only a capitalised qualifier opens its own sentence; a lower-case one
+  // ("after deductible is met") ends the row above.
+  const widened = forward ? FIGURE_OPENING.test(next) || QUALIFIER_OPENING.test(next) : QUALIFIER_OPENING.test(prev) && /^\s*[A-Z]/.test(prev);
   return (
     !CONTINUATION_LIST_ITEM.test(next) &&
     !lineEndsSentence(prev) &&

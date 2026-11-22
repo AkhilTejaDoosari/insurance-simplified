@@ -78,3 +78,17 @@ describe("second follow-up: no unordered multi-line coverage; more continuation 
     expect(check("Deductible $100", ["Deductible $100", "1 Per injury or sickness"])).toBe(true);
   });
 });
+
+// Third follow-up review of 5341f2f: the multi-line span path used the old,
+// narrower continuation test; a qualifier line above was not a run-on.
+describe("third follow-up: the span path uses the same continuation rules", () => {
+  it.each([
+    ["Dental treatment is covered for accidental injury", ["Dental treatment is covered for", "accidental injury", "Only in hospital."]],
+    ["Maternity care is covered in full", ["Maternity care is covered in", "full", "Twelve-month waiting period applies."]],
+    ["Dental treatment is covered for accidental injury.", ["Except as stated below", "Dental treatment is covered for", "accidental injury."]],
+    ["Dental treatment is covered.", ["Except as stated below", "Dental treatment is covered.", "Vision: none."]],
+  ])("%s → rejected", (answer, page) => expect(check(answer, page)).toBe(false));
+  it("control: the span with nothing running on verifies", () => {
+    expect(check("Dental treatment is covered for accidental injury.", ["BENEFITS", "Dental treatment is covered for", "accidental injury.", "Vision: none."])).toBe(true);
+  });
+});
