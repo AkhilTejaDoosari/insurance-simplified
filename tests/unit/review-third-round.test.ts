@@ -92,3 +92,17 @@ describe("third follow-up: the span path uses the same continuation rules", () =
     expect(check("Dental treatment is covered for accidental injury.", ["BENEFITS", "Dental treatment is covered for", "accidental injury.", "Vision: none."])).toBe(true);
   });
 });
+
+// Fourth follow-up review of 9b80539: a lower-case scope line opening the
+// passage; more scope openings.
+describe("fourth follow-up: a qualifier line above runs on unless it ends the row above", () => {
+  it.each([
+    ["Dental treatment is covered.", ["except as stated below", "Dental treatment is covered.", "Vision: none."]],
+    ["Dental treatment is covered.", ["unless otherwise stated", "Dental treatment is covered.", "Vision: none."]],
+    ["Dental treatment is covered for accidental injury.", ["except as stated below", "Dental treatment is covered for", "accidental injury.", "Vision: none."]],
+    ["Dental treatment is covered.", ["Notwithstanding the above", "Dental treatment is covered.", "Vision: none."]],
+  ])("%s → rejected", (answer, page) => expect(check(answer, page)).toBe(false));
+  it("control: a qualifier line that continues the row above ends it", () => {
+    expect(check("Ambulance: $100 per trip", ["Emergency room: $250 copay", "after deductible is met", "Ambulance: $100 per trip"])).toBe(true);
+  });
+});

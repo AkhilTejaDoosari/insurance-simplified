@@ -767,7 +767,7 @@ function wholeSentenceOnPage(spanned: string[], fromLineStart: boolean, toLineEn
     const next = pageLines[i + spanned.length];
     // Third follow-up review: the same continuation rules as the fragment
     // checks (forward widened; backward with a qualifier line above).
-    if (fromLineStart && prev !== undefined && !ends(prev) && (runsOn(spanned[0], prev) || continuesOnto(prev, spanned[0], false))) return false;
+    if (fromLineStart && prev !== undefined && !ends(prev) && (runsOn(spanned[0], prev) || continuesOnto(prev, spanned[0], false, pageLines[i - 2]))) return false;
     if (toLineEnd && next !== undefined && !ends(spanned[spanned.length - 1]) && (runsOn(next, spanned[spanned.length - 1]) || continuesOnto(spanned[spanned.length - 1], next, true))) return false;
     // A figure on the next line belongs to this row whatever ends the line.
     if (toLineEnd && next !== undefined && opensWithFigure(next)) return false;
@@ -807,15 +807,18 @@ const FIGURE_OPENING = new RegExp(
     String.raw`^\s*(?:[Oo]ne|[Tt]wo|[Tt]hree|[Ff]our|[Ff]ive|[Ss]ix|[Ss]even|[Ee]ight|[Nn]ine|[Tt]en|[Ee]leven|[Tt]welve|[Ff]ifteen|[Tt]wenty|[Tt]hirty|[Ss]ixty|[Nn]inety)\b`,
   ].join("|"),
 );
-const QUALIFIER_OPENING = /^\s*(?:only|except|excluding|unless|not|no|if|after|until|but|provided|however|subject to|limited to)\b/i;
-function continuesOnto(prev: string, next: string, forward = true): boolean {
+const QUALIFIER_OPENING = /^\s*(?:only|except|excluding|unless|not|no|if|after|until|but|provided|however|subject to|limited to|notwithstanding|save as|other than|in addition to)\b/i;
+function continuesOnto(prev: string, next: string, forward = true, prevPrev?: string): boolean {
   // Backwards (the mirror rule) a figure or qualifier line under a heading
   // or label is ordinary layout, not the middle of a sentence.
   // Third follow-up: backwards, a line above that opens with a qualifier
   // ("Except as stated below") and does not end a sentence runs on.
-  // Only a capitalised qualifier opens its own sentence; a lower-case one
-  // ("after deductible is met") ends the row above.
-  const widened = forward ? FIGURE_OPENING.test(next) || QUALIFIER_OPENING.test(next) : QUALIFIER_OPENING.test(prev) && /^\s*[A-Z]/.test(prev);
+  // Fourth follow-up review: backwards, a qualifier line runs on unless it
+  // is itself the continuation of the line above it ("after deductible is
+  // met" ends the row "Emergency room: $250 copay"), whatever its case.
+  const widened = forward
+    ? FIGURE_OPENING.test(next) || QUALIFIER_OPENING.test(next)
+    : QUALIFIER_OPENING.test(prev) && !(prevPrev !== undefined && continuesOnto(prevPrev, prev, true));
   return (
     !CONTINUATION_LIST_ITEM.test(next) &&
     !lineEndsSentence(prev) &&
@@ -865,7 +868,7 @@ function precedingMissing(lineText: string, page: string | undefined, answerText
   for (let i = 1; i < pageLines.length; i++) {
     if (!pageLines[i].startsWith(head)) continue;
     const parts: string[] = [];
-    for (let j = i; j > 0 && parts.length < 3 && continuesOnto(pageLines[j - 1], pageLines[j], false); j--) {
+    for (let j = i; j > 0 && parts.length < 3 && continuesOnto(pageLines[j - 1], pageLines[j], false, pageLines[j - 2]); j--) {
       const prev = pageLines[j - 1];
       // Only the part of the line above after its last sentence end.
       const cut = Math.max(prev.lastIndexOf(". "), prev.lastIndexOf("; "), prev.lastIndexOf("? "), prev.lastIndexOf("! "));
