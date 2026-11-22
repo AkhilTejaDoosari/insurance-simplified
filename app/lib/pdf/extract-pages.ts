@@ -4,6 +4,7 @@
 
 import { getDocumentProxy, getResolvedPDFJS } from "unpdf";
 import { detectTables, positionItems, type LayoutTable, type RawTextItem } from "@/app/lib/pdf/layout-tables";
+import { removeRepeatedArtifacts } from "@/app/lib/pdf/watermarks";
 import {
   PARTLY_READ_MAX_CHARS,
   classifyPage,
@@ -31,6 +32,9 @@ export interface ExtractedPdf {
   /** Per-page readability (page-readability.ts): which pages were read,
    *  empty, image-only or only partly read. One entry per page. */
   readability: PageReadability[];
+  /** Owner decision 2026-11-22 (6): watermark artifacts removed from page
+   *  text, per page, as counts only (watermarks.ts). */
+  artifactsRemoved: { page: number; count: number }[];
 }
 
 type PdfPage = Awaited<ReturnType<Awaited<ReturnType<typeof getDocumentProxy>>["getPage"]>>;
@@ -148,10 +152,23 @@ export async function extractPages(
   const tables: LayoutTable[] = [];
   const readability: PageReadability[] = [];
   let imageOps: ImageOperators | undefined | null = null;
+  // Two passes: every page's text items first, so text repeated on most
+  // pages (a specimen watermark) is removed before page text is joined.
+  const pdfPages: PdfPage[] = [];
+  const rawItems: RawTextItem[][] = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
-    const content = await page.getTextContent();
-    const { text, items } = positionItems(content.items as unknown as RawTextItem[]);
+    pdfPages.push(page);
+    rawItems.push((await page.getTextContent()).items as unknown as RawTextItem[]);
+  }
+  const { items: cleaned, removed: artifactsRemoved } = removeRepeatedArtifacts(rawItems);
+  if (artifactsRemoved.length > 0) {
+    // Counts only: never the removed text.
+    console.info(`[extract] artifacts-removed pages=${artifactsRemoved.length} items=${artifactsRemoved.reduce((n, r) => n + r.count, 0)}`);
+  }
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = pdfPages[p - 1];
+    const { text, items } = positionItems(cleaned[p - 1]);
     pages.push(text);
     // Only sparse pages need the (costlier) operator list: a text-rich page
     // is "read" whether or not it also paints images.
@@ -186,5 +203,5 @@ export async function extractPages(
     );
   }
 
-  return { pageCount: pages.length, pages, tables, readability };
+  return { pageCount: pages.length, pages, tables, readability, artifactsRemoved };
 }
