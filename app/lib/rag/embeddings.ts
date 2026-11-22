@@ -148,6 +148,38 @@ function parseBatchVectors(payload: unknown): number[][] {
   });
 }
 
+/** Non-OK provider response; carries the HTTP status. */
+class EmbeddingHttpError extends Error {
+  readonly status: number | undefined;
+  constructor(status: number | undefined) {
+    super(`Embedding request failed with status ${status ?? "unknown"}`);
+    this.name = "EmbeddingHttpError";
+    this.status = status;
+  }
+}
+
+/** A provider may reject a whole batch as too large (Cloudflare Workers AI:
+ *  HTTP 400 "input too big", 2026-11-22) although each text fits. Such a
+ *  batch is split in half and retried, down to one text; a single text that
+ *  is still rejected fails as before. Other statuses are never split. */
+const SPLITTABLE = new Set([400, 413]);
+async function postSplitting(
+  config: EmbeddingConfig,
+  input: string[],
+  opts: { baseDelayMs?: number },
+): Promise<number[][]> {
+  try {
+    return await postBatch(config, input, opts);
+  } catch (e) {
+    if (!(e instanceof EmbeddingHttpError) || !SPLITTABLE.has(e.status ?? 0) || input.length < 2) throw e;
+    const mid = Math.ceil(input.length / 2);
+    return [
+      ...(await postSplitting(config, input.slice(0, mid), opts)),
+      ...(await postSplitting(config, input.slice(mid), opts)),
+    ];
+  }
+}
+
 async function postBatch(
   config: EmbeddingConfig,
   input: string[],
@@ -177,7 +209,7 @@ async function postBatch(
     await sleep(delay);
   }
   if (!res || !res.ok) {
-    throw new Error(`Embedding request failed with status ${res?.status ?? "unknown"}`);
+    throw new EmbeddingHttpError(res?.status);
   }
   return parseBatchVectors((await res.json()) as unknown);
 }
@@ -204,7 +236,7 @@ export async function embedTexts(
   }
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = await postBatch(config, texts.slice(i, i + batchSize), opts);
+    const batch = await postSplitting(config, texts.slice(i, i + batchSize), opts);
     out.push(...batch);
   }
   const expected = out[0].length;
