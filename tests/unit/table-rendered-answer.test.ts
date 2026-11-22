@@ -146,3 +146,17 @@ describe("review R2-d: prose and a table row cited together → cannot be confir
     expect(r.kind).toBe("refusal");
   });
 });
+
+// Follow-up review of 02d276b (B): a short condition line is prose, never a
+// bare heading — cited with a table row it makes the answer "mixed".
+describe("follow-up B: short conditions are not headings", () => {
+  it.each(["Not covered", "Excluded for children", "Pre-approval required", "Prior Authorization Required"])("%s", (cond) => {
+    const page = DOC.pages[0] + `${cond}\n`;
+    const doc = { ...DOC, pages: [page] };
+    expect(renderTableAnswer([doc], [{ documentId: "doc-1", page: 1, quote: ROW("Coinsurance") }, { documentId: "doc-1", page: 1, quote: cond }])).toBe("mixed");
+  });
+  it("control: an allow-listed ALL-CAPS heading beside a row is not prose", () => {
+    const r = renderTableAnswer([DOC], [{ documentId: "doc-1", page: 1, quote: ROW("Coinsurance") }, { documentId: "doc-1", page: 1, quote: "BENEFIT" }]);
+    expect(typeof r).toBe("object");
+  });
+});

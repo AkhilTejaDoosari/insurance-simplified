@@ -706,11 +706,13 @@ const SCOPE_LABEL = /\b(?:plans?|options?|riders?|tiers?|levels?|class(?:es)?|gr
  *  ALL-CAPS heading whose every word names a benefit topic (allow-list) —
  *  never a plan, tier, product or audience name ("ELITE:", "FAMILY:"). */
 const TOPIC_HEADING_WORDS = new Set((
+  // Follow-up review (A): no word that decides WHICH cover applies
+  // (accident, sickness, inpatient, outpatient, emergency, hospital,
+  // preventive, surgery…).
   "maternity newborn newborns care pregnancy prenatal dental vision hearing pre existing preexisting conditions condition " +
-  "emergency room medical evacuation repatriation remains prescription prescriptions drugs drug mental health nervous disorders " +
-  "physical therapy hospital hospitalization surgery surgical outpatient inpatient ambulance accident accidents sickness illness " +
-  "injury injuries deductible deductibles coinsurance copay copays copayments maximum limit limits benefit benefits expenses " +
-  "charges preventive wellness chiropractic acupuncture telehealth sports activities general provisions definitions schedule " +
+  "medical evacuation repatriation remains prescription prescriptions drugs drug mental health nervous disorders " +
+  "physical therapy ambulance deductible deductibles coinsurance copay copays copayments maximum limit limits benefit benefits " +
+  "expenses charges chiropractic acupuncture telehealth sports activities general provisions definitions schedule " +
   "of and or for the to in"
 ).split(" "));
 export function isTopicHeading(label: string): boolean {
@@ -718,6 +720,18 @@ export function isTopicHeading(label: string): boolean {
   if (!l || /[a-z]/.test(l) || !/[A-Z]/.test(l)) return false;
   const words = l.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter(Boolean);
   return words.length > 0 && words.every((w) => TOPIC_HEADING_WORDS.has(w)) && !isScopeLabel(l);
+}
+
+/** Words of a heading too general to show the sentence repeats it. */
+const HEADING_GENERIC = new Set("care benefit benefits expenses charges coverage limit limits maximum schedule general provisions definitions medical of and or for the to in".split(" "));
+/** Follow-up review (A): a topic heading may be dropped only when the
+ *  sentence repeats one of its specific words ("MATERNITY:" + "maternity
+ *  …"); otherwise the heading stays in the answer. */
+export function headingRepeated(label: string, sentence: string): boolean {
+  if (!isTopicHeading(label)) return false;
+  const said = new Set(wordRun(sentence).split(" "));
+  const has = (w: string) => said.has(w) || said.has(`${w}s`) || (w.endsWith("s") && said.has(w.slice(0, -1)));
+  return label.toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter((w) => w && !HEADING_GENERIC.has(w)).some(has);
 }
 
 export function isScopeLabel(label: string): boolean {
@@ -744,14 +758,14 @@ const SEG_LEAD = /^(?:per|each|every)$/;
 /** Words for segment matching; thousands separators kept inside a figure. */
 const segWords = (t: string) => wordRun(t.replace(/(\d),(?=\d{3}\b)/g, "$1")).split(" ").filter((w) => w && !SEG_ARTICLES.has(w));
 const isSegValue = (t: string) => /^\$?\d[\d,.]*%?$/.test(t);
-function segmentForms(clause: string): string[][] {
+function segmentForms(clause: string, sentence: string): string[][] {
   let c = clause.replace(/^\s*(?:[•*\u2022\u2013-]|\(?\d{1,3}[).]|\(?[a-z][).]|\(?[ivx]{1,4}[).])\s+/i, "");
   const forms: string[][] = [];
   const words = segWords;
   // An optional leading ALL-CAPS topic heading (never a scope label).
   const topic = /^\s*([^:a-z]{2,60}):\s*/.exec(c);
   const variants = [c];
-  if (topic && isTopicHeading(topic[1])) variants.push(c.slice(topic[0].length));
+  if (topic && headingRepeated(topic[1], sentence)) variants.push(c.slice(topic[0].length));
   for (const v of variants) {
     // A header shared by every value: the single colon before the first value.
     const head = /^([^$\d:]*):\s*(?=[^a-z]*\$?\d)/i.exec(v);
@@ -823,7 +837,7 @@ function statesWholeSegments(sentence: string, clause: string): boolean {
       return true;
     });
   };
-  return segmentForms(clause).some(same);
+  return segmentForms(clause, sentence).some(same);
 }
 
 function dropsScopeLabel(sentence: string, line: string): boolean {
@@ -833,10 +847,10 @@ function dropsScopeLabel(sentence: string, line: string): boolean {
   return !` ${wordRun(sentence)} `.includes(` ${label} `);
 }
 
-function isLabelPrefix(prefix: string): boolean {
+function isLabelPrefix(prefix: string, sentence: string): boolean {
   const p = prefix.trim();
   return (
-    isTopicHeading(p.replace(/:$/, "")) &&
+    headingRepeated(p.replace(/:$/, ""), sentence) &&
     /:$/.test(p) &&
     !/[.;!?]\s/.test(p) &&
     p.split(/\s+/).length <= 8 &&
@@ -892,7 +906,7 @@ function verbatimSpanLines(sentence: string, quote: string, page?: string): { bl
     // model can cite exactly two lines of a table, so the cited quote alone
     // cannot show that "$30 copay / emergency room" are two rows.
     const before = joined.slice(lineStart.get(first), at);
-    const startsHere = at === lineStart.get(first) || endsSentence(before) || isLabelPrefix(before);
+    const startsHere = at === lineStart.get(first) || endsSentence(before) || isLabelPrefix(before, sentence);
     const endsHere = end === lineEnd.get(last) || /[.;!?]$/.test(joined.slice(at, end)) || /^\s*[.;!?]/.test(joined.slice(end));
     if (!startsHere || !endsHere) continue;
     const spanned = lines.slice(first, last + 1).map((l) => l.replace(/\s+/g, " ").trim()).filter(Boolean);

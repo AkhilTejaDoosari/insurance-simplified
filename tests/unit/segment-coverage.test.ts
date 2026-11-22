@@ -45,7 +45,9 @@ describe("controls: whole segments verify", () => {
     ["Out-of-pocket maximum $2,000 per family.", "Out-of-pocket maximum $1,000 per person $2,000 per family"],
     ["Copays: $300 specialist.", "Copays: $30 primary care, $300 specialist"],
     ["Gold: Maternity is covered.", "Gold: Maternity is covered."],
-    ["Covered as any sickness.", "MATERNITY: Covered as any sickness."],
+    // Follow-up review (A): the heading may be dropped only when the
+    // sentence repeats it (was "Covered as any sickness." → verified).
+    ["Maternity covered as any sickness.", "MATERNITY: Maternity covered as any sickness."],
     ["Maximum Limit $5,000,000", "• Maximum Limit $5,000,000"],
     ["Deductible is waived for preventive care.", "The deductible is waived for preventive care."],
     ["Emergency room copay $300.", "Emergency room copay $300. Ambulance $100."],
@@ -69,7 +71,7 @@ describe("review: only an allow-listed ALL-CAPS topic heading may be omitted", (
     ["Wellness exams are covered.", "FAMILY: Wellness exams are covered."],
   ])("one line: %s ← %s", (answer, line) => expect(check(answer, line)).toBe(false));
   it("control: an allow-listed topic heading on the span path", () => {
-    expect(checkPage("All charges for prenatal care are excluded from this insurance.", ["(5) MATERNITY AND NEWBORN CARE: All charges for prenatal care are", "excluded from this insurance.", "End."])).toBe(true);
+    expect(checkPage("All charges for newborn care are excluded from this insurance.", ["(5) MATERNITY AND NEWBORN CARE: All charges for newborn care are", "excluded from this insurance.", "End."])).toBe(true);
   });
 });
 describe("review: a bare value never borrows a label", () => {
@@ -84,4 +86,20 @@ describe("review: a bare value never borrows a label", () => {
 describe("review nit: word forms are exact or plural", () => {
   it("'cover' is not 'covered'", () => expect(check("Maternity is cover.", "Maternity is covered.")).toBe(false));
   it("control: 'visit' / 'visits'", () => expect(check("Two office visit per year.", "Two office visits per year")).toBe(true));
+});
+
+// Follow-up review of 02d276b (A): a heading is dropped only when the
+// sentence repeats it; scope words are never topic words.
+describe("follow-up A: a heading is dropped only when the sentence repeats it", () => {
+  it.each([
+    ["Dental treatment is covered.", ["ACCIDENT: Dental treatment is covered.", "SICKNESS: Dental treatment is not covered."]],
+    ["Physiotherapy is covered.", ["OUTPATIENT: Physiotherapy is covered.", "INPATIENT: Physiotherapy is not covered."]],
+    ["Office visits $0 copay", ["PREVENTIVE CARE: Office visits $0 copay", "SICKNESS CARE: Office visits $30 copay"]],
+    ["Treatment by a specialist is covered after a 30 day waiting period.", ["EMERGENCY: Treatment by a specialist is covered after a", "30 day waiting period.", "End."]],
+    ["All charges are excluded from this insurance.", ["MATERNITY: All charges are", "excluded from this insurance.", "End."]],
+  ])("%s", (answer, page) => expect(checkPage(answer, page)).toBe(false));
+  it("control: the sentence repeats the heading's topic", () => {
+    expect(checkPage("Covered as any sickness.", ["MATERNITY: Covered as any sickness.", "End."])).toBe(false);
+    expect(checkPage("All charges for maternity care are excluded from this insurance.", ["(5) MATERNITY AND NEWBORN CARE: All charges for maternity care are", "excluded from this insurance.", "End."])).toBe(true);
+  });
 });

@@ -48,8 +48,9 @@ describe("completeProseQuote: the whole sentence, never a neighbouring row or se
 
 describe("logged shapes now verify against the completed unit", () => {
   it("a sentence after a same-line 'LABEL:' prefix, with only part of it cited", async () => {
-    const page = ["BENEFITS", "(5) MATERNITY AND NEWBORN CARE: All charges for prenatal care and delivery,", "including complications of pregnancy, are excluded from this", "insurance.", "(6) DENTAL: Dental care is excluded."];
-    const r = await ask(page, "Is maternity covered?", "All charges for prenatal care and delivery, including complications of pregnancy, are excluded from this insurance.", "including complications of pregnancy, are excluded from this");
+    // Follow-up review (A): the sentence repeats a word of its heading.
+    const page = ["BENEFITS", "(5) MATERNITY AND NEWBORN CARE: All charges for prenatal care and care of newborns,", "including complications of pregnancy, are excluded from this", "insurance.", "(6) DENTAL: Dental care is excluded."];
+    const r = await ask(page, "Is maternity covered?", "All charges for prenatal care and care of newborns, including complications of pregnancy, are excluded from this insurance.", "including complications of pregnancy, are excluded from this");
     expect(r.kind).toBe("answer");
     expect(r.kind === "answer" && r.citations[0].quote).toContain("(5) MATERNITY AND NEWBORN CARE:");
   });
@@ -122,7 +123,8 @@ describe("review B1: a plan, rider, tier, group or limitation label is never dro
     [["Plan B: Maternity is covered.", "Other"], "Plan B: Maternity is covered.", "Maternity is covered."],
   ])("%#", (page, cited, answer) => expect(verifyCompleted(page, cited, answer)).toBe(false));
   it("control: a topic heading label is still a heading", () => {
-    expect(verifyCompleted(["(5) MATERNITY AND NEWBORN CARE: All charges for prenatal care are", "excluded from this insurance.", "Other"], "excluded from this insurance.", "All charges for prenatal care are excluded from this insurance.")).toBe(true);
+    // Follow-up review (A): the sentence repeats the heading's topic word.
+    expect(verifyCompleted(["(5) MATERNITY AND NEWBORN CARE: All charges for maternity care are", "excluded from this insurance.", "Other"], "excluded from this insurance.", "All charges for maternity care are excluded from this insurance.")).toBe(true);
   });
 });
 

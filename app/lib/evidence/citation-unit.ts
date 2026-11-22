@@ -12,7 +12,7 @@
 // never crosses a line that ends a sentence and never adds another row.
 // Pure: reads only the documents passed in.
 
-import { continuesOnto, lineEndsSentence } from "@/app/lib/evidence-verification";
+import { continuesOnto, isTopicHeading, lineEndsSentence } from "@/app/lib/evidence-verification";
 import type { LayoutTable, LayoutText } from "@/app/lib/pdf/layout-tables";
 
 export interface UnitCitation {
@@ -193,7 +193,10 @@ export function renderTableAnswer(
     }
     // A bare heading line (no figure, at most six words, no lower-case
     // sentence) beside a table row is not a separate claim.
-    const heading = c.quote.split("\n").every((l) => !/\d/.test(l) && ws(l).split(" ").length <= 6 && !/[a-z]{2,}\s+[a-z]{2,}\s+[a-z]{2,}/.test(l));
+    // Follow-up review (B): only an ALL-CAPS heading whose words are on the
+    // topic allow-list; a short condition ("Not covered", "Prior
+    // Authorization Required") is prose.
+    const heading = c.quote.split("\n").filter((l) => l.trim()).every((l) => isTopicHeading(l.replace(/:\s*$/, "")));
     if (!inTable && !heading) prose = true;
   }
   if (!touched) return undefined;
