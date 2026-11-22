@@ -795,7 +795,16 @@ const lineEndsSentence = (l: string) => /[.;!?]["'’”)\]]*\s*$/.test(l);
 // A figure opening: an amount, a percentage, or a number followed by a
 // lower-case word ("30 days"). A bare number before a capital ("1 Per
 // injury or sickness") is a footnote or list number, not a continuation.
-const FIGURE_OPENING = /^\s*(?:\$\s?\d|\d[\d,]*(?:\.\d+)?\s?%|\d[\d,]*(?:\.\d+)?\s+[a-z])/;
+// Second follow-up: also a number before a unit word in any case ("12
+// Months"), a line that is only a number, and spelled-out numbers.
+const FIGURE_OPENING = new RegExp(
+  [
+    String.raw`^\s*(?:\$\s?\d|\d[\d,]*(?:\.\d+)?\s?%|\d[\d,]*(?:\.\d+)?\s+[a-z])`,
+    String.raw`^\s*\d[\d,]*(?:\.\d+)?[\s-]+(?:[Dd]ays?|[Ww]eeks?|[Mm]onths?|[Yy]ears?|[Vv]isits?|[Tt]imes?|[Hh]ours?|DAYS?|MONTHS?|YEARS?|VISITS?)\b`,
+    String.raw`^\s*\d[\d,]*(?:\.\d+)?\s*$`,
+    String.raw`^\s*(?:[Oo]ne|[Tt]wo|[Tt]hree|[Ff]our|[Ff]ive|[Ss]ix|[Ss]even|[Ee]ight|[Nn]ine|[Tt]en|[Ee]leven|[Tt]welve|[Ff]ifteen|[Tt]wenty|[Tt]hirty|[Ss]ixty|[Nn]inety)\b`,
+  ].join("|"),
+);
 const QUALIFIER_OPENING = /^\s*(?:only|except|excluding|unless|not|no|if|after|until|but|provided|however|subject to|limited to)\b/i;
 function continuesOnto(prev: string, next: string, forward = true): boolean {
   // Backwards (the mirror rule) a figure or qualifier line under a heading
@@ -910,7 +919,6 @@ function clauseReachesLineEnd(clause: string, quote: string): string | undefined
 function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: (string | undefined)[] = [], answerText = sentence): string | undefined {
   const normSentence = normalizeForClaim(sentence);
   if (!normSentence) return undefined;
-  const statesFigure = figuresOf(sentence).length > 0;
   for (const [qi, quote] of canonicalQuotes.entries()) {
     const fragment = (l: string) => {
       const raw = clauseReachesLineEnd(l, quote);
@@ -932,27 +940,13 @@ function coveringQuote(sentence: string, canonicalQuotes: string[], quotePages: 
       (l) => tokensCoveredInOrder(normSentence, l) && holdsFigures(l) && sameMarkers(sentence, l) && figuresBoundToLabels(sentence, l) && !fragment(l),
     );
     if (line) return line;
-    // A sentence spread over several lines is covered by the whole quote
-    // only when it states no figure (and the quote's last line is not a
-    // fragment whose continuation the answer leaves out).
-    // Follow-up review: a sentence that one line already words (in order)
-    // but that failed a check on that line — a fragment, a marker, a
-    // figure — is never covered by the whole quote instead.
-    const wordedByOneLine = clausesOf(quote).some((l) => tokensCoveredInOrder(normSentence, l));
-    const quoteLines = quote.split("\n").filter((l) => l.trim());
-    const lastLine = quoteLines[quoteLines.length - 1] ?? "";
-    if (
-      !statesFigure &&
-      !wordedByOneLine &&
-      tokensCoveredInOrder(normSentence, quote) &&
-      sameMarkers(sentence, quote) &&
-      !continuationMissing(lastLine, quotePages[qi], answerText, sentence) &&
-      !precedingMissing(quoteLines[0] ?? "", quotePages[qi], answerText, sentence)
-    ) return quote;
-    // Owner decision 2026-11-22: a figure sentence that is the quote's own
+    // Second follow-up review: the unordered whole-quote path is gone. A
+    // sentence spread over several lines verifies only as the quote's own
+    // wording across line breaks (below), figures or not.
+    // Owner decision 2026-11-22: a sentence that is the quote's own
     // wording across line breaks — identical except whitespace — is covered
     // by the whole lines it spans (figures stay bound to their labels).
-    if (statesFigure) {
+    {
       const block = verbatimSpanLines(sentence, quote, quotePages[qi]);
       if (block !== undefined && sameMarkers(sentence, block) && figuresBoundToLabels(sentence, block)) return block;
     }

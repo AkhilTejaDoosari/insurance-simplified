@@ -63,3 +63,18 @@ describe("follow-up: a figure or qualifier line continues an unfinished line", (
     expect(check("Ambulance $100 per trip.", ["Ambulance $100 per trip.", "$50 copay for each visit.", "Other"])).toBe(true);
   });
 });
+
+// Second follow-up review of 02e8fd5.
+describe("second follow-up: no unordered multi-line coverage; more continuation openings", () => {
+  it.each([
+    ["Dental care is covered", ["Dental is covered", "for accidental injury", "Preventive care is covered."]],
+    ["Maternity is covered", ["Maternity is covered", "12 Months waiting period applies.", "Other"]],
+    ["Physiotherapy is covered", ["Physiotherapy is covered", "10", "visits per year.", "Other"]],
+    ["Physiotherapy maximum", ["Physiotherapy maximum", "10 Visits per year.", "Other"]],
+    ["Maternity is covered", ["Maternity is covered", "Twelve-month waiting period applies.", "Other"]],
+  ])("%s → rejected", (answer, page) => expect(check(answer, page)).toBe(false));
+  it("controls: a verbatim wrapped sentence still verifies; a footnote line is not a continuation", () => {
+    expect(check("Dental treatment is covered for accidental injury only.", ["Dental treatment is covered", "for accidental injury only.", "Other"])).toBe(true);
+    expect(check("Deductible $100", ["Deductible $100", "1 Per injury or sickness"])).toBe(true);
+  });
+});

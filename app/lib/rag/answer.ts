@@ -207,7 +207,7 @@ const TOPIC_WORDS: readonly [RegExp, string][] = [
 /** Generic insurance words: a match on one of these alone is not relevance
  *  when the question also names something specific (review, third round,
  *  S2: "ambulance copay" answered with "Specialist copay"). 5-letter stems. */
-const GENERIC_STEMS = new Set(["copay", "deduc", "coins", "benef", "limit", "maxim", "annua", "overa", "total", "amoun", "cost", "room", "visit", "servi", "charg", "expen", "pays", "pay", "polic", "insur", "plans", "condi", "exist", "pre", "rate", "per"]);
+const GENERIC_STEMS = new Set(["copay", "deduc", "coins", "benef", "limit", "maxim", "annua", "overa", "total", "amoun", "cost", "room", "visit", "servi", "charg", "expen", "pays", "pay", "polic", "insur", "plans", "condi", "exist", "pre", "rate", "per", "restr", "exclu", "there"]);
 
 /** The answer states a concept of the question. Specific words are the
  *  question's non-generic words of 4+ letters (follow-up review: "out"
@@ -221,8 +221,14 @@ export function addressesQuestion(answerText: string, question: string): boolean
   const topic = TOPIC_WORDS.filter(([re]) => re.test(question)).flatMap(([, words]) => conceptStems(words));
   const specific = stems.filter((st) => st.length >= 4 && !GENERIC_STEMS.has(st));
   const has = (st: string) => answerText.split("\n").some((line) => lineHasConcept(line, [st]));
+  // Second follow-up review: a topic word of the question (geographic,
+  // maternity) may be answered by its vocabulary; every OTHER specific word
+  // must still appear ("geographic limits for dental" needs "dental").
+  const isTopicWord = (st: string) => TOPIC_WORDS.some(([re]) => question.split(/[^A-Za-z-]+/).some((w) => w.toLowerCase().startsWith(st) && re.test(w)));
+  const own = specific.filter((st) => !isTopicWord(st));
+  if (!own.every(has)) return false;
   if (topic.length > 0) return [...specific, ...topic].some(has);
-  if (specific.length > 0) return specific.every(has);
+  if (specific.length > 0) return true;
   return stems.length === 0 || stems.some(has);
 }
 

@@ -92,3 +92,16 @@ describe("follow-up: every specific word of the question (4+ letters)", () => {
     expect(r.kind).toBe("refusal");
   });
 });
+
+// Second follow-up review: the topic vocabulary does not excuse the
+// question's other specific words.
+describe("second follow-up: topic questions still need their other specific words", () => {
+  it.each([
+    ["Are there geographic limits for dental?", "Benefits are not payable in your home country."],
+    ["Is maternity covered for twins?", "Pregnancy is covered as any other sickness."],
+  ])("%s → cannot be confirmed", async (question, answer) => {
+    vi.mocked(completeJson).mockImplementationOnce(answerCiting(answer, answer) as never);
+    const r = await answerViaLlm(DOCS, question);
+    expect(r.kind).toBe("refusal");
+  });
+});
