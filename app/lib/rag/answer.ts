@@ -750,7 +750,7 @@ export function stripPlanHeaders(answerText: string, planNames: readonly string[
     // qualifier word ("(NOT IN NY)", "(EXCL. NY)", "(ONLY)" keep the line).
     .filter((line) => {
       const decoded = line.replace(/\(\s*([A-Z0-9][A-Z0-9.\-\/]{0,11})\s*\)/g, (m, code: string) =>
-        /^(?:NOT?|NON|EXCL\.?|EXCEPT|EXCLUDING|ONLY|WITHOUT|NONE)$/.test(code) ? m : " ");
+        /^(?:NOT?|NON|EXCL|EXCEPT|ONLY|WITHOUT|NONE)/.test(code) ? m : " ");
       return !names.has(norm(decoded).replace(/^the /, ""));
     })
     .join("\n")
