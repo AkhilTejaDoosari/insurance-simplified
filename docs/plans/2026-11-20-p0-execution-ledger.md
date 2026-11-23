@@ -32,7 +32,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | 3 Presentation contract | 7 | Checkpoints `5c6efdd`, `1af706d`; owner accepted as engineering checkpoint |
 | 4 Chatbot correction | 8–10 | Checkpoints `c57db34`, `2ae2d63`; owner accepted as engineering checkpoint (2026-11-21) |
 | 4b Pre-Phase-5 fixes | A-026, doc 02 fixes 1–3, chat speed | Checkpoints `435fca1` … (see "Pre-Phase-5 fixes"); owner review pending |
-| 5 Real-document acceptance | 11 | Bar met on count at `d223128` (30/40 correct, 0 wrong, 0 false absence; 1 flagged answer awaiting the owner's ruling; review APPROVE; see "decision (7)"). Not yet accepted |
+| 5 Real-document acceptance | 11 | **NO-GO at `d223128`.** Corrected run-14 score 29/40 (earlier "30/40" was a tally error); blind independent re-score agrees on 24/40 correct, 0 wrong, 0 false absence; bar not met. See "Run 14 re-score". Not accepted |
 
 ## Audit validation (at `de4efe4`)
 
@@ -1125,8 +1125,55 @@ failed; real-PDF 2,337 passed / 1 failed (documented missing-brochure gap) /
 `supabase-int`, port 3344); private-data guard ok on every commit. Local
 Supabase stack stopped; Docker Desktop stopped. Nothing pushed.
 
+## Run 14 re-score and blind independent review (owner request 2026-11-23)
+
+**Correction.** The run-14 table above mis-tallied two rows: doc 03 summed to 7
+(the geographic answer was neither counted nor listed; it is INCOMPLETE — a
+true restriction, not the key's essentials) and doc 05 counted 5 correct where
+only 4 are (deductible, area, space tourism, maternity). Corrected implementer
+score: **29/40 correct**, 0 wrong, 1 incomplete, 1 flagged, 9 cannot be
+confirmed, 0 false absence. The 30/40 and "bar met" claims above are
+withdrawn. Run 13's table has the same doc 05 over-count (row sums to 9), so
+its 29/40 is also suspect; not re-scored here.
+
+**Blind review.** An independent reviewer scored all 40 answers from a packet
+holding only the question, the owner's key and the shown answer/refusal (no
+implementer scores, ledger or repo). Implementer scores were written to the
+archive before the review returned.
+
+| | Correct | Wrong | Incomplete | Flagged | Cannot be confirmed | False absence |
+| --- | --- | --- | --- | --- | --- | --- |
+| Implementer | 29 | 0 | 1 | 1 | 9 | 0 |
+| Blind reviewer | 24 | 0 | 2 | 5 | 9 | 0 |
+
+Agreement: wrong (0), false absence (0), the 9 cannot-be-confirmed items, all
+6 not-stated refusals, doc 03 geographic INCOMPLETE, doc 05 out-of-network
+coinsurance FLAGGED (reviewer: mislabelled, not misleading on the figure).
+
+Disagreements (5), all implementer CORRECT vs reviewer:
+- doc 01 pre-existing → INCOMPLETE (key also names acute-onset rules).
+- doc 03 deductible, ER copay, maternity → FLAGGED (stray table header row and
+  repeated general note between tier lines; "garbled, not misleading"). The
+  doc 03 ER $100 tier figure was checked against the page: correct.
+- doc 04 deductible → FLAGGED (schedule intro paragraph and plan taglines
+  between the two plan rows).
+
+**Agreed score 24/40 → NO-GO** (bar 30). Even resolving every disagreement and
+the doc 05 flag in the app's favour gives 30, exactly at the bar. The dominant
+loss is 9 answerable questions refused as "cannot be confirmed"; the second is
+table-answer noise (header/note lines rendered as rows), which the reviewer
+flags on 4 answers. Stopping rule: the trigger ("under 30/40 with 0 wrong")
+is met on the corrected score; the second-model run awaits owner go-ahead
+(provider calls).
+
+Archive (private, outside git): `questions.json` (exact 8 wordings, sha256
+`abf09a117c1e25f6…`; identical in runs 1, 7, 9, 13, 14),
+`blind/run14-packet.json`, `blind/run14-score-implementer.json`,
+`blind/run14-review.json`, `blind/run14-compare.json`.
+
 ## Next atomic step
 
-Owner ruling on the flagged doc 05 answer (counted correct, not counted, or
-misleading), then Phase 5 acceptance or a fix to section assignment in the
-table detector. Optional: the second-model run for comparison.
+Owner decision: (a) run the same 40 questions once on the second, stronger
+model per decision (7)'s stopping rule, and/or (b) rule on the five scoring
+disagreements and on whether table-answer noise lines count against an
+answer. No further verifier/citation changes this round.
