@@ -32,7 +32,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | 3 Presentation contract | 7 | Checkpoints `5c6efdd`, `1af706d`; owner accepted as engineering checkpoint |
 | 4 Chatbot correction | 8–10 | Checkpoints `c57db34`, `2ae2d63`; owner accepted as engineering checkpoint (2026-11-21) |
 | 4b Pre-Phase-5 fixes | A-026, doc 02 fixes 1–3, chat speed | Checkpoints `435fca1` … (see "Pre-Phase-5 fixes"); owner review pending |
-| 5 Real-document acceptance | 11 | NO-GO at `ad24293` (29/40 correct, 0 wrong; open review BLOCKING B1′/B4; see "decisions (4)") |
+| 5 Real-document acceptance | 11 | NO-GO at `929c0d7` (29/40 correct, 0 wrong; reviews APPROVE; see "decisions (5) and (6)") |
 
 ## Audit validation (at `de4efe4`)
 
@@ -998,7 +998,61 @@ failed; real-PDF 2,248 passed / 1 failed (documented missing-brochure gap) /
 42 skipped; build 0; `test:e2e` 57 passed / 1 skipped; guard ok. Local
 Supabase stack stopped after the run.
 
+## Owner decisions 2026-11-22 (5) and (6) — implemented
+
+| Decision | Commits | Evidence |
+| --- | --- | --- |
+| (5) 1 One-line coverage by whole segments (closes B1′/B4) | `1a9652c`, review fixes `02d276b`, `1bc4e2e` | `segment-coverage.test.ts`: a sentence covered by one line omits only articles, a list marker, an allow-listed ALL-CAPS topic heading that the sentence repeats, and whole sibling label+value segments; a value inherits a label only with its own unit words; a shared header stays; word forms exact or plural. Scope labels (plan, tier, rider, group, age, network, limitation; ALL-CAPS plan names) are never dropped on either path |
+| (5) 2 Server-rendered table answers | `6c0811b`, review fixes `02d276b`, `1bc4e2e` | `table-rendered-answer.test.ts`: a model citation on a detected table row → the server writes "label — SECTION (column header): cell" for each cell plus governing footnotes (exact marker); every piece cited verbatim and unique, else cannot be confirmed; prose cited with a row (anything but an allow-listed ALL-CAPS heading) → cannot be confirmed; model wording never used for table values |
+| (6) Watermark artifacts at extraction | `ab93907`, review fixes `5454ea2`, `929c0d7` | `watermark-removal.test.ts`; `app/lib/pdf/watermarks.ts`: an item that is, in full, a named overlay phrase (sample, specimen, draft, for inquiry purposes only, not for distribution, confidential), drawn rotated or ≥ 2× the page's median size, on ≥ 60% (≥ 3) pages, is removed before page text is joined (spans stay consistent); table cells and page-1 title lines protected; counts only recorded/logged. **Narrower than "detect any repeated text"** — the reviewer showed repetition/geometry alone removes negations, Yes/No cells, conditions and column headings |
+| (6) Third replay loss | `58dad12` | general fragment-rule bug, fixed: the rules now check page lines that are occurrences of the cited line itself (whole-line equality unless the quote edge is mid-line, at a word boundary; not placed once → fail-closed). **Rule change to note:** a copy of the same line elsewhere on the page no longer blocks an answer from the complete cited line |
+
+Changed assertions (owner-directed, rule 1): figure-label-binding "$300
+specialist." → "Copays: $300 specialist." (header required);
+verifier-alignment bare "$1,000,000." → rejected. Own controls from these
+rounds updated when the reviewer tightened them (heading must be repeated).
+
+Replay of run 9's 18 verified model answers through rule 1: 3 lost — two
+from the glued "SAMPLE" watermark (fixed by (6)), one from the fragment-rule
+occurrence bug (fixed by `58dad12`).
+
+Five-document extraction diff (watermark removal): docs 02–04 byte-identical;
+docs 01/05 lose 68/78 overlay items; facts 1,232 → 1,231 (watermark text gone
+from displays; one doc 01 p19 mid-sentence fragment value no longer
+extracted — root cause not isolated within the time box; no fact lost).
+
+Independent review: rule 1/2 — three rounds to APPROVE (`1bc4e2e`);
+watermark/fragment — three rounds to APPROVE (`929c0d7`).
+
+### Benchmark at `929c0d7` (run 13)
+
+| Doc | Verified (all correct) | Correct | Wrong | Cannot be confirmed (answerable) |
+| --- | --- | --- | --- | --- |
+| 01 | 5 | 6 | 0 | 2 |
+| 02 | 6 | 7 | 0 | 1 |
+| 03 | 6 | 6 | 0 | 1 |
+| 04 | 3 | 5 | 0 | 3 |
+| 05 | 3 | 5 | 0 | 4 |
+| Total | 23 | **29/40** | **0** | 11 |
+
+False "not in your documents": 0. Gained vs run 9: doc 03 maximum (tier
+names), doc 04 ER (both plans), doc 01 pre-existing (watermark). Lost:
+doc 05 pre-existing (model wrote a different, non-verbatim sentence), doc 04
+out-of-network coinsurance and doc 05 ER (table rendering uncitable).
+Causes of the 11: table row uncitable 6 (5 = a repeated cell/label/header
+whose row line also repeats → no unique citation; 1 undetermined); wrapped
+table label 1; model omitted the row's figures 1; definition list 1;
+age-band maximum without label (off-topic) 1; non-verbatim sentence 1.
+
+**GO/NO-GO: NO-GO** — 0 wrong ✓, 0 false absence ✓, 29/40 < 30.
+
+Gates at `929c0d7`: `tsc` clean; `npm test` 2,201 passed / 22 skipped / 0
+failed; real-PDF 2,323 passed / 1 failed (documented missing-brochure gap) /
+42 skipped; build 0; `test:e2e` 57 passed / 1 skipped; guard ok. Local
+Supabase stack stopped; Docker Desktop stopped.
+
 ## Next atomic step
 
-Owner decision on B1′/B4 (apply the whole-clause rule, accept the 27
-assertion changes and its answer-rate cost, or another rule). Phase 5 is NO-GO.
+Owner decision: cite a repeated table piece by a larger unique span (e.g.
+the row's block from label start to last cell) so rendering is not
+uncitable (5 of the 11). Phase 5 is NO-GO.
