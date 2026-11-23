@@ -32,7 +32,7 @@ copied unchanged from the untracked file in the `integration/m5-m7` worktree).
 | 3 Presentation contract | 7 | Checkpoints `5c6efdd`, `1af706d`; owner accepted as engineering checkpoint |
 | 4 Chatbot correction | 8–10 | Checkpoints `c57db34`, `2ae2d63`; owner accepted as engineering checkpoint (2026-11-21) |
 | 4b Pre-Phase-5 fixes | A-026, doc 02 fixes 1–3, chat speed | Checkpoints `435fca1` … (see "Pre-Phase-5 fixes"); owner review pending |
-| 5 Real-document acceptance | 11 | NO-GO at `929c0d7` (29/40 correct, 0 wrong; reviews APPROVE; see "decisions (5) and (6)") |
+| 5 Real-document acceptance | 11 | Bar met on count at `d223128` (30/40 correct, 0 wrong, 0 false absence; 1 flagged answer awaiting the owner's ruling; review APPROVE; see "decision (7)"). Not yet accepted |
 
 ## Audit validation (at `de4efe4`)
 
@@ -1051,8 +1051,82 @@ failed; real-PDF 2,323 passed / 1 failed (documented missing-brochure gap) /
 42 skipped; build 0; `test:e2e` 57 passed / 1 skipped; guard ok. Local
 Supabase stack stopped; Docker Desktop stopped.
 
+## Owner decision 2026-11-22 (7) — table-row span citation — implemented
+
+Resumed at `f0349ae` (decision (6) found already implemented and reviewed; no
+rework). Guardrails as given: one contiguous verbatim span on one page, the
+row label through its last cell, never across rows; if not unique, it must
+include its section heading; still not unique → cannot be confirmed; the
+server-rendered answer is unchanged; regression-first with a duplicate row
+under two sections.
+
+| Item | Commits | Evidence |
+| --- | --- | --- |
+| Row span as a fallback citation | `ca46603`, review fixes `d223128` | `app/lib/evidence/citation-unit.ts` `rowSpanCitation`; `table-row-span-citation.test.ts` (14; 4 red before `ca46603`, 5 more red before `d223128`). Used only when a label, cell or section is not fully citable on its own; pieces citable today are unchanged. Only whitespace may lie between the row's own pieces (and its own section heading when the span starts there) — no other row, section heading, column header or footnote. A piece with no page spans is never covered. The section span is possible only for the first row under a heading (a later row would cross a row) → otherwise cannot be confirmed |
+| Uniqueness as the verifier judges it | `d223128` | `isUniqueOnPage` (`evidence-verification.ts`, same normalisation as `verifyEvidenceCitation`'s exact rule), used by the span and by single-piece citations (`textsOf`); can only remove a citation that would later fail verification |
+| Duplicate row under two sections | `ca46603` | each section's row renders and cites only its own section; the bare repeated row line selects no row; end to end, an out-of-network claim cited by the ambiguous line is refused |
+
+Independent review (read-only, the agent that did not write the code): round
+1 REQUEST CHANGES — B1 (the span could enclose another section's heading or a
+footnote → value seen under the wrong section), S1 (a cell with no spans
+covered by a span not containing it), S2 (raw vs normalised uniqueness), S3
+(partly citable pieces); all fixed in `d223128` with the reviewer's probes as
+regressions. Round 2 **APPROVE**. Open nits (recorded, not fixed): N-a a
+section span after the row's last cell would be cut off (detector-error case;
+nothing misattributed); N-b pre-existing — a column heading or footnote with
+some spans uncited still passes (the "fewer cites than spans" rule could
+apply there too). Expected limitation (N3): a repeated row that is not the
+first under its heading is always "cannot be confirmed".
+
+Replay of run 13's five table-uncitable answers through the new code (no
+model calls): 3 render with all citations unique (doc 01 coinsurance, doc 04
+maximum, doc 05 coinsurance); doc 05 ER stays uncitable (a repeated column
+heading — outside this decision); doc 04 coinsurance not replayable from the
+stored log.
+
+### Benchmark at `d223128` (run 14; same 40 questions, same model and 2.1 s throttle; 39 model calls, 118 embedding calls, 0 CHAT_FAILED)
+
+| Doc | Correct | Wrong | Flagged (not counted) | Cannot be confirmed (answerable) |
+| --- | --- | --- | --- | --- |
+| 01 | 7 | 0 | 0 | 1 |
+| 02 | 7 | 0 | 0 | 1 |
+| 03 | 6 | 0 | 0 | 1 |
+| 04 | 5 | 0 | 0 | 3 |
+| 05 | 5 | 0 | 1 | 2 |
+| Total | **30/40** | **0** | 1 | 8 |
+
+False "not in your documents": 0. Gained vs run 13: doc 01 out-of-network
+coinsurance and doc 04 annual maximum (both via the row span). Lost: doc 04
+geographic restrictions (the model wrote a different sentence; rejected by
+the figure-sentence rule — run-to-run model variance, not this change).
+
+**Flagged, owner ruling needed — doc 05 out-of-network coinsurance.** The
+figures and column are correct, but the table detector assigned the row
+above (the deductible label and its options) to this row's *section
+heading*; the section span therefore cites that text and the rendered label
+repeats it before each coinsurance line. Nothing stated is false; it is not
+counted correct (same convention as run 13's unlabelled tier rows). If the
+owner rules it misleading, the run has 1 wrong → NO-GO. Root cause is
+section assignment in `layout-tables.ts`, not the span rule (the span holds
+only the row's own pieces as detected). Not fixed: the stopping rule forbids
+further verifier/citation changes this round.
+
+Pre-existing, unchanged answers (doc 03 deductible and ER copay) render the
+table's general note and header line as extra lines; counted as in run 13.
+
+**GO/NO-GO:** bar met on count — 30/40 ≥ 30 ✓, 0 wrong ✓, 0 false absence ✓
+— at the minimum, with ±1 model variance seen between runs and the doc 05
+ruling open. Stopping rule ("still under 30") not triggered, so the
+second-model run was not made.
+
+Gates at `d223128`: `tsc` clean; `npm test` 2,215 passed / 22 skipped / 0
+failed; real-PDF 2,337 passed / 1 failed (documented missing-brochure gap) /
+42 skipped; build 0; `test:e2e` 57 passed / 1 skipped (local Supabase
+`supabase-int`, port 3344); private-data guard ok on every commit. Local
+Supabase stack stopped; Docker Desktop stopped. Nothing pushed.
+
 ## Next atomic step
 
-Owner decision: cite a repeated table piece by a larger unique span (e.g.
-the row's block from label start to last cell) so rendering is not
-uncitable (5 of the 11). Phase 5 is NO-GO.
+Owner ruling on the flagged doc 05 answer (counted correct, not counted, or
+misleading), then Phase 5 acceptance or a fix to section assignment in the
+table detector. Optional: the second-model run for comparison.
