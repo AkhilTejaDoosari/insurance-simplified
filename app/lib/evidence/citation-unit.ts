@@ -12,7 +12,7 @@
 // never crosses a line that ends a sentence and never adds another row.
 // Pure: reads only the documents passed in.
 
-import { continuesOnto, isTopicHeading, lineEndsSentence } from "@/app/lib/evidence-verification";
+import { continuesOnto, isTopicHeading, isUniqueOnPage, lineEndsSentence } from "@/app/lib/evidence-verification";
 import type { LayoutTable, LayoutText } from "@/app/lib/pdf/layout-tables";
 
 export interface UnitCitation {
@@ -66,7 +66,8 @@ export function completeProseQuote(page: string, quote: string): string {
  *  whose text repeats ("$0", "Covered") is cited by its whole page line
  *  when that line is unique; otherwise it is not added. */
 function textsOf(page: string, t: LayoutText | undefined): string[] {
-  const unique = (q: string) => !!q && page.indexOf(q) >= 0 && page.indexOf(q) === page.lastIndexOf(q);
+  // Review of ca46603 (S2): unique as the verifier judges it.
+  const unique = (q: string) => !!q && isUniqueOnPage(page, q);
   return (t?.spans ?? []).flatMap((s) => {
     const text = page.slice(s.start, s.end).trim();
     if (unique(text)) return [text];
@@ -81,27 +82,40 @@ type LayoutRow = LayoutTable["rows"][number];
 
 /** Owner decision 2026-11-22 (7): a row whose label or cells cannot be cited
  *  piece by piece is cited by ONE contiguous verbatim span of its page — the
- *  row from its first piece through its last cell. The span may not touch any
- *  other row's label or cells (never across rows). When that span is not
- *  unique on the page (the same row under two sections), or the row's section
- *  heading is not citable on its own, the span starts at the section heading
- *  instead — still touching no other row. Not unique either way → undefined
- *  (the caller fails closed). `withSection` says the section is inside it. */
-function rowSpanCitation(page: string, tables: readonly LayoutTable[], row: LayoutRow, sectionCitable: boolean): { quote: string; withSection: boolean } | undefined {
-  const own = [row.label, ...row.cells].flatMap((t) => t.spans);
-  if (own.length === 0) return undefined;
+ *  row from its first piece through its last cell. Review of ca46603 (B1):
+ *  between the row's own pieces there may be only whitespace — no other row,
+ *  section heading, column header or footnote (never across rows). When that
+ *  span is not unique on the page as the verifier judges it (the same row
+ *  under two sections), or the row's section heading is not citable on its
+ *  own, the span starts at the row's section heading instead, again with only
+ *  whitespace between the heading and the row — so only the first row under
+ *  a heading can use it; a heading placed after the row's first piece is not
+ *  used. Otherwise undefined (the caller fails closed). A piece with no page
+ *  spans is never covered (S1). `withSection` says the section is inside. */
+function rowSpanCitation(page: string, row: LayoutRow, sectionCitable: boolean): { quote: string; withSection: boolean } | undefined {
+  const pieces = [row.label, ...row.cells];
+  if (pieces.some((p) => p.spans.length === 0)) return undefined;
+  const own = pieces.flatMap((t) => t.spans);
+  const first = Math.min(...own.map((s) => s.start));
   const end = Math.max(...own.map((s) => s.end));
-  const others = tables.flatMap((t) => t.rows).filter((r) => r !== row).flatMap((r) => [r.label, ...r.cells].flatMap((t) => t.spans));
-  const quoteFrom = (from: number) => {
-    if (others.some((s) => s.start < end && s.end > from)) return undefined;
+  const quoteFrom = (from: number, spans: { start: number; end: number }[]) => {
+    let rest = "";
+    let cur = from;
+    for (const s of [...spans].sort((a, b) => a.start - b.start)) {
+      if (s.start > cur) rest += page.slice(cur, s.start);
+      cur = Math.max(cur, s.end);
+    }
+    if (cur < end) rest += page.slice(cur, end);
+    if (rest.trim()) return undefined;
     const quote = page.slice(from, end).trim();
-    return quote && page.indexOf(quote) === page.lastIndexOf(quote) ? quote : undefined;
+    return quote && isUniqueOnPage(page, quote) ? quote : undefined;
   };
-  const plain = quoteFrom(Math.min(...own.map((s) => s.start)));
+  const plain = quoteFrom(first, own);
   if (plain && (!row.section || sectionCitable)) return { quote: plain, withSection: false };
-  const sectionStart = row.section?.spans.length ? Math.min(...row.section.spans.map((s) => s.start)) : undefined;
-  if (sectionStart === undefined || sectionStart > Math.min(...own.map((s) => s.start))) return undefined;
-  const withSection = quoteFrom(sectionStart);
+  if (!row.section?.spans.length) return undefined;
+  const sectionStart = Math.min(...row.section.spans.map((s) => s.start));
+  if (sectionStart > first) return undefined;
+  const withSection = quoteFrom(sectionStart, [...own, ...row.section.spans]);
   return withSection ? { quote: withSection, withSection: true } : undefined;
 }
 
@@ -195,23 +209,25 @@ export function renderTableAnswer(
         let labelCites = textsOf(page, row.label);
         let sectionCites = row.section ? textsOf(page, row.section) : [];
         const pieceCites = row.cells.map((cell) => textsOf(page, cell));
-        // Decision (7): a piece that cannot be cited on its own is cited by
-        // the row's span (or section-through-row span); the rendered answer
-        // is unchanged.
+        // Decision (7): a piece that cannot be cited on its own — not every
+        // one of its spans (review S3) — is cited by the row's span (or
+        // section-through-row span); the rendered answer is unchanged.
+        const partial = (t: LayoutText, cites: string[]) => cites.length < t.spans.length;
         let span: string[] = [];
-        const sectionMissing = !!row.section && sectionCites.length === 0;
-        if (labelCites.length === 0 || sectionMissing || pieceCites.some((p) => p.length === 0)) {
-          const unit = rowSpanCitation(page, pageTables, row, !sectionMissing);
+        const sectionMissing = !!row.section && partial(row.section, sectionCites);
+        const cellMissing = row.cells.map((cell, i) => partial(cell, pieceCites[i]));
+        if (partial(row.label, labelCites) || sectionMissing || cellMissing.some(Boolean)) {
+          const unit = rowSpanCitation(page, row, !sectionMissing);
           if (!unit) return "uncitable";
           span = [unit.quote];
-          if (labelCites.length === 0) labelCites = span;
+          if (partial(row.label, labelCites)) labelCites = span;
           if (unit.withSection) sectionCites = span;
         }
         const head = section ? `${label} — ${section}` : label;
         for (const [i, cell] of row.cells.entries()) {
           const header = cell.columns.map((k) => ws(table.columns[k]?.text ?? "")).filter(Boolean).join(" / ");
           const cellText = ws(cell.text);
-          const cellCites = pieceCites[i].length > 0 ? pieceCites[i] : span;
+          const cellCites = cellMissing[i] ? span : pieceCites[i];
           const headerCites = cell.columns.flatMap((k) => textsOf(page, table.columns[k]));
           if (!header || !cellText || cellCites.length === 0 || headerCites.length === 0) return "uncitable";
           const line = `${head} (${header}): ${cellText}`;

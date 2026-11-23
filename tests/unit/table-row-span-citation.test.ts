@@ -169,3 +169,68 @@ describe("still not unique → cannot be confirmed (never across rows)", () => {
     expect(renderTableAnswer([doc], cite("$200"))).toBe("uncitable");
   });
 });
+
+// Review of ca46603. B1: the span may hold only the row's own pieces (and,
+// when it starts there, its own section heading) separated by whitespace —
+// never another section's heading, a column header or a footnote.
+describe("review B1: nothing but the row's own pieces inside the span", () => {
+  it("another section's heading between the label and its cells → cannot be confirmed", () => {
+    const page = ["BENEFIT ELITE BASIC", "IN-NETWORK SERVICES", "Specialist", "OUT-OF-NETWORK SERVICES", "$30 $40", "Primary $50 $60", "Specialist $30 $40"].join("\n");
+    const doc = handDoc(page, { header: "BENEFIT ELITE BASIC", columns: ["ELITE", "BASIC"], rows: [
+      { section: "IN-NETWORK SERVICES", label: "Specialist", cells: ["$30", "$40"] },
+      { section: "OUT-OF-NETWORK SERVICES", label: "Primary", cells: ["$50", "$60"] },
+    ] });
+    expect(renderTableAnswer([doc], cite("IN-NETWORK SERVICES\nSpecialist"))).toBe("uncitable");
+  });
+  it("a footnote line between the label and its cells → cannot be confirmed", () => {
+    const page = ["BENEFIT ELITE BASIC", "Specialist", "* Out-of-network only.", "$30 $40", "Specialist $30 $40"].join("\n");
+    const doc = handDoc(page, { header: "BENEFIT ELITE BASIC", columns: ["ELITE", "BASIC"], rows: [
+      { label: "Specialist", cells: ["$30", "$40"] },
+    ] });
+    expect(renderTableAnswer([doc], cite("Specialist\n* Out-of-network only."))).toBe("uncitable");
+  });
+});
+
+// S1: a piece with no page spans is never covered by the row span.
+describe("review S1: a cell with no spans fails closed", () => {
+  it("is not rendered from a span that does not contain it", () => {
+    const page = ["BENEFIT ELITE BASIC", "Specialist $30 Not covered", "Specialist only", "$30 only"].join("\n");
+    const doc = handDoc(page, { header: "BENEFIT ELITE BASIC", columns: ["ELITE", "BASIC"], rows: [{ label: "Specialist", cells: ["$30", "Not covered"] }] });
+    const row = doc.tables[0].rows[0];
+    row.cells[1] = { ...row.cells[1], text: "Covered in full", spans: [] };
+    expect(renderTableAnswer([doc], cite("Specialist $30 Not covered"))).toBe("uncitable");
+  });
+});
+
+// S2: uniqueness is judged as the verifier judges it (whitespace-normalised),
+// so a wrapped copy of the row escalates to the section span.
+describe("review S2: uniqueness after whitespace normalisation", () => {
+  const page = ["BENEFIT ELITE BASIC", "IN-NETWORK SERVICES", "Specialist $30 $40", "OUT-OF-NETWORK SERVICES", "Specialist", "$30 $40", "End of schedule."].join("\n");
+  const doc = handDoc(page, { header: "BENEFIT ELITE BASIC", columns: ["ELITE", "BASIC"], rows: [
+    { section: "IN-NETWORK SERVICES", label: "Specialist", cells: ["$30", "$40"] },
+    { section: "OUT-OF-NETWORK SERVICES", label: ["Specialist", 1], cells: [["$30", 1], ["$40", 1]] },
+  ] });
+  it("the wrapped out-of-network row is cited from its section heading, and that citation verifies", async () => {
+    const { verifyEvidenceCitation } = await import("@/app/lib/evidence-verification");
+    const r = renderTableAnswer([doc], cite("OUT-OF-NETWORK SERVICES\nSpecialist"));
+    expect(typeof r === "object" && r.answerText).toBe("Specialist — OUT-OF-NETWORK SERVICES (ELITE): $30\nSpecialist — OUT-OF-NETWORK SERVICES (BASIC): $40");
+    if (typeof r === "object" && r) for (const c of r.citations) expect(verifyEvidenceCitation([doc], c).ok).toBe(true);
+  });
+});
+
+// S3: a piece only partly citable (one of two spans) is covered by the row span.
+describe("review S3: a partly citable label is covered by the row span", () => {
+  it("a wrapped label whose second line repeats is still fully cited", () => {
+    const page = ["BENEFIT ELITE BASIC", "Emergency Room", "Visits", "$100 $250", "Urgent Care $50 $75", "Visits"].join("\n");
+    const at0 = page.indexOf("Emergency Room");
+    const at1 = page.indexOf("Visits");
+    const doc = handDoc(page, { header: "BENEFIT ELITE BASIC", columns: ["ELITE", "BASIC"], rows: [
+      { label: "Emergency Room", cells: ["$100", "$250"] },
+      { label: "Urgent Care", cells: ["$50", "$75"] },
+    ] });
+    doc.tables[0].rows[0].label = { text: "Emergency Room Visits", spans: [{ start: at0, end: at0 + 14 }, { start: at1, end: at1 + 6 }] };
+    const r = renderTableAnswer([doc], cite("Emergency Room"));
+    expectSoundCitations(page, r);
+    expect(typeof r === "object" && r.citations.map((c) => c.quote)).toContain("Emergency Room\nVisits\n$100 $250");
+  });
+});

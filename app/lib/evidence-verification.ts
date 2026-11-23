@@ -112,6 +112,14 @@ function uniqueSpan(page: NormText, needle: string): { start: number; end: numbe
   return { start, end };
 }
 
+/** True when `quote` occurs exactly once on the page under the same
+ *  normalisation as verifyEvidenceCitation's exact rule — so a quote judged
+ *  unique here verifies, and binds to the same place, there. */
+export function isUniqueOnPage(pageText: string, quote: string): boolean {
+  const needle = prepareNeedle(quote);
+  return !!needle && uniqueSpan(preparePage(pageText), needle) !== null;
+}
+
 const ELLIPSIS = /\.\.\.|…/;
 
 /** Deterministic source-span recovery from ordered literal anchors.
