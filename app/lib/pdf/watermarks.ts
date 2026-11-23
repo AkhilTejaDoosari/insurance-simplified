@@ -6,9 +6,11 @@
 // an item is removed BEFORE the page text is joined, so page text, table
 // spans and citation offsets stay consistent.
 //
-// An item string is an artifact when, as a whole text item, it appears on at
-// least 60% of the document's pages (and on at least 3), states no figure,
-// and has at most six words. Never removed: an item on the first two lines of
+// An item string is an artifact when, as a whole text item drawn as an
+// overlay (rotated, or at least twice the page's median font size), it
+// appears on at least 60% of the document's pages (and on at least 3),
+// states no figure, has at most six words, and carries no negation,
+// qualifier or coverage word unless it is a named overlay phrase. Never removed: an item on the first two lines of
 // page 1 (the document title read for plan identity), and a string that is a
 // table cell or row label on its own on any page. A removed item's line break
 // moves to the item before it. What was removed is reported per page as a
@@ -23,6 +25,22 @@ const MIN_SHARE = 0.6;
 const MAX_WORDS = 6;
 
 const norm = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
+
+/** Review of ab93907 (blocking): repetition alone is not a watermark. An
+ *  item is an overlay only when it is drawn rotated or at least twice the
+ *  page's median font size. A negation, exception, qualifier or coverage
+ *  word is never removed, except in a named overlay phrase. */
+const OVERLAY_SCALE = 2;
+const OVERLAY_PHRASES = new Set(["sample", "specimen", "draft", "for inquiry purposes only", "not for distribution", "confidential"]);
+const MEANING_WORD = /\b(?:not|no|never|none|nil|without|cannot|except|excepting|excluding|excluded|exclusions?|unless|only|if|after|until|covered|included|yes|void)\b|n['’]t\b|\bn\/a\b/i;
+const size = (it: RawTextItem) => Math.hypot(it.transform[0], it.transform[1]);
+const rotated = (it: RawTextItem) => Math.abs(it.transform[1]) > 0.01 || Math.abs(it.transform[2]) > 0.01;
+function overlayFlags(items: RawTextItem[]): boolean[] {
+  const sizes = items.filter((it) => norm(it.str)).map(size).sort((a, b) => a - b);
+  const median = sizes.length ? sizes[Math.floor(sizes.length / 2)] : 0;
+  return items.map((it) => !!norm(it.str) && (rotated(it) || (median > 0 && size(it) >= OVERLAY_SCALE * median)));
+}
+const removable = (s: string) => OVERLAY_PHRASES.has(s.toLowerCase()) || !MEANING_WORD.test(s);
 
 export interface ArtifactRemoval {
   items: RawTextItem[][];
@@ -68,14 +86,15 @@ export function removeRepeatedArtifacts(pages: RawTextItem[][]): ArtifactRemoval
   const threshold = Math.max(MIN_PAGES, Math.ceil(n * MIN_SHARE));
   if (n < MIN_PAGES) return { items: pages, removed: [] };
 
+  const flags = pages.map(overlayFlags);
   const pagesWith = new Map<string, number>();
-  for (const items of pages) {
-    for (const s of new Set(items.map((it) => norm(it.str)).filter(Boolean))) {
+  for (const [p, items] of pages.entries()) {
+    for (const s of new Set(items.filter((_, k) => flags[p][k]).map((it) => norm(it.str)).filter(Boolean))) {
       pagesWith.set(s, (pagesWith.get(s) ?? 0) + 1);
     }
   }
   const candidates = [...pagesWith.entries()]
-    .filter(([s, count]) => count >= threshold && !/\d/.test(s) && s.split(" ").length <= MAX_WORDS && /[A-Za-z]/.test(s))
+    .filter(([s, count]) => count >= threshold && !/\d/.test(s) && s.split(" ").length <= MAX_WORDS && /[A-Za-z]/.test(s) && removable(s))
     .map(([s]) => s);
   if (candidates.length === 0) return { items: pages, removed: [] };
 
@@ -89,7 +108,7 @@ export function removeRepeatedArtifacts(pages: RawTextItem[][]): ArtifactRemoval
     const out: RawTextItem[] = [];
     let count = 0;
     for (const [k, it] of pageItems.entries()) {
-      if (artifacts.has(norm(it.str)) && !(i === 0 && titleItems.has(k))) {
+      if (flags[i][k] && artifacts.has(norm(it.str)) && !(i === 0 && titleItems.has(k))) {
         count++;
         // Keep the line break the removed item carried.
         if (it.hasEOL && out.length > 0) out[out.length - 1] = { ...out[out.length - 1], hasEOL: true };

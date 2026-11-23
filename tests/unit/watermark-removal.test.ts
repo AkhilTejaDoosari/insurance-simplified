@@ -11,13 +11,15 @@ import { removeRepeatedArtifacts } from "@/app/lib/pdf/watermarks";
 const FS = 9;
 const item = (str: string, x: number, y: number, hasEOL = false): RawTextItem => ({ str, transform: [FS, 0, 0, FS, x, y], width: str.length * 4.5, hasEOL });
 const text = (items: RawTextItem[]) => positionItems(items).text;
+// A specimen overlay as PDFs draw it: rotated 45°, ~48 pt over 9 pt body text.
+const overlay = (str: string, x: number, y: number, hasEOL = false): RawTextItem => ({ str, transform: [34, 34, -34, 34, x, y], width: str.length * 20, hasEOL });
 
 function page(n: number, extra: RawTextItem[] = []): RawTextItem[] {
   return [
     item(`Benefit page ${n}`, 30, 760, true),
     item("• Maximum Limit: $1,500", 30, 740),
-    item("SAMPLE", 140, 740, true),
-    item("For Inquiry Purposes Only", 30, 720, true),
+    overlay("SAMPLE", 140, 740, true),
+    overlay("For Inquiry Purposes Only", 30, 720, true),
     ...extra,
   ];
 }
@@ -60,5 +62,29 @@ describe("never removed", () => {
     ];
     const pages = [1, 2, 3, 4].map(tablePage);
     expect(text(removeRepeatedArtifacts(pages).items[1])).toContain("Covered");
+  });
+});
+
+// Review of ab93907 (blocking): repetition alone is not a watermark. Only a
+// rotated or oversized overlay item is removed; a negation, qualifier or
+// coverage word never is (an allow-listed overlay phrase aside).
+describe("review: ordinary repeated words are never removed", () => {
+  it("an emphasised 'not' drawn as its own item", () => {
+    const pages = ["Dental treatment is ", "Cosmetic surgery is ", "Vision exams are "].map((head, i) => [item(head, 30, 760), item("not", 120, 760), item(` covered ${i}.`, 140, 760, true)]);
+    expect(text(removeRepeatedArtifacts(pages).items[0])).toContain("not");
+  });
+  it("a 'No' cell of an undetected table", () => {
+    const pages = [1, 2, 3].map((n) => [item(`Row ${n}`, 30, 760), item("No", 200, 760), item("Yes", 300, 760, true)]);
+    const out = removeRepeatedArtifacts(pages);
+    expect(text(out.items[1])).toContain("No");
+    expect(out.removed).toEqual([]);
+  });
+  it("a running footer that states a condition", () => {
+    const pages = [1, 2, 3].map((n) => [item(`Body ${n}`, 30, 760, true), item("Not available in New York", 30, 40, true)]);
+    expect(text(removeRepeatedArtifacts(pages).items[2])).toContain("Not available in New York");
+  });
+  it("even a rotated, oversized repeated negation is kept", () => {
+    const pages = [1, 2, 3].map((n) => [item(`Body ${n}`, 30, 760, true), overlay("NOT COVERED", 100, 400, true)]);
+    expect(text(removeRepeatedArtifacts(pages).items[0])).toContain("NOT COVERED");
   });
 });
