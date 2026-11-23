@@ -6,11 +6,14 @@
 // an item is removed BEFORE the page text is joined, so page text, table
 // spans and citation offsets stay consistent.
 //
-// An item string is an artifact when, as a whole text item drawn as an
-// overlay (rotated, or at least twice the page's median font size), it
-// appears on at least 60% of the document's pages (and on at least 3),
-// states no figure, has at most six words, and carries no negation,
-// qualifier or coverage word unless it is a named overlay phrase. Never removed: an item on the first two lines of
+// An item string is an artifact only when it is, in full, a named specimen
+// overlay phrase (SAMPLE, SPECIMEN, DRAFT, FOR INQUIRY PURPOSES ONLY, NOT FOR
+// DISTRIBUTION, CONFIDENTIAL) drawn as an overlay (rotated, or at least
+// twice the page's median font size) as a whole text item on at least 60% of
+// the document's pages (and on at least 3). Any other repeated text — column
+// headings, banners, conditions, plan names — is kept (review of 5454ea2:
+// an allow-list, never a guess about what other words mean). Never removed
+// either: an item on the first two lines of
 // page 1 (the document title read for plan identity), and a string that is a
 // table cell or row label on its own on any page. A removed item's line break
 // moves to the item before it. What was removed is reported per page as a
@@ -26,13 +29,11 @@ const MAX_WORDS = 6;
 
 const norm = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
 
-/** Review of ab93907 (blocking): repetition alone is not a watermark. An
- *  item is an overlay only when it is drawn rotated or at least twice the
- *  page's median font size. A negation, exception, qualifier or coverage
- *  word is never removed, except in a named overlay phrase. */
+/** An item is an overlay only when it is drawn rotated or at least twice
+ *  the page's median font size, and only a named specimen-overlay phrase is
+ *  ever removed. */
 const OVERLAY_SCALE = 2;
 const OVERLAY_PHRASES = new Set(["sample", "specimen", "draft", "for inquiry purposes only", "not for distribution", "confidential"]);
-const MEANING_WORD = /\b(?:not|no|never|none|nil|without|cannot|except|excepting|excluding|excluded|exclusions?|unless|only|if|after|until|covered|included|yes|void)\b|n['’]t\b|\bn\/a\b/i;
 const size = (it: RawTextItem) => Math.hypot(it.transform[0], it.transform[1]);
 const rotated = (it: RawTextItem) => Math.abs(it.transform[1]) > 0.01 || Math.abs(it.transform[2]) > 0.01;
 function overlayFlags(items: RawTextItem[]): boolean[] {
@@ -40,7 +41,7 @@ function overlayFlags(items: RawTextItem[]): boolean[] {
   const median = sizes.length ? sizes[Math.floor(sizes.length / 2)] : 0;
   return items.map((it) => !!norm(it.str) && (rotated(it) || (median > 0 && size(it) >= OVERLAY_SCALE * median)));
 }
-const removable = (s: string) => OVERLAY_PHRASES.has(s.toLowerCase()) || !MEANING_WORD.test(s);
+const removable = (s: string) => OVERLAY_PHRASES.has(s.toLowerCase());
 
 export interface ArtifactRemoval {
   items: RawTextItem[][];

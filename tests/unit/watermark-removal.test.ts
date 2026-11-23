@@ -88,3 +88,18 @@ describe("review: ordinary repeated words are never removed", () => {
     expect(text(removeRepeatedArtifacts(pages).items[0])).toContain("NOT COVERED");
   });
 });
+
+// Follow-up review of 5454ea2 (blocking): only the named overlay phrases are
+// ever removed; any other rotated or oversized repeated text is kept.
+describe("follow-up: only named overlay phrases are removed", () => {
+  const big = (str: string, x: number, y: number, hasEOL = false): RawTextItem => ({ str, transform: [24, 0, 0, 24, x, y], width: str.length * 12, hasEOL });
+  const cases: [string, (n: number) => RawTextItem[]][] = [
+    ["rotated column headings", (n) => [overlay("In-Network", 200, 780), overlay("Out-of-Network", 300, 780, true), item("Deductible $" + n + " $250", 30, 760, true)]],
+    ["a large condition banner", (n) => [big("Pre-authorization required", 30, 780, true), item("Body " + n, 30, 760, true)]],
+    ["a rotated exclusion", (n) => [overlay("Plan excludes dental", 100, 400, true), item("Body " + n, 30, 760, true)]],
+    ["a large plan name", (n) => [big("GOLD PLAN", 30, 780, true), item("Body " + n, 30, 760, true)]],
+  ];
+  it.each(cases)("%s", (_label, build) => {
+    expect(removeRepeatedArtifacts([1, 2, 3].map(build)).removed).toEqual([]);
+  });
+});
