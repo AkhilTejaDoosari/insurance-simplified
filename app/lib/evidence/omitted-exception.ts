@@ -68,8 +68,8 @@ const marked = (s: string) => MARKER.test(s) || ACUTE.test(s);
  *  elsewhere and states no exception; anything after it keeps the marker. */
 const BOILERPLATE = new RegExp(
   String.raw`\b(?:unless|except\s+as)\s+(?:(?:otherwise|specifically|expressly)\s+)+(?:stated|noted|indicated|specified|provided)(?:\s+for)?(?:\s+otherwise)?` +
-    String.raw`(?:\s+(?:herein|below|above|in\s+(?:the|this)\s+(?:benefit\s+summary|schedule|certificate|policy|plan|brochure|table)(?:\s+of\s+benefits)?))?(?=\s*(?:[.;,:)]|$))` +
-    String.raw`|\bunless\s+stated\s+as\s+(?:a\s+)?maximum\s+limit(?=\s*(?:[.;,:)]|$))`,
+    String.raw`(?:\s+(?:in\s+(?:the|this)\s+(?:benefit\s+summary|schedule|certificate|policy|plan|brochure|table)(?:\s+of\s+benefits)?))?(?=\s*(?:[.;,)]|$))` +
+    String.raw`|\bunless\s+stated\s+as\s+(?:a\s+)?maximum\s+limit(?=\s*(?:[.;,)]|$))`,
   "gi",
 );
 
@@ -83,7 +83,7 @@ const THIS_EXCLUSION = /\b(?:this|these|the\s+(?:above|foregoing|preceding))\s+(
 /** Back-reference to the whole list. */
 const THE_LIST = /\b(?:(?:the|all\s+of\s+the)\s+(?:above|foregoing|preceding|following)|(?:any|none|all|each)\s+of\s+these|these\s+(?:items|exclusions|limitations|charges|are)|items?\s+\(?\d)/i;
 const OPENS_WITH_MARKER = /^\s*(?:(?:please\s+)?note:?\s*|important(?:\s+note)?:?\s*)?(?:except(?:ed|ing|ions?)?|unless|other\s+than)\b/i;
-const NOTE_LABEL = /^\s*(?:please\s+note|note|notes|important(?:\s+note)?|exceptions?|however)\b|^\s*(?:notice|warning|reminder)\s*:/i;
+const NOTE_LABEL = /^\s*(?:please\s+note|note|notes|important(?:\s+note)?|exceptions?|waivers?|exemptions?|however)\b|^\s*(?:notice|warning|reminder)\s*:/i;
 const refersBack = (s: string) => THIS_RULE.test(s) || THE_LIST.test(s) || OPENS_WITH_MARKER.test(s) || NOTE_LABEL.test(s);
 
 // ---------------------------------------------------------------- subjects
@@ -100,7 +100,9 @@ const stem = (w: string) => {
   const s = w.length > 4 && w.endsWith("ies") ? `${w.slice(0, -3)}y` : w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w;
   return SAME[s] ?? s;
 };
-/** Words too general to say two statements are about the same thing. */
+/** Words too general to say two statements are about the same thing. Every
+ *  word here LOOSENS the rule (fewer shared subjects): keep it to words that
+ *  can never be what an exclusion is about. */
 const GENERIC = new Set((
   "any all are as at be been by for from has have if in is it its no not of on or other than that their this to under was were will with within whether there " +
   "insured person traveller member participant insurance plan policy company administrator coverage covered cover benefit charge expense eligible medical treatment " +
@@ -108,7 +110,6 @@ const GENERIC = new Set((
   "only subject per day year month visit general schedule provision definition term certificate up refer which such shall may must each apply applie applies full " +
   "amount stated noted indicated provided provide lifetime result resulting directly indirectly arising relating related incur incurred receive received available including " +
   "and but also so you your you're they them who whose whom when where while during until after before can could may might do does did because into out over more most " +
-  "united state states usa international worldwide network ppo dependent spouse child children student you " +
   "both either each every these those those some additional total current following above below see"
 ).split(/\s+/).map((w) => stem(w)));
 const subject = (s: string) => new Set(words(s).filter((w) => w.length > 2 && !/\d/.test(w)).map(stem).filter((w) => !GENERIC.has(w)));
@@ -270,7 +271,7 @@ function itemsOf(lines: readonly Line[], from: number, to: number): string[] {
     if (style) {
       const k = open.findIndex((o) => o.style === style);
       open = [...(k >= 0 ? open.slice(0, k) : open), { style, id: `${style} ${i}` }];
-    } else if (i > from && (lineEndsSentence(lines[i - 1].text) || l.heading !== undefined || NOTE_LABEL.test(text)) && /^["“(]?[A-Z]/.test(text)) {
+    } else if (i > from && /^["“(]?[A-Z]/.test(text) && (refersBack(text) || l.heading !== undefined || (!continuesOnto(lines[i - 1].text, text, true) && !ENDS_OPEN.test(lines[i - 1].text)))) {
       open = [];
     }
     out.push(open[0]?.id ?? "");
@@ -334,9 +335,16 @@ function needOf(sentence: string, isLast: boolean, k: number, statements: readon
 
 const PRE_EXISTING = /\bpre[\s-]*existing\b/i;
 
-/** True when text outside any list stands between two lines: the first
- *  line's list ended before the second. */
-const lists = (items: readonly string[], i: number, j: number) => items.slice(i, j).some((x) => x === "");
+/** A heading on its own line that starts another provision stands between. */
+const sectionBetween = (lines: readonly Line[], i: number, j: number) =>
+  lines.slice(i + 1, j).some((l) => {
+    const h = l.heading;
+    return h !== undefined && !l.edge && !RUN_IN.test(l.text.trim().replace(NUMBERED, "")) && !marked(h) && !NOTE_LABEL.test(h) &&
+      (/\b(?:exclusions|limitations)\b/i.test(h) || [...subject(h)].some((w) => TOPIC.has(w)));
+  });
+
+/** The statement without its list marker and run-in label. */
+const body = (s: string) => stripMarker(s).replace(RUN_IN, "").trim();
 
 /** A table-of-contents line beside another one, or under "Contents". */
 function contentsLine(lines: readonly Line[], i: number): boolean {
@@ -357,7 +365,9 @@ export function omitsException(
   // Cheap first check: no document states any marker.
   const said = ` ${answerText.split("\n").map((l) => run(stripMarker(l))).filter(Boolean).join(" ")} `;
   const limited = answerText.split(/\n+|(?<=[.!?])\s+(?=[A-Z"(])/).some(statesLimit) || statesLimit(answerText.replace(/\s+/g, " "));
-  const about = subject(answerText);
+  // A rendered table line's column name ("(United States In-Network):") is
+  // not what the line is about.
+  const about = subject(answerText.replace(/\s\([^()\n]*\):/g, ":"));
   const cache = new Map<string, Line[]>();
   const omitted = (...args: Parameters<typeof needOf>) => {
     const need = needOf(...args);
@@ -404,12 +414,16 @@ export function omitsException(
         for (const [si, sentence] of sentences.entries()) {
           if (!marked(sentence.replace(BOILERPLATE, " ")) || contentsLine(lines, s.from)) continue;
           const own = subject(sentence);
-          const sharing = shares(own, named) || (preExisting && ACUTE.test(sentence) && !isRow);
+          const sharing = shares(own, named) || (preExisting && ACUTE.test(sentence));
           const sibling = item !== "" && !cited.has(item) && (isRow || citedStyles.has(style(item)) || item.startsWith("BENEFIT "));
           // An item of another list, standing before the citation's own.
-          const earlier = item !== "" && !cited.has(item) && s.to < a && lines[s.from].heading === undefined && lists(items, s.from - from, a - from);
+          const earlier = item !== "" && !cited.has(item) && s.to < a && lines[s.from].heading === undefined && sectionBetween(lines, s.to, a);
           const other = own.size > 0 && about.size > 0 && !sharing;
-          if ((sibling || earlier) && other && !THE_LIST.test(sentence)) continue;
+          // An item that refers back or opens with the marker is never about
+          // its own subject (review of ba6cd77, T2).
+          const opening = statements.find((x) => at(x.from) === item)?.text ?? sentence;
+          const back = [sentence, opening].some((x) => refersBack(stripMarker(x)) || refersBack(body(x)));
+          if ((sibling || earlier) && other && !back && !THE_LIST.test(sentence)) continue;
           if (far && !sharing && !THIS_EXCLUSION.test(sentence)) continue;
           if (omitted(sentence, si === sentences.length - 1, k, statements, lines, items, from)) return true;
         }

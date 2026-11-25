@@ -241,11 +241,11 @@ describe("over-rejection: distant text", () => {
 });
 
 describe("replay: positive evidence of another matter", () => {
-  it("a column's geography or network name, or a class of people, is not a subject", () => {
+  it("a rendered table line's column name is not a subject", () => {
     const row = "Coinsurance (United States Out-of-Network): not more than 80%";
     expect(omits(row, ["Citizens of the United States need cover unless exempt.", "Text.", "COINSURANCE\nCoinsurance not more than 80%"], ["Coinsurance not more than 80%", 3])).toBe(false);
     const home = "Benefits of you or your dependents in your home country are not covered.";
-    expect(omits(home, [`BENEFITS\n${home}`, "Text.", "Delivery by a dependent is paid unless elective."], home)).toBe(false);
+    expect(omits(home, [`BENEFITS\n${home}`, "Text.", "Delivery by a dependent is paid unless elective."], home)).toBe(true);
   });
   const WAR = "Charges from war are excluded.";
   it("an item of an earlier, other list on another subject", () => {
@@ -259,6 +259,39 @@ describe("replay: positive evidence of another matter", () => {
     expect(omits(WAR, `EXCLUSIONS: Except as expressly provided for in the ${x}, all charges for the following are excluded:\n(1) ${WAR}`, `(1) ${WAR}`)).toBe(false));
   it.each(["the Emergency Care provision", "the ACUTE ONSET provision", "a rider"])("but a pointer to %s is an exception", (x) =>
     expect(omits(WAR, `EXCLUSIONS: Except as expressly provided for in ${x}, all charges for the following are excluded:\n(1) ${WAR}`, `(1) ${WAR}`)).toBe(true));
+});
+
+// Review of ba6cd77 (T1–T6).
+describe("T1–T6", () => {
+  it.each(["This exclusion does not apply to children unless elective.", "Charges caused by an accident are paid unless elective.", "Such treatment is paid for children unless elective.", "Unless caused by an accident, no payment is made."])("T1 unpunctuated bullets, then: %s", (x) =>
+    expect(omits("Dental treatment is not covered", `EXCLUSIONS\n• Dental treatment is not covered\n• Vision is not covered\n${x}`, "• Dental treatment is not covered")).toBe(true));
+  it.each([
+    "• Except for emergency care in the first 24 hours.", "• Unless the illness was stable for 12 months.", "• This exclusion does not apply to stable illness, unless treated abroad.", "• Exception: emergency care in the first 24 hours.",
+    "• However, stable illness is paid unless treated abroad.", "• Note: stable illness is paid unless treated abroad.",
+  ])("T2 next bullet: %s", (x) => expect(omits(E, `EXCLUSIONS\n• ${E}\n${x}\n• Vision is not covered.`, `• ${E}`)).toBe(true));
+  it.each(["(2) This exclusion does not apply to stable illness, unless treated abroad.", "(2) STABLE ILLNESS: This exclusion does not apply unless treated abroad.", "(2) WAIVER: Continuous cover of 12 months removes it unless treatment lapsed."])("T2 next item: %s", (x) =>
+    expect(omits(E, `EXCLUSIONS\n(1) ${E}\n${x}`, `(1) ${E}`)).toBe(true));
+  it.each([
+    "This applies except as specifically provided below:\n(a) accidental injury\n(b) relief of pain", "This applies except as specifically provided below: accidental injury, relief of pain.",
+    "This exclusion applies unless otherwise noted below.\nAccidental injury is paid.", "This exclusion applies except as expressly provided for herein.", "This applies except as specifically provided above.",
+  ])("T3 a pointer inside the section: %j", (x) => expect(omits(D, `DENTAL\n${D}\n${x}\nVISION\nx`, D)).toBe(true));
+  it("T3 the lead-in alone is not its list", () => {
+    const l = "Dental treatment is excluded except as specifically provided below:";
+    expect(omits(l, `DENTAL\n${l}\n(a) accidental injury\n(b) relief of pain\nVISION\nx`, l)).toBe(true);
+  });
+  it.each([
+    ["All other charges for Pre-existing Conditions are not covered.", "PRE-EXISTING CONDITIONS\nThe plan pays:\n• stable illness, unless treated abroad.\n• emergency care.\nBenefits follow the schedule."],
+    ["No other dental treatment is covered.", "DENTAL\nThe following is paid:\n• accidental injury, other than from eating.\n• relief of pain.\nThe limit is $500."],
+  ])("T4 benefits listed just before: %s", (c, before) => expect(omits(c, `${before}\n${c}`, c)).toBe(true));
+  it("T5 an Acute Onset row counts against a Pre-existing row", () => {
+    const doc = tableDocument("d", [{ caption: "BENEFIT", headings: ["ELITE", "BASIC"], rows: [["Deductible", "$0", "$250"], ["Acute Onset", "$25,000", "$10,000"], ["Pre-existing Conditions", "Not covered", "Not covered"]] }]);
+    const r = renderTableAnswer([doc], [{ documentId: "d", page: 1, quote: doc.pages[0].split("\n").find((x) => x.startsWith("Pre-existing "))!.trim() }]);
+    expect(typeof r === "object" && omitsException(r.answerText, r.citations, [doc])).toBe(true);
+  });
+  it.each([
+    ["Travel to the United States is not covered.", "Visits to the United States for emergencies are paid unless longer than 14 days."],
+    ["Sports by a child are not covered.", "A child in a school team is paid unless professional."],
+  ])("T6 geography and people are subjects in prose: %s", (a, b) => expect(omits(a, `EXCLUSIONS\n• ${a}\n• Vision is not covered.\n• ${b}`, `• ${a}`)).toBe(true));
 });
 
 describe("end to end", () => {
