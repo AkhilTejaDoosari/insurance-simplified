@@ -1185,3 +1185,18 @@ Owner decision: (a) run the same 40 questions once on the second, stronger
 model per decision (7)'s stopping rule, and/or (b) rule on the five scoring
 disagreements and on whether table-answer noise lines count against an
 answer. No further verifier/citation changes this round.
+
+## Generalization to unseen documents (owner task 2026-11-25, branch `gen/unseen-docs`)
+
+Branch from `9126b22` (the exception rule there is committed but not approved
+by its reviewer; that work stays paused). Dev set: three SBCs and one student
+plan. Held-out set: two SBCs, scored only by a separate agent; the implementer
+reads none of their text. Regression set: the five benchmark documents.
+Baselines and scorecards are private (outside git).
+
+**Fix 1 — SBC plan identity.** `app/lib/extraction/sbc.ts` reads the federal
+header block; the plan is the name printed on the "Coverage for:" line, or the
+only other line of the block. Abstains on wrapped, generic, sample or competing
+names and on a second SBC in the file. Dev: 3 of 3 SBC names verified (was 0).
+Regression set: 0 differences. Unit suite 2,511 passed / 22 skipped (real-PDF
+suites SKIPPED without `REAL_PDFS_DIR`), types and build clean.

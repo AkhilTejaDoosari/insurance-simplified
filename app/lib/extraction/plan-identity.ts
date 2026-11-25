@@ -15,6 +15,7 @@ import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
 import { verifyClaimAnchor } from "@/app/lib/extraction/claim-anchors";
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import { hasPlanValueProof } from "@/app/lib/extraction/types";
+import { sbcPlan } from "@/app/lib/extraction/sbc";
 import type {
   CellValue,
   ComparisonTable,
@@ -314,6 +315,19 @@ function coverTitle(line: string, pages: readonly string[]): string | undefined 
   return corroborated ? title : undefined;
 }
 
+/** SBC header identity (federally standardized form, sbc.ts): the literal
+ *  header line(s) must verify as a unique citation on page 1, exactly as the
+ *  route will check them. */
+function sbcTitle(doc: SourceDocument): { name: string; quote: string } | undefined {
+  const plan = sbcPlan(doc.pages);
+  if (!plan) return undefined;
+  const result = verifyEvidenceCitation(
+    [{ documentId: doc.documentId, pageCount: 1, pages: [doc.pages[0]] }],
+    { documentId: doc.documentId, page: 1, quote: plan.quote },
+  );
+  return result.ok && result.quote.includes(plan.name) ? { name: plan.name, quote: result.quote } : undefined;
+}
+
 function groupsHaveDocument(groups: ReadonlyMap<string, ProvenPlan>, documentId: string): boolean {
   return [...groups.values()].some((plan) => plan.sources.some((source) => source.documentId === documentId));
 }
@@ -365,7 +379,7 @@ export function attestPlans(documents: readonly SourceDocument[]): ProvenPlan[] 
       plan.sources.some((source) => source.documentId === doc.documentId)
     );
     const titleBlock = !attested && doc.pages[0] !== undefined
-      ? recognizeTitleBlockPlan(doc.documentId, doc.pages[0])
+      ? sbcTitle(doc) ?? recognizeTitleBlockPlan(doc.documentId, doc.pages[0])
       : undefined;
     if (titleBlock) {
       const key = `document:${doc.documentId}:${titleBlock.name.toLowerCase()}`;
