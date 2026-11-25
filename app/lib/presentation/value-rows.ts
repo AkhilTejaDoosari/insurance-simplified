@@ -4,45 +4,31 @@
 // and citations are unchanged, and the full verbatim display (EC-7) is
 // untouched. Not shown: the header line, a general introduction or note that
 // states no restriction of its own, and marketing taglines.
-import { statesScopingMarker } from "@/app/lib/evidence-verification";
 import type { CellValue } from "@/app/lib/extraction/types";
 import { governingNotes } from "@/app/lib/extraction/table-notes";
 import { describeFact } from "@/app/lib/presentation/claim";
+import { shownHeadings } from "@/app/lib/pdf/shown-headings";
 import { GOVERNS_TABLE, type LayoutTable } from "@/app/lib/pdf/layout-tables";
 
 const ws = (s: string) => s.replace(/\s+/g, " ").trim();
 
-/** Closed marketing vocabulary: a heading line made only of these phrases
- *  scopes nothing. An allow-list, so any other line ("In-Network", "Per
- *  Person", "Accident Only") stays in the heading. */
-const TAGLINE = /^(?:(?:our )?most popular|(?:our )?best (?:value|seller|selling)|popular choice|recommended|reliable coverage|great value)!?$/i;
+/** Closed introductory sentences (review of a63a772, B9): a general note is
+ *  hidden only sentence by sentence, when the WHOLE sentence is one of these;
+ *  anything else is shown. */
+const UNLESS = String.raw`(?:unless\s+(?:(?:otherwise|specifically|expressly)\s+)*(?:stated|noted|indicated|specified|provided)(?:\s+otherwise)?)`;
+const COST = String.raw`(?:(?:applicable\s+)?(?:deductibles?|co-?pay(?:ment)?s?|coinsurance|overall\s+maximum(?:\s+limits?)?))`;
+const COSTS = String.raw`${COST}(?:(?:\s*,\s*(?:and\s+)?|\s+and(?:\/or)?\s+|\s+or\s+)(?:the\s+)?${COST})+`;
+const PER = String.raw`per\s+(?:person|insured\s+person|(?:certificate\s+)?period(?:\s+of\s+coverage)?)`;
+const INTRODUCTIONS = [
+  String.raw`(?:all\s+)?(?:benefits|amounts)(?:\s+(?:shown|listed)\s+below)?\s+are\s+(?:shown\s+)?in\s+(?:united\s+states|u\.?s\.?)\s+dollars?(?:\s+amounts)?`,
+  String.raw`(?:all\s+)?(?:(?:medical(?:\s+and\s+dental)?|eligible)\s+)?(?:benefits|expenses)\s+are\s+subject\s+to\s+${COSTS}(?:,?\s+and\s+are\s+${PER})?(?:\s+${UNLESS})?`,
+  String.raw`(?:${UNLESS},?\s+)?all\s+benefits\s+are\s+${PER}(?:,?\s+(?:and\s+)?${PER})*(?:,?\s+and\s+(?:they\s+are\s+)?provided\s+up\s+to\s+the\s+amount\s+shown)?`,
+  String.raw`schedule\s+of\s+benefits`,
+].map((x) => new RegExp(`^(?:schedule\\s+of\\s+benefits\\s+)?${x}\\s*[.:]?$`, "i"));
 
-/** Each column's heading without its stacked tagline lines; the heading line
- *  that names the column always stays, and when two headings would read the
- *  same without taglines every heading is kept whole. */
-export function shownHeadings(table: LayoutTable): string[] {
-  const whole = table.columns.map((c) => ws(c.text));
-  const cut = table.columns.map((c, i) => {
-    const lines = (c.lines ?? []).map(ws);
-    // Only when the stacked lines rebuild the heading exactly.
-    if (lines.length < 2 || lines.join(" ") !== whole[i]) return whole[i];
-    return [lines[0], ...lines.slice(1).filter((l) => !TAGLINE.test(l))].join(" ");
-  });
-  return new Set(cut.map((h) => h.toLowerCase())).size === new Set(whole.map((h) => h.toLowerCase())).size ? cut : whole;
-}
-
-/** "unless otherwise noted" points elsewhere; it states no restriction. */
-const BOILERPLATE = /\bunless\s+(?:(?:otherwise|specifically|expressly)\s+)*(?:stated|noted|indicated|specified|provided)(?:\s+otherwise)?\b/gi;
-
-/** Words and figures that make a general note a restriction of the values. */
-const RESTRICTS = /[$€£]\s?\d|\d\s?%|\b(?:not|no|never|none|without|only|limited|waiting|until|after|before|reduced|reduction|ages?)\b/i;
-
-/** A general note that only introduces the schedule: beyond "unless otherwise
- *  noted" it states no negation, exception, network scope, amount or limit. */
-const introducesOnly = (text: string) => {
-  const own = text.replace(BOILERPLATE, " ");
-  return !statesScopingMarker(own) && !RESTRICTS.test(own);
-};
+/** The sentences of a general note that are not introductory. */
+const governingSentences = (text: string) =>
+  ws(text).split(/(?<=[.!?])(?<!\b[A-Z]\.[A-Z]\.)\s+(?=[A-Z])/).filter((x) => !INTRODUCTIONS.some((re) => re.test(x)));
 
 interface RowDocument {
   documentId: string;
@@ -52,9 +38,9 @@ interface RowDocument {
 
 /** The lines of one value as the chat shows them: the claim, then every
  *  condition that governs it. A table cell whose table is at hand gains its
- *  section in the label and loses general introductions and taglines; with
+ *  section in the label and loses general introductory sentences and taglines; with
  *  no table everything is kept. */
-export function shownValue(value: CellValue, factName: string, documents: readonly RowDocument[]): { claim: string; conditions: string[] } {
+export function shownValue(value: CellValue, factName: string, documents: readonly RowDocument[]): { claim: string; section?: string; conditions: string[] } {
   const d = describeFact(value, factName);
   const head = d.claim ?? d.sourceWording;
   const anchor = value.anchor?.kind === "table-cell" ? value.anchor : undefined;
@@ -70,11 +56,14 @@ export function shownValue(value: CellValue, factName: string, documents: readon
   const notes = governingNotes(doc.tables ?? [], anchor.table, anchor.row, anchor.column, page) ?? [];
   const section = row.section ? ws(row.section.text) : "";
   const general = [table.postscript, table.preamble && GOVERNS_TABLE.test(table.preamble.text) ? table.preamble : undefined]
-    .filter((n) => n && notes.some((x) => x.spans[0]?.start === n.spans[0]?.start) && introducesOnly(n.text))
+    .filter((n) => n && notes.some((x) => x.spans[0]?.start === n.spans[0]?.start))
     .map((n) => ws(n!.text));
   const label = d.claim.slice(0, at);
   return {
     claim: `${section ? `${label} — ${section}` : label} (${shownHeadings(table)[anchor.column]}): ${d.claim.slice(at + heading.length + 5)}`,
-    conditions: d.conditions.filter((c) => !general.includes(ws(c)) && !(section && ws(c) === section)),
+    ...(section ? { section } : {}),
+    conditions: d.conditions
+      .filter((c) => !(section && ws(c) === section))
+      .flatMap((c) => (general.includes(ws(c)) ? governingSentences(c) : [c])),
   };
 }

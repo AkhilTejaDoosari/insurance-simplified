@@ -191,7 +191,7 @@ export async function gridFirstAnswer(input: {
   if (new Set(used.map(({ value }) => value.qualifiers.planTier ?? "")).size > 1) {
     const named = used.every(({ value, factName }) => {
       const tier = value.qualifiers.planTier;
-      const claim = describeFact(value, factName).claim;
+      const claim = describeFact(value, factName).claim && shownValue(value, factName, input.scopedDocuments).claim;
       // Review nit: the tier name as a whole word ("Network" is not in
       // "Non-Network"; "Tier 1" is not in "Tier 10").
       const whole = !!tier && new RegExp(`(?<![\\w-])${tier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "i").test(claim ?? "");
@@ -248,7 +248,12 @@ export async function gridFirstAnswer(input: {
     // Review B1: a rephrase keeps every condition verbatim and states exactly
     // the facts' negation/exception/network markers.
     const norm = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
-    const conditions = used.flatMap(({ value, factName }) => shownValue(value, factName, input.scopedDocuments).conditions);
+    // Review of a63a772 (B10): the row's section, now part of its label, stays
+    // as mandatory as a condition.
+    const conditions = used.flatMap(({ value, factName }) => {
+      const shown = shownValue(value, factName, input.scopedDocuments);
+      return [...(shown.section ? [shown.section] : []), ...shown.conditions];
+    });
     const parenthetical = lines.flatMap((l) => l.match(/\([^()]+\)/g) ?? []);
     const keepsConditions = [...conditions, ...parenthetical].every((c) => norm(text).includes(norm(c)));
     const sameMarkers = statesScopingMarker(text) === statesScopingMarker(verbatim) && scopingMarkers(text) === scopingMarkers(verbatim);

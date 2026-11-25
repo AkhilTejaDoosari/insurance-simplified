@@ -13,7 +13,7 @@
 // Pure: reads only the documents passed in.
 
 import { continuesOnto, isTopicHeading, isUniqueOnPage, lineEndsSentence } from "@/app/lib/evidence-verification";
-import { shownHeadings } from "@/app/lib/presentation/value-rows";
+import { shownHeadings } from "@/app/lib/pdf/shown-headings";
 import type { LayoutTable, LayoutText } from "@/app/lib/pdf/layout-tables";
 
 export interface UnitCitation {

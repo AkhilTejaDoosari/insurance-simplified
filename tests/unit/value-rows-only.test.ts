@@ -127,7 +127,7 @@ describe("what governs a value is never dropped", () => {
       header, columns: [["Travel Basic", line], ["Travel Choice", "Most popular"]], rows: [{ label: "Deductible", cells: ["$100", "$500"] }],
     });
     const r = renderTableAnswer([d], [{ documentId: "doc-1", page: 1, quote: "Deductible $100 $500" }]);
-    expect(typeof r === "object" && r.answerText).toBe(`Deductible (Travel Basic ${line}): $100\nDeductible (Travel Choice): $500`);
+    expect(typeof r === "object" && r.answerText).toBe(`Deductible (Travel Basic ${line}): $100\nDeductible (Travel Choice Most popular): $500`);
   });
   it("a tagline is kept when the headings would be the same without it", () => {
     const header = "Travel Basic\nMost popular\nTravel Basic\nBest value";
@@ -136,6 +136,50 @@ describe("what governs a value is never dropped", () => {
     });
     const r = renderTableAnswer([d], [{ documentId: "doc-1", page: 1, quote: "Deductible $100 $500" }]);
     expect(typeof r === "object" && r.answerText).toContain("(Travel Basic Best value): $500");
+  });
+  // Review of a63a772 (B11): a tagline is cut only when every second line is
+  // one, and never when a cut heading would be, or begin, another's name.
+  it.each([
+    [["Travel", "Best Value"], ["Travel Basic"], "(Travel Best Value): $100", "(Travel Basic): $500"],
+    [["Gold", "Recommended"], ["Gold", "Standard"], "(Gold Recommended): $100", "(Gold Standard): $500"],
+    [["Travel", "Best Value"], ["Travel Basic", "Most popular"], "(Travel Best Value): $100", "(Travel Basic Most popular): $500"],
+  ])("%j / %j keep their names", (a, b, x, y) => {
+    const header = [...a, ...b].join("\n");
+    const d = doc([header, "Deductible $100 $500"].join("\n"), { header, columns: [a, b], rows: [{ label: "Deductible", cells: ["$100", "$500"] }] });
+    const r = renderTableAnswer([d], [{ documentId: "doc-1", page: 1, quote: "Deductible $100 $500" }]);
+    const text = typeof r === "object" ? r.answerText : "";
+    expect(text).toContain(x);
+    expect(text).toContain(y);
+  });
+  // B10: the section, now in the label, stays mandatory in a rephrase.
+  it.each(["INPATIENT SERVICES", "STUDENTS", "ACCIDENT BENEFIT"])("a rephrase cannot drop the section %s", async (section) => {
+    const d = doc(["BENEFIT ELITE BASIC", section, "Deductible $0 $250"].join("\n"), { header: "BENEFIT ELITE BASIC", columns: [["ELITE"], ["BASIC"]], rows: [{ section, label: "Deductible", cells: ["$0", "$250"] }] });
+    const table = verifyComparisonTable(validateTable(extractFallback([d] as never, {})), [d] as never);
+    for (const text of ["BENEFIT (ELITE) (BASIC)\nDeductible $0 $250", "BENEFIT (ELITE) (BASIC). Deductible $0 $250."]) {
+      const r = await gridFirstAnswer({ question: "What is the deductible?", table, scopedDocuments: [d], sessionDocuments: [d], rephrase: async (f) => ({ answerText: text, citations: f.citations }) });
+      expect(r?.kind === "answer" && r.answerText).toBe(`Deductible — ${section} (ELITE): $0\nDeductible — ${section} (BASIC): $250`);
+    }
+  });
+  // B9: only closed introductory sentences are hidden; any other is shown.
+  it.each([
+    "All amounts shown below are in Canadian dollars.", "Preauthorization is required for all benefits shown below.", "All benefits shown below must be authorised.",
+    "All benefits shown below require approval by the Administrator.", "All benefits shown below are payable outside the United States.", "The following benefits apply while travelling in Canada.",
+    "All benefits shown below apply when treatment is received in a hospital.", "All benefits shown below are for accidents.", "All benefits shown below are for dependents of the student.",
+    "The following benefits apply if the traveller is a student.", "All benefits shown below are per family.", "All benefits shown below are per injury or sickness.", "All benefits shown below are per lifetime.",
+    "All benefits shown below are subject to the deductible.", "All benefits shown below are for treatment within the PPO.", "All benefits shown below are secondary to other insurance.", "The following benefits are combined with dental.",
+    "The following benefits apply during the first year of coverage.", "All benefits shown below exclude taxes.", "Unless otherwise stated to students, all benefits shown below are per person.", "All benefits shown below are up to fifty thousand dollars.",
+  ])("introduction shown: %s", async (text) => {
+    const d = doc([text, "BENEFIT ELITE BASIC", "Deductible $0 $250"].join("\n"), { header: "BENEFIT ELITE BASIC", columns: [["ELITE"], ["BASIC"]], rows: [{ label: "Deductible", cells: ["$0", "$250"] }], preamble: text });
+    expect((await grid(d)).answerText).toContain(text);
+  });
+  it.each(["All benefits are subject to preauthorization.", "Eligible expenses must be approved in advance.", "All benefits are subject to the deductible."])("general note shown: %s", async (text) => {
+    const d = doc(["BENEFIT ELITE BASIC", "Deductible $0 $250", text].join("\n"), { header: "BENEFIT ELITE BASIC", columns: [["ELITE"], ["BASIC"]], rows: [{ label: "Deductible", cells: ["$0", "$250"] }], postscript: text });
+    expect((await grid(d)).answerText).toContain(text);
+  });
+  it("an introduction that also states a restriction keeps that sentence only", async () => {
+    const text = "SCHEDULE OF BENEFITS\nAll benefits shown below are in United States dollar amounts. All medical and dental benefits are subject to deductible and/or copay and coinsurance. Unless otherwise stated, all benefits are per person, per period of coverage, and they are provided up to the amount shown. You have 90 days to receive treatment from the date of an injury.";
+    const d = doc([text, "BENEFIT ELITE BASIC", "Deductible $0 $250"].join("\n"), { header: "BENEFIT ELITE BASIC", columns: [["ELITE"], ["BASIC"]], rows: [{ label: "Deductible", cells: ["$0", "$250"] }], preamble: text });
+    expect((await grid(d)).answerText).toBe("Deductible (ELITE): $0\nYou have 90 days to receive treatment from the date of an injury.\nDeductible (BASIC): $250");
   });
   it("a footnote reached by its marker is shown", async () => {
     const d = doc(["BENEFIT ELITE BASIC", "Deductible* $0 $250", "* Waived at the student health center."].join("\n"), {
