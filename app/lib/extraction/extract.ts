@@ -50,6 +50,7 @@ import { annotateAbsence, stripServerOnlyFields, WITHHELD_ROW_RATIONALE } from "
 import type { PageReadability } from "@/app/lib/pdf/page-readability";
 import { statementClaims, statementOwnedSpans } from "@/app/lib/extraction/statement-facts";
 import { coverageExampleSpans, sbcChartPages, sbcOwnedSpans } from "@/app/lib/extraction/sbc";
+import { sbcUnreadRows } from "@/app/lib/extraction/sbc-chart";
 import { sbcClaims, sbcUnreadQuestions } from "@/app/lib/extraction/sbc-questions";
 import { scanExclusionSections } from "@/app/lib/evidence/proposer/exclusion-sections";
 import type { Span } from "@/app/lib/pdf/layout-tables";
@@ -661,6 +662,7 @@ export function extractFallback(
   // An SBC's facts come from the form's own structure (sbc*.ts); its template
   // sentences are never read line by line.
   const sbcOwnedByDoc = new Map(documents.map((doc) => [doc.documentId, sbcOwnedSpans(doc.pages)]));
+  const sbcUnreadByDoc = new Map(documents.map((doc) => [doc.documentId, [...sbcUnreadQuestions(doc), ...sbcUnreadRows(doc)]]));
   const exclusionItemsByDoc = new Map(documents.map((doc) => [doc.documentId, exclusionItemSpans(doc)]));
 
   const withheldByFact = new Map<string, { withheld: WithheldClaim[]; withheldOnly: boolean }>();
@@ -695,7 +697,7 @@ export function extractFallback(
         if (quoteInTable(doc, sbcOwnedByDoc.get(doc.documentId)!, match.page, verified.quote)) {
           // A chart line whose row was not read states something about this
           // fact: withheld (below) when nothing else is shown, never absent.
-          if (sbcChartPages(doc.pages).has(match.page) && notValues.length < 2) notValues.push({ page: match.page, quote: verified.quote, reason: "label-unrecognized" });
+          if (notValues.length < 2 && sbcChartPages(doc.pages).has(match.page)) notValues.push({ page: match.page, quote: verified.quote, reason: "label-unrecognized" });
           continue;
         }
         if (quoteInTable(doc, ownedByDoc.get(doc.documentId)!, match.page, verified.quote)) {
@@ -760,7 +762,7 @@ export function extractFallback(
       }
       if (!docsWithValues.has(doc.documentId)) {
         for (const n of notValues) withhold(doc, { factName: fact.name, ...n });
-        for (const q of sbcUnreadQuestions(doc)) if (q.factName === fact.name) withhold(doc, { ...q, reason: "label-unrecognized" });
+        for (const q of sbcUnreadByDoc.get(doc.documentId) ?? []) if (q.factName === fact.name) withhold(doc, { ...q, reason: "label-unrecognized" });
       }
     }
 

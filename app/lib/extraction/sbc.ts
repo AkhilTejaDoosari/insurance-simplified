@@ -259,7 +259,8 @@ export function sbcChartPages(pages: readonly string[]): Set<number> {
 
 /** "sbc-student" when the form's own header says the plan is for students. */
 export function sbcFormOf(pages: readonly string[]): "sbc" | "sbc-student" | undefined {
-  if (!isSbcDocument(pages)) return undefined;
+  // Another document in the same file may state anything: no form.
+  if (!isSbcDocument(pages) || !pages.map(norm).every((p) => isFormPage(p) || isNotice(p))) return undefined;
   const top = norm(linesOf(pages[0]).slice(0, 20).join(" ")).split(/Important Questions/i)[0];
   return /\bstudents?\b/i.test(top) ? "sbc-student" : "sbc";
 }

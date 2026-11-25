@@ -109,27 +109,37 @@ function purposeIn(lines: readonly string[], index: number, ownAt: number, lengt
     if (end <= at) from = Math.max(from, end);
     else if ((m.index ?? 0) >= at + length) { to = Math.min(to, m.index ?? 0); break; }
   }
+  // "1-800-… Claims": the words after a contact may be its label; then words
+  // before the next one belong to the previous contact.
+  const afterOwn = line.slice(at + length, to);
+  if (from > 0 && !/[,;.]\s*\S/.test(line.slice(from, at)) && !/\bor\b|\band\b/i.test(line.slice(from, at))) return null;
+  if (new RegExp(`^\\s*[-–]?\\s*(?:${PURPOSE_PHRASE.source})`, "i").test(afterOwn)) return null;
   const before = line.slice(from, at).split(/[.;!?]\s/).pop() ?? "";
   const after = (line.slice(at + length, to).split(/[.;!?](?:\s|$)/)[0] ?? "");
   // Text after a contact belongs to it only as its own purpose clause.
   const clause = /^\s*(?:\([^)]*\)\s*)?for\b/i.test(after) ? after : "";
+  if (/\b(?:not|no|never|except|other than)\b|n['’]t\b/i.test(`${before} ${clause}`)) return null;
   const found = new Set([...`${before} ¦ ${clause}`.matchAll(PURPOSE_PHRASE)].map((m) => m[0]));
   return found.size === 1 ? [...found][0] : null;
 }
 
-/** A line with the sentence it continues: the lines above while the contact's
- *  own text starts in mid-sentence, and the line below. */
+/** A line with the sentence it continues: the lines above only while the
+ *  contact's own text starts in mid-sentence (lower case) or the line above
+ *  ends in mid-phrase ("available at"), never across another contact; and the
+ *  line below when it continues in lower case. */
 function withSentence(lines: readonly string[], index: number, at: number): { text: string; at: number } {
   let text = lines[index];
   let shift = 0;
   for (let k = index - 1; k >= 0 && index - k <= 3; k--) {
-    const open = text.slice(0, at + shift);
-    const continues = !open.trim() || /^[a-z]/.test(open.trim());
-    if (!continues || !lines[k] || /[.:;!?]$/.test(lines[k])) break;
+    const open = text.slice(0, at + shift).trim();
+    const above = lines[k];
+    if (!above || /[.:;!?]$/.test(above) || [...above.matchAll(CONTACT_RE)].length > 0) break;
+    const dangling = /\b(?:at|call|visit|see|or|to|is)$/i.test(above);
+    if (!(/^[a-z]/.test(open) || (!open && dangling))) break;
     // A short capitalised line is a heading, not the start of a sentence.
-    if (/^[A-Z]/.test(lines[k]) && lines[k].split(/\s+/).length <= 3) break;
-    text = `${lines[k]} ${text}`;
-    shift += lines[k].length + 1;
+    if (/^[A-Z]/.test(above) && above.split(/\s+/).length <= 3) break;
+    text = `${above} ${text}`;
+    shift += above.length + 1;
   }
   const next = lines[index + 1] ?? "";
   return { text: /^[a-z]/.test(next) ? `${text} ${next}` : text, at: at + shift };

@@ -1260,3 +1260,11 @@ schedule has one value column, so no layout table is detected, and line values
 are attributed only by a labelled plan line. The comparison cell then read
 "Not stated". It now says the fact was found but not confirmed for this plan.
 Attribution is unchanged; reading single-column schedules is open work.
+
+Review round 4: fix 4 APPROVE; fix 3 and fix 5 REQUEST CHANGES (stated facts
+read as "not found" when a row is not read; labels printed after their number
+shifted by one). Addressed with tests: the form's own labels, drug caption and
+exclusions list are withheld for facts without a claim; no contact label across
+another contact, from a line about something else, or in a negated sentence;
+`form` needs every page to be part of the form. A complete last row of a page
+is read when the next page starts with the next service.

@@ -79,8 +79,12 @@ const DEDUCTIBLE = "(?:\\s*[,;]\\s*(?:the\\s+)?deductible\\s+(?:does\\s+not|does
 /** One complete cost cell; a marker before it belongs to it. */
 const CELL = `\\*?(?:${COPAY}\\s+(?:and|plus|then)\\s+${SHARE}|${COPAY}|${SHARE}|No\\s+charge|Not\\s+covered)${DEDUCTIBLE}`;
 const ROW = new RegExp(`^\\s+(${CELL})\\s+(${CELL})\\s+(\\S[\\s\\S]*)$`, "i");
-/** Cost wording inside a limitation: another row or another cell. */
-const COST_IN_TEXT = /\$|%|\bcopay|\bcoinsurance\b|\bno charge\b|\bnot covered\b|\bdeductible (?:does not|doesn['’]t) apply\b/i;
+/** Cost wording inside a limitation: another row or another cell. The bare
+ *  word "copay" is not a cost ("Copay waived if admitted."). */
+const COST_IN_TEXT = /\$|%|\bcoinsurance\b|\bno charge\b|\bnot covered\b|\bdeductible (?:does not|doesn['’]t) apply\b/i;
+/** A limitation opening with a cost condition belongs to a cost cell; "None"
+ *  followed by more text is two cells. */
+const CELL_CONDITION = /^\*?\s*(?:after|before|deductible|up to|then|per|plus|and|or|waived|none\b.*\S\s*\S)\b/i;
 const NO_LIMIT = /^none\.?$/i;
 const PREAUTH = /^(?:preauthorization|prior authorization)(?: is)? required\.?$/i;
 const SENTENCES = /^[*A-Z][\s\S]*\.$/;
@@ -155,7 +159,7 @@ export function sbcChartClaims(doc: SbcDocument): SbcClaim[] {
     const facts = FORM[mark.form].facts ?? [];
     const prev = marks[k - 1];
     const next = marks[k + 1];
-    if (facts.length === 0 || !prev || !next || next.page !== mark.page) return;
+    if (facts.length === 0 || !prev || !next) return;
     if (!follows(prev.form, mark.form) || !follows(mark.form, next.form)) return;
     // A label printed twice in its place proves neither row.
     if (marks.filter((m) => m.form === mark.form).length !== 1) return;
@@ -163,11 +167,24 @@ export function sbcChartClaims(doc: SbcDocument): SbcClaim[] {
     const head = headings(page);
     const header = head && cite(doc, mark.page, head.quote);
     if (!head || !header) return;
-    const raw = page.slice(mark.start, next.start).trimEnd();
+    // A row ends at the next form mark on its page, or at the page end when
+    // the next page's chart continues with that mark directly under its
+    // headings (nothing of this row is left over there).
+    let end = next.start;
+    if (next.page !== mark.page) {
+      const nextPage = doc.pages[next.page - 1];
+      const nextHead = headings(nextPage);
+      if (next.page !== mark.page + 1 || !nextHead) return;
+      const under = nextPage.indexOf(nextHead.quote) + nextHead.quote.length;
+      if (next.start < under || nextPage.slice(under, next.start).trim()) return;
+      end = page.length;
+    }
+    const raw = page.slice(mark.start, end).trimEnd();
     const parsed = ROW.exec(raw.slice(mark.text.length));
     if (!parsed || raw.length > 700) return;
     const limitation = squash(parsed[3]);
     if (COST_IN_TEXT.test(limitation) || /\bPage \d+ of \d+|^\* ?For more information/i.test(limitation)) return;
+    if (!NO_LIMIT.test(limitation) && (CELL_CONDITION.test(limitation) || /^none\b/i.test(limitation) || /for more information about limitations/i.test(limitation))) return;
     if (!NO_LIMIT.test(limitation) && !PREAUTH.test(limitation) && !SENTENCES.test(limitation)) return;
     const row = cite(doc, mark.page, raw);
     if (!row) return;
@@ -197,3 +214,44 @@ export function sbcChartClaims(doc: SbcDocument): SbcClaim[] {
   });
   return out;
 }
+
+/** Facts the form names (a chart row, the drug caption, the exclusions list)
+ *  for which no claim was made: the form's own words, so the fact is reported
+ *  as withheld and never as absent. */
+export function sbcUnreadRows(doc: SbcDocument): { factName: string; page: number; quote: string }[] {
+  if (!isSbcDocument(doc.pages)) return [];
+  const read = new Set(sbcChartClaims(doc).map((c) => c.factName));
+  const out: { factName: string; page: number; quote: string }[] = [];
+  const add = (factName: string, page: number, quote: string) => {
+    if (!read.has(factName) && out.filter((o) => o.factName === factName).length < 2) out.push({ factName, page, quote });
+  };
+  for (const mark of marksOf(doc.pages)) {
+    const form = FORM[mark.form];
+    for (const fact of form.facts ?? []) add(fact, mark.page, mark.text);
+    if (form.text.startsWith("If you need drugs")) add("prescriptions", mark.page, mark.text);
+    if (form.text === "Rehabilitation services") add("physical-therapy", mark.page, mark.text);
+  }
+  const examples = coverageExampleSpans(doc.pages);
+  doc.pages.forEach((page, i) => {
+    const list = /Services\s+Your\s+Plan\s+Generally\s+Does\s+NOT\s+Cover\b/i.exec(page);
+    if (list) add("material-exclusions", i + 1, list[0]);
+    const from = list?.index ?? -1;
+    // Every other line of the form that names one of these facts in a list.
+    let at = 0;
+    for (const line of page.split("\n")) {
+      const start = at;
+      at += line.length + 1;
+      if ((examples.get(i + 1) ?? []).some((s) => s.start <= start && start < s.end)) continue;
+      const bullet = from >= 0 && start > from && /^\s*[•·▪◦\-–]\s*\S/.test(line);
+      const drugs = /\bprescription drug/i.test(line) && i === 0;
+      if (!bullet && !drugs) continue;
+      for (const [fact, re] of LISTED) if (re.test(line) && (bullet || fact === "prescriptions")) add(fact, i + 1, line.trim());
+    }
+  });
+  return out;
+}
+
+const LISTED: readonly (readonly [string, RegExp])[] = [
+  ["dental-coverage", /\bdental\b/i], ["vision-coverage", /\b(?:eye care|vision|glasses)\b/i], ["home-nursing", /\bprivate[- ]duty nursing\b/i],
+  ["chiropractic", /\bchiropractic\b/i], ["prescriptions", /\bprescription drug/i], ["international-coverage", /\boutside\b.*\b(?:U\.?S\.?|United States)\b/i],
+];

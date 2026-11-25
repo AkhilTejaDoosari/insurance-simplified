@@ -112,6 +112,42 @@ describe("SBC form text", () => {
   });
 
   it.each([
+    ["a condition of the out-of-network cell", "Specialist visit $150 copay/visit 40% coinsurance After deductible."],
+    ["'None' followed by more text", "Specialist visit $150 copay/visit 40% coinsurance None Virtual visits are not available out of state."],
+    ["a footer after 'None'", "Specialist visit $150 copay/visit 40% coinsurance None * For more information about limitations see the plan."],
+  ])("does not read a row with %s", (_label, row) => {
+    expect(at("specialist-visit", swap(SP, [row as string]))).toEqual([]);
+  });
+
+  it.each([
+    ["mental-health", (rows: string[]) => rows.map((r) => (/^(?:Out|In)patient services/.test(r) ? r.replace(" None", "") : r))],
+    ["maternity-coverage", (rows: string[]) => rows.map((r) => r.replace("Office visits No charge", "Office visits Sliding scale").replace("services 10% coinsurance 30% coinsurance None", "services see booklet"))],
+    ["prescriptions", (rows: string[]) => rows],
+    ["material-exclusions", (rows: string[]) => rows],
+    ["dental-coverage", (rows: string[]) => rows],
+  ])("never reports %s as not found when the form names it", (fact, change) => {
+    const row = table(doc((change as (r: string[]) => string[])(ROWS))).rows.find((r) => r.factName === fact)!;
+    expect([row.verdict, row.values.length, (row.withheld ?? []).length > 0]).toEqual(["NEEDS VERIFICATION", 0, true]);
+  });
+
+  const split = (last: string[], top: string[]) => {
+    const k = ROWS.indexOf("Emergency medical");
+    const d = doc();
+    const second = [HEAD, ...top, ...ROWS.slice(k)].join("\n");
+    return { ...d, pageCount: 4, pages: [d.pages[0], [NOTE, HEAD, ...ROWS.slice(0, k - 1), ...last].join("\n"), second, d.pages[2]] };
+  };
+  it("reads a complete last row when the next page starts with the next service", () => {
+    expect(shown(split([ER], []), "emergency-care").map((v) => v.qualifiers.networkTier)).toEqual(["Network Provider", "Out-of-Network Provider"]);
+  });
+  it.each([
+    ["the next page starts with the rest of the row", [ER], ["non-emergency not covered."]],
+    ["a footer follows the row", [ER, "Page 2 of 6"], []],
+    ["the row is open", ["Emergency room care $300 copay/visit $300 copay/visit Waived only for"], []],
+  ])("does not read a last row when %s", (_label, last, top) => {
+    expect(shown(split(last as string[], top as string[]), "emergency-care")).toEqual([]);
+  });
+
+  it.each([
     ["a designated first column", "InformationDesignated Network Provider"],
     ["a third cost column", "InformationNetwork Provider\n(You will pay the least)\nStandard Network"],
   ])("reads no row under %s", (_label, heading) => {

@@ -51,4 +51,17 @@ describe("contact labels and boilerplate", () => {
     expect(hits("See https://www.example.test/preventive-care-", "benefits/.")).toEqual([]);
     expect(hits("Visit www.example.test", "or call us.")).toEqual([["www.example.test", null]]);
   });
+
+  // ---- independent review round 4 (2026-11-25): F5-1, F5-2
+  it("never shifts labels printed after their number", () => {
+    expect(hits("1-800-555-0100 Claims", "1-800-555-0200 Pharmacy", "1-800-555-0300 Nurse line").map((h) => h[1])).toEqual([null, null, null]);
+    expect(hits("800-555-0100 Claims 800-555-0200 Pharmacy").map((h) => h[1])).toEqual([null, null]);
+  });
+  it.each([
+    [["Send all claims within 90 days of service", "800-555-0100"]],
+    [["Travel assistance is not part of this plan", "www.northwind.test"]],
+    [["Contact the claims administrator, not us at 800-555-0100"]],
+  ])("takes no label from a line about something else", (lines) => {
+    expect(hits(...lines)[0][1]).toBeNull();
+  });
 });
