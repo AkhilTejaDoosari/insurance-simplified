@@ -132,7 +132,9 @@ describe("shapes seen on real pages (replay of earlier answers)", () => {
   });
   it("another row's 'acute onset' label is not an exception to maternity", () => {
     const row = "Maternity Care No coverage";
-    expect(verify(row, `BENEFIT SMART\nAcute Onset of Pre-existing\nCondition paid in full\n${row}`, row).ok).toBe(true);
+    expect(verify(row, `BENEFIT SMART\nMeningitis vaccine No coverage\nAcute Onset of Pre-existing\nCondition paid in full\n${row}`, row).ok).toBe(true);
+    // Read widely: directly under the header line it looks like a heading.
+    rejected(verify(row, `BENEFIT SMART\nAcute Onset of Pre-existing\nCondition paid in full\n${row}`, row));
   });
   it("'acute onset' is an exception to a pre-existing exclusion named only by its heading", () => {
     const line = "Charges for such conditions are excluded from coverage.";
