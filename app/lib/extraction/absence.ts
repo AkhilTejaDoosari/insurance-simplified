@@ -8,6 +8,7 @@
 // rather than "not covered" or "No".
 
 import { readabilityFor, summarizeReadability, type PageReadability } from "@/app/lib/pdf/page-readability";
+import { sbcFormOf } from "@/app/lib/extraction/sbc";
 import type { AbsenceCoverage, AbsenceReason, ComparisonTable, RowAbsence, TableCoverage, TableRow } from "@/app/lib/extraction/types";
 
 export const WITHHELD_ROW_RATIONALE =
@@ -20,7 +21,8 @@ export interface CoverageDocument {
 }
 
 export function documentCoverage(doc: CoverageDocument): AbsenceCoverage {
-  return { documentId: doc.documentId, ...summarizeReadability(readabilityFor(doc)) };
+  const form = sbcFormOf(doc.pages);
+  return { documentId: doc.documentId, ...summarizeReadability(readabilityFor(doc)), ...(form ? { form } : {}) };
 }
 
 export function rowAbsence(reason: AbsenceReason, documents: readonly CoverageDocument[]): RowAbsence {
@@ -75,4 +77,18 @@ export function stripServerOnlyFields(raw: unknown): unknown {
     });
   }
   return table;
+}
+
+/** Facts of travel and visitor insurance. An SBC describes a health plan: not
+ *  finding them there says nothing. Student plans may carry some of them. */
+const TRAVEL_FACTS: ReadonlySet<string> = new Set(["per-illness-deductible", "political-evacuation", "terrorism-coverage", "emergency-reunion", "bedside-visit", "ad-and-d", "incidental-trip"]);
+const STUDENT_FACTS: ReadonlySet<string> = new Set(["student-eligibility", "student-health-center", "emergency-evacuation", "repatriation"]);
+
+/** True when a missing fact is worth reporting for at least one document in
+ *  scope. The absence record itself is never changed. */
+export function absenceIsRelevant(factName: string, documents: readonly Pick<AbsenceCoverage, "form">[]): boolean {
+  if (documents.length === 0) return true;
+  return documents.some((d) =>
+    d.form === undefined ||
+    !(TRAVEL_FACTS.has(factName) || (d.form === "sbc" && STUDENT_FACTS.has(factName))));
 }

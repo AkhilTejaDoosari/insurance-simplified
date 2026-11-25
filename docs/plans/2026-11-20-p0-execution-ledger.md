@@ -1233,3 +1233,23 @@ order stated; rows with no limitation of their own, last rows of a page and
 charts with more than two cost columns are not read. Not done: splitting the
 chart into network columns by geometry, drug tiers, exclusions lists, and the
 general (non-SBC) sentence-fragment problem.
+
+Review round 3: fix 1 APPROVE, fix 2 APPROVE, fix 3 REQUEST CHANGES (5
+blockers: truncated or bled rows, wrong benefit, hard-coded column claim). The
+whole-row reader was replaced: two complete cost cells of a closed grammar, the
+page's own two headings, the form's own label sequence, and a limitation that
+contains no cost; anything else is withheld with its source line.
+
+**Fix 5 — contacts.** Federal agency contacts are dropped; a purpose is taken
+only when the contact's own sentence names exactly one; relay/fax lines keep
+their own label; cut web addresses are dropped. Regression set: no contact
+lost except one truncated address; junk label removed, three labels gained.
+
+**Fix 4 — fields by document form.** Absence notices and suggested questions
+skip travel fields for an SBC (student SBCs keep student and evacuation
+fields); the absence record is unchanged. A fact the SBC states but the reader
+could not read is withheld with its line, never "not found".
+
+Process note: the usage limit paused work 00:35–07:01, so fixes 3, 4 and 5
+share commits and the geometry chart reader, drug tiers and fix 6 (ISO Med)
+are not done.

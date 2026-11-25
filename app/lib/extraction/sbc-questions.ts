@@ -256,3 +256,18 @@ export function verifySbcAnchor(
     (["planTier", "networkTier", "conditions"] as const).every((k) => (expected.qualifiers[k] ?? "") === (value.qualifiers[k] ?? "")) &&
     expected.evidence.every((e) => value.evidence.some((v) => v.page === e.page && squash(v.quote) === squash(e.quote))));
 }
+
+/** Facts the form asks about but whose answer was not read: the question's
+ *  own words, so the fact is reported as withheld, never as absent. */
+export function sbcUnreadQuestions(doc: SbcDocument): { factName: string; page: number; quote: string }[] {
+  if (!isSbcDocument(doc.pages)) return [];
+  const read = new Set(sbcQuestionClaims(doc).map((c) => c.factName));
+  return QUESTIONS.flatMap((spec) => {
+    if (read.has(spec.factName)) return [];
+    for (const [i, page] of doc.pages.entries()) {
+      const m = [...page.matchAll(spec.question)][0];
+      if (m) return [{ factName: spec.factName, page: i + 1, quote: m[0] }];
+    }
+    return [];
+  });
+}

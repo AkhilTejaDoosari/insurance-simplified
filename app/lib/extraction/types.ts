@@ -127,6 +127,8 @@ export interface AbsenceCoverage {
   pagesNotRead: number[];
   /** Pages read only partly (little text, plus images that may hold more). */
   pagesPartlyRead: number[];
+  /** Server-derived document form (Summary of Benefits and Coverage). */
+  form?: "sbc" | "sbc-student";
 }
 
 /** Server-derived absence for one NOT STATED row (see `TableCoverage`). */

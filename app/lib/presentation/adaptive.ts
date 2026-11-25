@@ -6,7 +6,7 @@ import type {
   Qualifiers,
 } from "@/app/lib/extraction/types";
 import { FACTS } from "@/app/lib/extraction/fact-list";
-import { absenceFor } from "@/app/lib/extraction/absence";
+import { absenceFor, absenceIsRelevant } from "@/app/lib/extraction/absence";
 import {
   CANNOT_BE_CONFIRMED_RATIONALE,
   isCannotBeConfirmedRow,
@@ -659,6 +659,8 @@ export interface AbsenceNotice {
 /** Absence text for every NOT STATED row the result explains. */
 export function absenceNotices(table: Pick<Table, "coverage" | "rows" | "documents">, documentIds?: readonly string[]): AbsenceNotice[] {
   return table.rows.flatMap((row) => {
+    const inScope = (table.coverage?.documents ?? []).filter((d) => !documentIds || documentIds.includes(d.documentId));
+    if (!absenceIsRelevant(row.factName, inScope)) return [];
     const text = row.verdict === "NOT STATED" ? absenceText(table, row.factName, documentIds) : undefined;
     return text ? [{ concept: row.factName, label: labelOf(row.factName), text }] : [];
   });

@@ -146,10 +146,13 @@ const NOTICE =
 /** A closing notice states no benefit: no amount and no cost word. */
 const isNotice = (text: string) => NOTICE.test(text) && !/[$%]|copay|coinsurance|deductible|certificate of|policy name|plan name/i.test(text);
 
-/** True when page 1 is the first page of an SBC form. */
+/** True when page 1 is the first page of an SBC form: its title opens a line
+ *  and its questions table is on the page. */
 export function isSbcDocument(pages: readonly string[]): boolean {
-  const first = norm(pages[0] ?? "");
-  return new RegExp(TITLE, "i").test(first) && /Important Questions/i.test(first);
+  const lines = linesOf(pages[0] ?? "").map(norm);
+  const title = new RegExp(`^${TITLE}\\b`, "i");
+  const opens = lines.some((l, i) => title.test(l) || (/^Summary of Benefits and Coverage:/i.test(l) && title.test(`${l} ${lines[i + 1] ?? ""}`)));
+  return opens && /Important Questions Answers Why This Matters/i.test(lines.join(" "));
 }
 
 /** The plan an SBC document is for. The whole file must be ONE SBC: every
@@ -247,4 +250,16 @@ export function sbcOwnedSpans(pages: readonly string[]): Map<number, PageSpan[]>
     out.set(i + 1, [{ start: 0, end: bodyAt < 0 ? page.length : bodyAt + 1 }, { start: end, end: page.length }]);
   });
   return out;
+}
+
+/** Pages of the form's cost chart (1-based). */
+export function sbcChartPages(pages: readonly string[]): Set<number> {
+  return new Set(isSbcDocument(pages) ? pages.flatMap((p, i) => (/Services You May Need/i.test(norm(p)) ? [i + 1] : [])) : []);
+}
+
+/** "sbc-student" when the form's own header says the plan is for students. */
+export function sbcFormOf(pages: readonly string[]): "sbc" | "sbc-student" | undefined {
+  if (!isSbcDocument(pages)) return undefined;
+  const top = norm(linesOf(pages[0]).slice(0, 20).join(" ")).split(/Important Questions/i)[0];
+  return /\bstudents?\b/i.test(top) ? "sbc-student" : "sbc";
 }

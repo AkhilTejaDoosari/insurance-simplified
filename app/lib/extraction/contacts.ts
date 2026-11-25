@@ -69,17 +69,77 @@ function isPlausiblePhone(line: string, match: string, at: number): boolean {
   const after = line[at + match.length] ?? " ";
   if (/[A-Za-z0-9]/.test(before) || /[A-Za-z0-9]/.test(after)) return false;
   const window = line.slice(Math.max(0, at - 40), at + match.length + 40);
-  if (PHONE_ID_WORDS.test(window)) return false;
+  // "Member Services" is who answers, not a member number.
+  if (PHONE_ID_WORDS.test(window.replace(/\bmember services?\b/gi, " "))) return false;
   if (STRICT_PHONE_SHAPE.test(match.trim())) return true;
   return PHONE_CONTEXT_WORDS.test(window);
 }
 
-/** Purpose label from explicit source wording ("Emergency assistance: …"). */
-const PURPOSE_RE = /([A-Za-z][A-Za-z &'/-]{1,32}?)\s*:\s*$/;
+/** Federal agencies whose contacts are printed in every SBC. They are not the
+ *  plan's contacts. */
+const FEDERAL_DOMAINS = ["healthcare.gov", "dol.gov", "cms.gov", "hhs.gov"];
+const FEDERAL_PHONES = new Set(["8003182596", "8664443272", "8772672323", "8664872365", "8003681019", "8005377697"]);
+const isFederalHost = (host: string) => FEDERAL_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
 
-function purposeBefore(line: string, at: number): string | null {
-  const match = PURPOSE_RE.exec(line.slice(0, at));
-  return match ? match[1].trim() : null;
+/** Purpose label from explicit source wording ("Emergency assistance: …"). */
+const PURPOSE_RE = /(?:^|[^A-Za-z &'/-])\s*([A-Za-z][A-Za-z &'/-]{1,32}?)\s*:\s*$/;
+/** A cut sentence, not a label ("or Canada:", "… is available at:"). */
+const NOT_A_LABEL = /^(?:or|and|at|in|the|is|are|to|of|for|call|see|visit|this)\b|\b(?:at|is|are|or|and|to|of|see|this)$/i;
+
+/** Who or what a contact is for, in the document's own words. */
+const PURPOSE_PHRASE =
+  /\b(?:plan administrator|claims? administrator|member services?|customer (?:service|care)|participant services?|nurse ?line|emergency assistance|travel assistance|pre-?certification|pre-?authorization|prescription drug coverage|pharmacy|network providers|provider directory|claims|appeals|eligibility|enrollment|billing)\b/gi;
+
+const CONTACT_RE = new RegExp(`${EMAIL_RE.source}|${PHONE_RE.source}|${WEBSITE_RE.source}`, "gi");
+
+/** The single purpose named in the contact's own sentence, between the
+ *  neighbouring contacts; none or several ⇒ no label. */
+function purposeIn(lines: readonly string[], index: number, ownAt: number, length: number): string | null {
+  const { text: line, at } = withSentence(lines, index, ownAt);
+  // A relay or fax line is that, whatever the sentence is about.
+  const relay = /\b(TTY|TDD|Fax)(?:\s+number)?\s*:?\s*$/i.exec(line.slice(0, at))?.[1];
+  if (relay) return relay;
+  if (/^\s*\((?:TTY|TDD)\)/i.test(line.slice(at + length))) return "TTY";
+  const colon = PURPOSE_RE.exec(line.slice(0, at))?.[1].trim();
+  if (colon && !NOT_A_LABEL.test(colon)) return colon;
+  let from = 0;
+  let to = line.length;
+  for (const m of line.matchAll(CONTACT_RE)) {
+    const end = (m.index ?? 0) + m[0].length;
+    if (end <= at) from = Math.max(from, end);
+    else if ((m.index ?? 0) >= at + length) { to = Math.min(to, m.index ?? 0); break; }
+  }
+  const before = line.slice(from, at).split(/[.;!?]\s/).pop() ?? "";
+  const after = (line.slice(at + length, to).split(/[.;!?](?:\s|$)/)[0] ?? "");
+  // Text after a contact belongs to it only as its own purpose clause.
+  const clause = /^\s*(?:\([^)]*\)\s*)?for\b/i.test(after) ? after : "";
+  const found = new Set([...`${before} ¦ ${clause}`.matchAll(PURPOSE_PHRASE)].map((m) => m[0]));
+  return found.size === 1 ? [...found][0] : null;
+}
+
+/** A line with the sentence it continues: the lines above while the contact's
+ *  own text starts in mid-sentence, and the line below. */
+function withSentence(lines: readonly string[], index: number, at: number): { text: string; at: number } {
+  let text = lines[index];
+  let shift = 0;
+  for (let k = index - 1; k >= 0 && index - k <= 3; k--) {
+    const open = text.slice(0, at + shift);
+    const continues = !open.trim() || /^[a-z]/.test(open.trim());
+    if (!continues || !lines[k] || /[.:;!?]$/.test(lines[k])) break;
+    // A short capitalised line is a heading, not the start of a sentence.
+    if (/^[A-Z]/.test(lines[k]) && lines[k].split(/\s+/).length <= 3) break;
+    text = `${lines[k]} ${text}`;
+    shift += lines[k].length + 1;
+  }
+  const next = lines[index + 1] ?? "";
+  return { text: /^[a-z]/.test(next) ? `${text} ${next}` : text, at: at + shift };
+}
+
+/** A web address that runs to the line end and continues on the next line. */
+function cutAtLineEnd(line: string, end: number, value: string, next: string): boolean {
+  if (line.slice(end).trim()) return false;
+  if (/[-/_]$/.test(value) && /-$/.test(value)) return true;
+  return /\/[^/]+$/.test(value.replace(/^https?:\/\//i, "")) && /^[a-z0-9%_-]*[-/][a-z0-9%/_-]*/.test(next) && !/^(?:and|or)\//.test(next);
 }
 
 function cleanWebsite(raw: string): string {
@@ -98,14 +158,14 @@ export function extractContacts(documents: ContactSourceDocument[]): ContactHit[
   for (const doc of documents) {
     doc.pages.forEach((pageText, index) => {
       const page = index + 1;
-      for (const line of pageText.split(/\n+/)) {
-        const text = line.trim();
+      const lines = pageText.split(/\n+/).map((l) => l.trim());
+      for (const [lineIndex, text] of lines.entries()) {
         if (!text) continue;
         for (const m of text.matchAll(EMAIL_RE)) {
           hits.push({
             kind: "email",
             value: m[0],
-            purpose: purposeBefore(text, m.index ?? 0),
+            purpose: purposeIn(lines, lineIndex, m.index ?? 0, m[0].length),
             documentId: doc.documentId,
             filename: doc.filename,
             page,
@@ -115,10 +175,11 @@ export function extractContacts(documents: ContactSourceDocument[]): ContactHit[
         for (const m of text.matchAll(PHONE_RE)) {
           const candidate = m[0].trim();
           if (!isPlausiblePhone(text, m[0], m.index ?? 0)) continue;
+          if (FEDERAL_PHONES.has(normalizeContactValue("phone", candidate))) continue;
           hits.push({
             kind: "phone",
             value: candidate,
-            purpose: purposeBefore(text, m.index ?? 0),
+            purpose: purposeIn(lines, lineIndex, m.index ?? 0, m[0].length),
             documentId: doc.documentId,
             filename: doc.filename,
             page,
@@ -129,11 +190,12 @@ export function extractContacts(documents: ContactSourceDocument[]): ContactHit[
           const value = cleanWebsite(m[0]);
           if (!value) continue;
           const hostname = value.replace(/^https?:\/\//i, "").replace(/^www\./i, "").split("/")[0].toLowerCase();
-          if (FINANCIAL_RATING_DOMAINS.has(hostname)) continue;
+          if (FINANCIAL_RATING_DOMAINS.has(hostname) || isFederalHost(hostname)) continue;
+          if (cutAtLineEnd(text, (m.index ?? 0) + m[0].length, m[0], lines[lineIndex + 1] ?? "")) continue;
           hits.push({
             kind: "website",
             value,
-            purpose: purposeBefore(text, m.index ?? 0),
+            purpose: purposeIn(lines, lineIndex, m.index ?? 0, m[0].length),
             documentId: doc.documentId,
             filename: doc.filename,
             page,
@@ -197,6 +259,9 @@ export function groupContactsByPlan(
       ) {
         existing.evidence.push(evidence);
       }
+      // An unlabelled contact takes a purpose stated elsewhere in the document;
+      // several different purposes leave it as it was first labelled.
+      if (existing.label === KIND_LABEL[hit.kind] && hit.purpose) existing.label = hit.purpose;
       continue;
     }
     card.contacts.push({

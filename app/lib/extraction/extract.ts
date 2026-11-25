@@ -49,8 +49,8 @@ import { quoteInTable, tableClaims, tableDrops, tableOwnedSpans, unrecognizedLab
 import { annotateAbsence, stripServerOnlyFields, WITHHELD_ROW_RATIONALE } from "@/app/lib/extraction/absence";
 import type { PageReadability } from "@/app/lib/pdf/page-readability";
 import { statementClaims, statementOwnedSpans } from "@/app/lib/extraction/statement-facts";
-import { coverageExampleSpans, sbcOwnedSpans } from "@/app/lib/extraction/sbc";
-import { sbcClaims } from "@/app/lib/extraction/sbc-questions";
+import { coverageExampleSpans, sbcChartPages, sbcOwnedSpans } from "@/app/lib/extraction/sbc";
+import { sbcClaims, sbcUnreadQuestions } from "@/app/lib/extraction/sbc-questions";
 import { scanExclusionSections } from "@/app/lib/evidence/proposer/exclusion-sections";
 import type { Span } from "@/app/lib/pdf/layout-tables";
 
@@ -679,7 +679,7 @@ export function extractFallback(
     for (const doc of documents) {
       for (const drop of dropsByDoc.get(doc.documentId) ?? []) if (drop.factName === fact.name) withhold(doc, drop);
       const matches = findAllMatchesWithHeaders(fact.patterns, doc.pages, tierHeadersByDoc.get(doc.documentId)!, fact);
-      const notValues: { page: number; quote: string; reason: "label-without-value" | "definition-line" }[] = [];
+      const notValues: { page: number; quote: string; reason: "label-without-value" | "definition-line" | "label-unrecognized" }[] = [];
 
       for (const match of matches) {
         const verified = verifyEvidenceCitation([doc], {
@@ -692,7 +692,12 @@ export function extractFallback(
           continue;
         }
         if (quoteInTable(doc, examplesByDoc.get(doc.documentId)!, match.page, verified.quote)) continue;
-        if (quoteInTable(doc, sbcOwnedByDoc.get(doc.documentId)!, match.page, verified.quote)) continue;
+        if (quoteInTable(doc, sbcOwnedByDoc.get(doc.documentId)!, match.page, verified.quote)) {
+          // A chart line whose row was not read states something about this
+          // fact: withheld (below) when nothing else is shown, never absent.
+          if (sbcChartPages(doc.pages).has(match.page) && notValues.length < 2) notValues.push({ page: match.page, quote: verified.quote, reason: "label-unrecognized" });
+          continue;
+        }
         if (quoteInTable(doc, ownedByDoc.get(doc.documentId)!, match.page, verified.quote)) {
           for (const drop of unrecognizedLabelDrops(doc, fact.name, match.page, verified.quote)) withhold(doc, drop);
           continue;
@@ -755,6 +760,7 @@ export function extractFallback(
       }
       if (!docsWithValues.has(doc.documentId)) {
         for (const n of notValues) withhold(doc, { factName: fact.name, ...n });
+        for (const q of sbcUnreadQuestions(doc)) if (q.factName === fact.name) withhold(doc, { ...q, reason: "label-unrecognized" });
       }
     }
 

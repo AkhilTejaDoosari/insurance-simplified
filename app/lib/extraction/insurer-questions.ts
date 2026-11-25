@@ -3,6 +3,7 @@
 // NEEDS VERIFICATION rows. Advisory text only — never a plan
 // recommendation (FR-017).
 
+import { absenceIsRelevant } from "@/app/lib/extraction/absence";
 import type { ComparisonTable, TableRow } from "@/app/lib/extraction/types";
 
 export interface InsurerQuestion {
@@ -36,6 +37,7 @@ export function suggestQuestions(table: ComparisonTable): InsurerQuestion[] {
     ) {
       continue;
     }
+    if (row.verdict === "NOT STATED" && !absenceIsRelevant(row.factName, table.coverage?.documents ?? [])) continue;
     out.push({
       questionText: questionFor(row),
       motivatingFact: row.factName,
