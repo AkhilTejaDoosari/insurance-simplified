@@ -98,4 +98,80 @@ describe("SBC header plan identity", () => {
   it("abstains on a page that only mentions the SBC form", () => {
     expect(names({ documentId: "doc-1", filename: "x.pdf", pages: ["Harbor Guide Coverage for: you\nAsk for the Summary of Benefits and Coverage (SBC) document.\nImportant Questions Answers Why This Matters:"] })).toEqual([]);
   });
+
+  // ---- independent review of 949e880 (2026-11-25): B1–B6, M1, M4
+  const T = "Summary of Benefits and Coverage: What this Plan Covers & What You Pay for Covered Services";
+  const CF = "Coverage for: Individual + Family | Plan Type: PPO";
+  const ONE = [HEADER, `Northwind: Harbor One ${CF}`];
+  const sbc = (head: string[]) => [...head, ...INTRO, ...QUESTIONS].join("\n");
+
+  it.each([
+    ["title line missing", [`Northwind: Harbor Two ${CF}`, ...INTRO, ...QUESTIONS]],
+    ["title after other text on its line", [`Page 1 of 6 ${HEADER}`, `Northwind: Harbor Two ${CF}`, "Common Medical Event"]],
+    ["title wrapped before 'Covers'", ["Summary of Benefits and Coverage: What this Plan", "Covers & What You Pay for Covered Services", `Northwind: Harbor Two ${CF}`, "Common Medical Event"]],
+    ["title wrapped after the colon", ["Summary of Benefits and Coverage:", "What this Plan Covers & What You Pay for Covered Services", `Northwind: Harbor Two ${CF}`, "Common Medical Event"]],
+    ["non-breaking space in the title", [HEADER.replace("this Plan", "this\u00a0Plan"), `Northwind: Harbor Two ${CF}`, "Common Medical Event"]],
+    ["title without its colon", [HEADER.replace("Coverage:", "Coverage"), "Common Medical Event"]],
+    ["a name line that wraps", [HEADER, "Northwind:", `Harbor Two ${CF}`, "Common Medical Event"]],
+    ["another plan type under the same name", [HEADER, "Northwind: Harbor One Coverage for: Individual + Family | Plan Type: HMO", "Common Medical Event"]],
+    ["another period under the same name", [HEADER.replace(/2031/g, "2032"), `Northwind: Harbor One ${CF}`, "Common Medical Event"]],
+    ["only its questions", QUESTIONS],
+  ])("abstains when the file holds a second SBC: %s", (_label, second) => {
+    expect(names(doc(ONE, [(second as string[]).join("\n")]))).toEqual([]);
+  });
+
+  it("abstains when a second SBC is on the same page", () => {
+    expect(names({ documentId: "doc-1", filename: "x.pdf", pages: [`${sbc(ONE)}\n${sbc([HEADER, `Northwind: Harbor Two ${CF}`])}`] })).toEqual([]);
+  });
+
+  it.each([
+    ["another plan's certificate", "Harbor Two\nCertificate of Coverage\nDeductible In-Network $9,000"],
+    ["a benefit guide page", "Harbor Two: what you pay\nDeductible $9,000"],
+    ["a notice page that states amounts", "Notice of Nondiscrimination\nDeductible $9,000"],
+  ])("abstains when the file also holds %s", (_label, page) => {
+    expect(names(doc(ONE, [page]))).toEqual([]);
+  });
+
+  it("accepts form pages and closing notices", () => {
+    expect(names(doc(ONE, [
+      "Common Medical Event Services You May Need\nSpecialist visit $40 copay", "About these Coverage Examples:\nDeductibles $900",
+      "Notice of Nondiscrimination\nWe comply with federal civil rights laws.",
+    ]))).toEqual(["Northwind: Harbor One"]);
+  });
+
+  it.each([
+    ["Here is the SBC for one of our plans", HEADER, `Northwind: Harbor One ${CF}`],
+    ["How to read your SBC (example)", HEADER, `Northwind: Harbor One ${CF}`],
+    ["Harbor Choice 500", HEADER, `City of Springfield ${CF}`],
+    [HEADER, `Northwind Mutual ${CF}`],
+    [HEADER, `Northwind Health Insurance Company of Oregon ${CF}`],
+    [HEADER, `Northwind Health Plan ${CF}`],
+    [HEADER, `Northwind Mutual: City of Springfield ${CF}`],
+    [HEADER, `Plan sponsor: Springfield Schools ${CF}`],
+    [HEADER, `Oregon ${CF}`], [HEADER, `Gold ${CF}`], [HEADER, `Select Network ${CF}`], [HEADER, `Group #: 0012345 ${CF}`],
+    [HEADER, `For Active Employees and Non-Medicare Retirees ${CF}`], [HEADER, `2031 Plan Year ${CF}`],
+    [HEADER, "Northwind Mutual Coverage for: Family | Plan Type: PPO | Harbor Choice 500"],
+    [CF, HEADER, "An Independent Licensee of the Harbor Association"], [CF, HEADER, "Live fearless"],
+    [CF, HEADER, "100 Main Street Springfield, OR 97477"], [CF, HEADER, "Effective 2031-01-01"], [CF, HEADER, "Northwind Mutual Insurance"],
+    [CF, HEADER, "Harbor CDHP Plan"],
+    [`${T} Northwind: Harbor Medical`, `Option Two ${CF}`], ["Northwind: Harbor Medical", HEADER, `Option Two PPO ${CF}`],
+    [HEADER, "All plans offered and underwritten by Harbor Medical", `Option Two PPO ${CF}`],
+    [HEADER, "HARBOR-500", `Option Two PPO ${CF}`], [HEADER, `Northwind: Harbor ${CF}`, "HSA-3000"],
+    [T, `Northwind: Harbor ${CF}`, "01/01/2031 – 12/31/2031 Gold Option"],
+    [HEADER, "Northwind: Harbor Coverage for: Family", "Plan Type: PPO Gold Option"],
+    [HEADER, `Harbor Choice PPO- ${CF}`], [HEADER, `Northwind: Harbor Choice & ${CF}`], [HEADER, `Northwind: Harbor Choice with ${CF}`], [HEADER, `Northwind: Harbor Choice (Gold ${CF}`],
+    [HEADER, `Northwind: Harbor One ${CF} Harbor Two ${CF}`],
+    [HEADER, `Northwind: Harbor One / Harbor Two ${CF}`], [HEADER, `Northwind: Harbor One and Harbor Two ${CF}`],
+    [HEADER, `Northwind: Bronze, Silver and Gold ${CF}`], [HEADER, `Northwind: All Options ${CF}`], [HEADER, `Northwind: Harbor One replaces Harbor Two ${CF}`],
+    [HEADER, `Northwind: Plan Option 1 ${CF}`], [HEADER, `Insurer: Plan Name ${CF}`], [HEADER, `XYZ Company: Harbor PPO ${CF}`], [HEADER, `Northwind: <Plan> ${CF}`],
+    [HEADER, `High Deductible Health Plan ${CF}`], [HEADER, `Base PPO Plan ${CF}`], [HEADER, `Tier 1 PPO ${CF}`], [HEADER, `• Harbor One PPO ${CF}`],
+    [HEADER, `Plan name: Harbor One ${CF}`], [HEADER, `Questions: Call to request a copy ${CF}`],
+  ].map((head) => [head.join(" ⏎ "), head]))("abstains: %s", (_label, head) => {
+    expect(names(doc(head as string[]))).toEqual([]);
+  });
+
+  it("abstains when page 1 also declares another plan", () => {
+    const d = doc([HEADER, `Northwind: Harbor One ${CF}`]);
+    expect(names({ ...d, pages: [`${d.pages[0]}\nPlan name: Harbor Two`] })).toEqual([]);
+  });
 });

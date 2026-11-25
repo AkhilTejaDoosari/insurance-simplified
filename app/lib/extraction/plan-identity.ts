@@ -320,7 +320,7 @@ function coverTitle(line: string, pages: readonly string[]): string | undefined 
  *  route will check them. */
 function sbcTitle(doc: SourceDocument): { name: string; quote: string } | undefined {
   const plan = sbcPlan(doc.pages);
-  if (!plan) return undefined;
+  if (!plan || pageDeclaresNonPlanContext(doc.pages[0])) return undefined;
   const result = verifyEvidenceCitation(
     [{ documentId: doc.documentId, pageCount: 1, pages: [doc.pages[0]] }],
     { documentId: doc.documentId, page: 1, quote: plan.quote },
@@ -378,8 +378,20 @@ export function attestPlans(documents: readonly SourceDocument[]): ProvenPlan[] 
     const attested = [...groups.values()].some((plan) =>
       plan.sources.some((source) => source.documentId === doc.documentId)
     );
+    // Page 1 proving two different plans (an SBC header and another
+    // declaration) proves neither.
+    const sbc = sbcTitle(doc);
+    if (attested && sbc) {
+      for (const [key, plan] of groups) {
+        if (!plan.sources.some((source) => source.documentId === doc.documentId)) continue;
+        if (plan.name.toLowerCase() === sbc.name.toLowerCase()) continue;
+        const sources = plan.sources.filter((source) => source.documentId !== doc.documentId);
+        if (sources.length > 0) groups.set(key, { ...plan, sources });
+        else groups.delete(key);
+      }
+    }
     const titleBlock = !attested && doc.pages[0] !== undefined
-      ? sbcTitle(doc) ?? recognizeTitleBlockPlan(doc.documentId, doc.pages[0])
+      ? sbc ?? recognizeTitleBlockPlan(doc.documentId, doc.pages[0])
       : undefined;
     if (titleBlock) {
       const key = `document:${doc.documentId}:${titleBlock.name.toLowerCase()}`;
