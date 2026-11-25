@@ -79,9 +79,10 @@ const DEDUCTIBLE = "(?:\\s*[,;]\\s*(?:the\\s+)?deductible\\s+(?:does\\s+not|does
 /** One complete cost cell; a marker before it belongs to it. */
 const CELL = `\\*?(?:${COPAY}\\s+(?:and|plus|then)\\s+${SHARE}|${COPAY}|${SHARE}|No\\s+charge|Not\\s+covered)${DEDUCTIBLE}`;
 const ROW = new RegExp(`^\\s+(${CELL})\\s+(${CELL})\\s+(\\S[\\s\\S]*)$`, "i");
-/** Cost wording inside a limitation: another row or another cell. The bare
- *  word "copay" is not a cost ("Copay waived if admitted."). */
-const COST_IN_TEXT = /\$|%|\bcoinsurance\b|\bno charge\b|\bnot covered\b|\bdeductible (?:does not|doesn['’]t) apply\b/i;
+/** Cost wording inside a limitation: another row or another cell. Only these
+ *  fixed phrases name a copay without being one. */
+const COPAY_PHRASES = /\bcopay(?:ment)?(?: is)? waived if admitted\b|\bthe inpatient copay(?:ment)? listed below\b/gi;
+const COST_IN_TEXT = /\$|%|\bcopay|\bcoinsurance\b|\bno charge\b|\bnot covered\b|\bdeductible (?:does not|doesn['’]t) apply\b/i;
 /** A limitation opening with a cost condition belongs to a cost cell; "None"
  *  followed by more text is two cells. */
 const CELL_CONDITION = /^\*?\s*(?:after|before|deductible|up to|then|per|plus|and|or|waived|none\b.*\S\s*\S)\b/i;
@@ -183,7 +184,7 @@ export function sbcChartClaims(doc: SbcDocument): SbcClaim[] {
     const parsed = ROW.exec(raw.slice(mark.text.length));
     if (!parsed || raw.length > 700) return;
     const limitation = squash(parsed[3]);
-    if (COST_IN_TEXT.test(limitation) || /\bPage \d+ of \d+|^\* ?For more information/i.test(limitation)) return;
+    if (COST_IN_TEXT.test(limitation.replace(COPAY_PHRASES, " ")) || /\bPage \d+ of \d+|^\* ?For more information/i.test(limitation)) return;
     if (!NO_LIMIT.test(limitation) && (CELL_CONDITION.test(limitation) || /^none\b/i.test(limitation) || /for more information about limitations/i.test(limitation))) return;
     if (!NO_LIMIT.test(limitation) && !PREAUTH.test(limitation) && !SENTENCES.test(limitation)) return;
     const row = cite(doc, mark.page, raw);

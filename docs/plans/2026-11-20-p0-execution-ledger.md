@@ -1268,3 +1268,8 @@ exclusions list are withheld for facts without a claim; no contact label across
 another contact, from a line about something else, or in a negated sentence;
 `form` needs every page to be part of the form. A complete last row of a page
 is read when the next page starts with the next service.
+
+Process error: `c429951` was committed with one failing unit test (the gate's
+exit status was lost in a pipe). The next commit fixes the code (only the fixed
+phrases "copay waived if admitted" / "the inpatient copay listed below" are
+allowed in a limitation); no assertion was changed.
