@@ -650,6 +650,20 @@ export function absenceText(
   return gaps.length ? `${NOT_FOUND_IN_PAGES_READ} (${gaps.join("; ")}).` : `${NOT_FOUND_IN_PAGES_READ}.`;
 }
 
+export const NOT_CONFIRMED_FOR_PLAN =
+  "Found in this document, but not confirmed for this plan. See the document's own text.";
+
+/** What an empty comparison cell says. A document can state a fact in text
+ *  the reader cannot bind to the plan (or withholds): that is not an absence
+ *  and never reads "Not stated". */
+export function emptyPlanCellText(table: Pick<Table, "rows" | "plans">, concept: string, planId: string): string {
+  const row = table.rows.find((r) => r.factName === concept);
+  const documents = new Set((table.plans ?? []).find((p) => p.planId === planId)?.sources.map((s) => s.documentId) ?? []);
+  const found = (row?.values ?? []).some((v) => !v.planId && documents.has(v.documentId)) ||
+    (row?.withheld ?? []).some((w) => documents.has(w.documentId));
+  return found ? NOT_CONFIRMED_FOR_PLAN : "Not stated for this plan.";
+}
+
 export interface AbsenceNotice {
   concept: string;
   label: string;

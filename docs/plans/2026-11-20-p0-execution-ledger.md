@@ -1253,3 +1253,10 @@ could not read is withheld with its line, never "not found".
 Process note: the usage limit paused work 00:35–07:01, so fixes 3, 4 and 5
 share commits and the geometry chart reader, drug tiers and fix 6 (ISO Med)
 are not done.
+
+**Fix 6 — "Not stated" on every ISO Med row (cause found, wording fixed).** The
+document's plan is verified and 81 values are read, but none is attributed: its
+schedule has one value column, so no layout table is detected, and line values
+are attributed only by a labelled plan line. The comparison cell then read
+"Not stated". It now says the fact was found but not confirmed for this plan.
+Attribution is unchanged; reading single-column schedules is open work.

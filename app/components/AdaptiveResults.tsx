@@ -11,6 +11,7 @@ import {
   absenceNotices,
   buildPresentation,
   cannotBeConfirmedFacts,
+  emptyPlanCellText,
   indexFacts,
   projectView,
   readingCoverage,
@@ -341,7 +342,7 @@ export default function AdaptiveResults(props: Props) {
                             );
                           })
                       ) : (
-                        <span className="text-muted">Not stated for this plan.</span>
+                        <span className="text-muted">{emptyPlanCellText(table, concept, id)}</span>
                       )}
                     </td>
                   ))}
