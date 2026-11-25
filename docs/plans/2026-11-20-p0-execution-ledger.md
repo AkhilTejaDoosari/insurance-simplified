@@ -1217,3 +1217,19 @@ verbatim; anything else stays one verbatim value (NEEDS VERIFICATION when it
 holds several amounts). Claims are re-derived by anchor. Coverage-example text
 is never read as a fact. Dev: deductible and out-of-pocket limit found on 3 of
 3 SBCs (was 0 of 3, with one wrong value). Regression set: 0 differences.
+
+Review round 2 (fix 1: 2 major; fix 2: 4 blockers, 1 major): REQUEST CHANGES.
+Addressed in the next commit, all as tests: a form page needs the form's whole
+sentences; field labels and carriers are not insurers; on an SBC page 1 only
+the form's header proves a plan; an answer with any text that could say what
+its amounts are for stays whole; the explanation must be contiguous and the
+page text must run cell by cell; example tables are filtered and refused by
+the anchor check; ordinary brochures keep their pages.
+
+**Fix 3 — SBC template text.** `sbcOwnedSpans` keeps the line reader out of the
+form except its "Other Covered Services" list. `sbc-chart.ts` reads a cost-chart
+row whole and verbatim, from its form label to the next, with the form's column
+order stated; rows with no limitation of their own, last rows of a page and
+charts with more than two cost columns are not read. Not done: splitting the
+chart into network columns by geometry, drug tiers, exclusions lists, and the
+general (non-SBC) sentence-fragment problem.

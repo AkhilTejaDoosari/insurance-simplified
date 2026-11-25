@@ -1,7 +1,8 @@
 // Structural evidence dispatch: a value's anchor is verified by re-deriving
 // the claim from the session document (layout table cell or prose statement).
 import type { CellValue } from "@/app/lib/extraction/types";
-import { verifyTableAnchor, type TableDocument } from "@/app/lib/extraction/table-facts";
+import { coverageExampleSpans } from "@/app/lib/extraction/sbc";
+import { quoteInTable, verifyTableAnchor, type TableDocument } from "@/app/lib/extraction/table-facts";
 import { verifyStatementAnchor } from "@/app/lib/extraction/statement-facts";
 import { verifySbcAnchor } from "@/app/lib/extraction/sbc-questions";
 
@@ -10,6 +11,9 @@ export function verifyClaimAnchor(
   value: Pick<CellValue, "documentId" | "display" | "qualifiers" | "evidence" | "anchor">,
   documents: readonly TableDocument[],
 ): boolean {
+  // Coverage examples describe invented patients: never a claim.
+  const doc = documents.find((d) => d.documentId === value.documentId);
+  if (doc && value.evidence.some((e) => quoteInTable(doc, coverageExampleSpans(doc.pages), e.page, e.quote))) return false;
   switch (value.anchor?.kind) {
     case "table-cell": return verifyTableAnchor(factName, value, documents);
     case "statement": return verifyStatementAnchor(factName, value, documents) || verifySbcAnchor(factName, value, documents);

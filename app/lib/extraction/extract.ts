@@ -49,8 +49,8 @@ import { quoteInTable, tableClaims, tableDrops, tableOwnedSpans, unrecognizedLab
 import { annotateAbsence, stripServerOnlyFields, WITHHELD_ROW_RATIONALE } from "@/app/lib/extraction/absence";
 import type { PageReadability } from "@/app/lib/pdf/page-readability";
 import { statementClaims, statementOwnedSpans } from "@/app/lib/extraction/statement-facts";
-import { coverageExampleSpans } from "@/app/lib/extraction/sbc";
-import { sbcQuestionClaims } from "@/app/lib/extraction/sbc-questions";
+import { coverageExampleSpans, sbcOwnedSpans } from "@/app/lib/extraction/sbc";
+import { sbcClaims } from "@/app/lib/extraction/sbc-questions";
 import { scanExclusionSections } from "@/app/lib/evidence/proposer/exclusion-sections";
 import type { Span } from "@/app/lib/pdf/layout-tables";
 
@@ -650,7 +650,7 @@ export function extractFallback(
   // Table claims own their lines: the line engine never emits its own
   // (column-blind) reading of a line that lies inside a detected table.
   const ownedByDoc = new Map(documents.map((doc) => [doc.documentId, tableOwnedSpans(doc)]));
-  const claimsByDoc = new Map(documents.map((doc) => [doc.documentId, [...tableClaims(doc), ...statementClaims(doc), ...sbcQuestionClaims(doc)]]));
+  const claimsByDoc = new Map(documents.map((doc) => [doc.documentId, [...tableClaims(doc), ...statementClaims(doc), ...sbcClaims(doc)]]));
   // A grammar-parsed statement owns its sentence for its own fact only.
   const statementOwnedByDoc = new Map(documents.map((doc) => [doc.documentId, statementOwnedSpans(doc)]));
   // Table cells the document states for a fact but whose claim was dropped
@@ -658,6 +658,9 @@ export function extractFallback(
   const dropsByDoc = new Map(documents.map((doc) => [doc.documentId, tableDrops(doc)]));
   // Coverage examples describe invented patients; no line of them is a fact.
   const examplesByDoc = new Map(documents.map((doc) => [doc.documentId, coverageExampleSpans(doc.pages)]));
+  // An SBC's facts come from the form's own structure (sbc*.ts); its template
+  // sentences are never read line by line.
+  const sbcOwnedByDoc = new Map(documents.map((doc) => [doc.documentId, sbcOwnedSpans(doc.pages)]));
   const exclusionItemsByDoc = new Map(documents.map((doc) => [doc.documentId, exclusionItemSpans(doc)]));
 
   const withheldByFact = new Map<string, { withheld: WithheldClaim[]; withheldOnly: boolean }>();
@@ -689,6 +692,7 @@ export function extractFallback(
           continue;
         }
         if (quoteInTable(doc, examplesByDoc.get(doc.documentId)!, match.page, verified.quote)) continue;
+        if (quoteInTable(doc, sbcOwnedByDoc.get(doc.documentId)!, match.page, verified.quote)) continue;
         if (quoteInTable(doc, ownedByDoc.get(doc.documentId)!, match.page, verified.quote)) {
           for (const drop of unrecognizedLabelDrops(doc, fact.name, match.page, verified.quote)) withhold(doc, drop);
           continue;
@@ -743,6 +747,7 @@ export function extractFallback(
       // column scope) and grammar-parsed statements (verbatim sentence).
       for (const claim of claimsByDoc.get(doc.documentId) ?? []) {
         if (claim.factName !== fact.name) continue;
+        if (claim.value.evidence.some((e) => quoteInTable(doc, examplesByDoc.get(doc.documentId)!, e.page, e.quote))) continue;
         if (BENEFIT_FACTS.has(fact.name) && claim.value.evidence.some((e) => quoteInTable(doc, exclusionItemsByDoc.get(doc.documentId)!, e.page, e.quote))) continue;
         values.push(claim.value);
         docsWithValues.add(doc.documentId);

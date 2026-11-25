@@ -91,9 +91,6 @@ export function conditionBindingKnown(value: CellValue): boolean {
       return conditionBindingKnown({ ...value, anchor: undefined, display: cell });
     }
   }
-  // A parsed statement's claim is its first line; sentences carried with it
-  // follow on their own lines and bind nothing.
-  if (value.anchor?.kind === "statement" && value.display.includes("\n") && amounts(value.display.split("\n")[0]).length < 2) return true;
   if (amounts(value.display).length < 2) return true;
   const text = [value.display, ...value.evidence.map((e) => e.quote)].join("\n");
   return offersChoices(value.display, text) || scopesAmounts(value);

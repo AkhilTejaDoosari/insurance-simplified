@@ -15,7 +15,7 @@ import { scopedQualifiers } from "@/app/lib/extraction/qualifier-evidence";
 import { verifyClaimAnchor } from "@/app/lib/extraction/claim-anchors";
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import { hasPlanValueProof } from "@/app/lib/extraction/types";
-import { sbcPlan } from "@/app/lib/extraction/sbc";
+import { isSbcDocument, sbcPlan } from "@/app/lib/extraction/sbc";
 import type {
   CellValue,
   ComparisonTable,
@@ -378,16 +378,19 @@ export function attestPlans(documents: readonly SourceDocument[]): ProvenPlan[] 
     const attested = [...groups.values()].some((plan) =>
       plan.sources.some((source) => source.documentId === doc.documentId)
     );
-    // Page 1 proving two different plans (an SBC header and another
-    // declaration) proves neither.
-    const sbc = sbcTitle(doc);
-    if (attested && sbc) {
-      for (const [key, plan] of groups) {
-        if (!plan.sources.some((source) => source.documentId === doc.documentId)) continue;
-        if (plan.name.toLowerCase() === sbc.name.toLowerCase()) continue;
-        const sources = plan.sources.filter((source) => source.documentId !== doc.documentId);
-        if (sources.length > 0) groups.set(key, { ...plan, sources });
-        else groups.delete(key);
+    // On an SBC page 1 only the form's own header proves the plan. Another
+    // name next to it (or a header that cannot be read) proves neither.
+    let sbc = sbcTitle(doc);
+    if (attested && isSbcDocument(doc.pages)) {
+      const own = [...groups].filter(([, plan]) => plan.sources.some((source) => source.documentId === doc.documentId));
+      if (!sbc || own.some(([, plan]) => plan.name.toLowerCase() !== sbc!.name.toLowerCase())) {
+        sbc = undefined;
+        for (const [key, plan] of own) {
+          const sources = plan.sources.filter((source) => source.documentId !== doc.documentId);
+          if (sources.length > 0) groups.set(key, { ...plan, sources });
+          else groups.delete(key);
+        }
+        continue;
       }
     }
     const titleBlock = !attested && doc.pages[0] !== undefined

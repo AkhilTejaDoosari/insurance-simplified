@@ -91,7 +91,7 @@ describe("SBC header plan identity", () => {
   });
 
   it("keeps one plan when the same header repeats on later pages", () => {
-    const second = [HEADER, "Northwind: Harbor One Coverage for: Family | Plan Type: PPO", "Common Medical Event Services You May Need"].join("\n");
+    const second = [HEADER, "Northwind: Harbor One Coverage for: Family | Plan Type: PPO", "Common Medical Event Services You May Need", "Network Provider (You will pay the least)", "Out-of-Network (You will pay the most)"].join("\n");
     expect(names(doc([HEADER, "Northwind: Harbor One Coverage for: Family | Plan Type: PPO"], [second]))).toEqual(["Northwind: Harbor One"]);
   });
 
@@ -134,7 +134,8 @@ describe("SBC header plan identity", () => {
 
   it("accepts form pages and closing notices", () => {
     expect(names(doc(ONE, [
-      "Common Medical Event Services You May Need\nSpecialist visit $40 copay", "About these Coverage Examples:\nDeductibles $900",
+      "Common Medical Event Services You May Need\nNetwork Provider (You will pay the least)\nOut-of-Network (You will pay the most)\nSpecialist visit $40 copay",
+      "About these Coverage Examples:\nThis is not a cost estimator.\nDeductibles $900",
       "Notice of Nondiscrimination\nWe comply with federal civil rights laws.",
     ]))).toEqual(["Northwind: Harbor One"]);
   });
@@ -168,6 +169,29 @@ describe("SBC header plan identity", () => {
     [HEADER, `Plan name: Harbor One ${CF}`], [HEADER, `Questions: Call to request a copy ${CF}`],
   ].map((head) => [head.join(" ⏎ "), head]))("abstains: %s", (_label, head) => {
     expect(names(doc(head as string[]))).toEqual([]);
+  });
+
+  const FORM = "Common Medical Event Services You May Need\nNetwork Provider (You will pay the least)\nOut-of-Network (You will pay the most)";
+  it.each([
+    ["one phrase of the form under another plan's name", `Northwind: Harbor Two PPO\nCommon Medical Event`],
+    ["a guide mentioning the form", "Harbor Two compared. Services You May Need are listed in our guide."],
+    ["a repeated title with another name", `${HEADER}\nNorthwind: Harbor Two\n${FORM}`],
+    ["another coverage period on its own line", `Coverage Period: 01/01/2032 – 12/31/2032\n${FORM}`],
+    ["a certificate with a language notice", "Harbor Two Certificate of Coverage\nHospital: 40% after deductible\nLanguage Assistance Services available"],
+  ])("abstains when a later page is %s", (_label, page) => {
+    expect(names(doc(ONE, [page]))).toEqual([]);
+  });
+
+  it.each([
+    "Claims Administrator: Northwind Health", "Plan Administrator: Acme PPO", "Underwritten and administered by: Northwind", "Prepared by: Northwind", "Network: Select",
+    "Location: Oregon", "Division: West", "TTY: Relay", "Medical: Choice", "Compare: Harbor", "Northwind: Harbor + Vista PPO", "Northwind Mutual: Northwind Mutual", "Northwind PPO",
+  ])("abstains on a field label or a carrier: %s", (name) => {
+    expect(names(doc([HEADER, `${name} ${CF}`]))).toEqual([]);
+  });
+
+  it("abstains when page 1 declares the header plan and another", () => {
+    const d = doc([HEADER, `Harbor HSA Plan ${CF}`]);
+    expect(names({ ...d, pages: [`${d.pages[0]}\nPlan name: Harbor HSA Plan\nPlan name: Harbor Two`] })).toEqual([]);
   });
 
   it("abstains when page 1 also declares another plan", () => {

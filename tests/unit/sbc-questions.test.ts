@@ -25,7 +25,12 @@ const page = (ded: string, oop: string, more = "") => [
   "What is not included in", "the out-of-pocket limit?", "Premiums and balance-billing charges.",
   "Even though you pay these expenses, they don’t count toward the out-of-pocket limit.", more,
 ].join("\n");
-const doc = (text: string, rest: string[] = []) => ({ documentId: "doc-1", filename: "x.pdf", pageCount: 1 + rest.length, pages: [text, ...rest] });
+const CHART = [
+  "Common Medical Event Services You May Need", "Network Provider", "(You will pay the least)", "Out-of-Network Provider", "(You will pay the most)",
+  "Preventive care/screening/", "immunization No charge Not covered",
+  "You may have to pay for services that aren’t", "preventive. Ask your provider if the services", "needed are preventive. Then check what your plan", "will pay for.",
+].join("\n");
+const doc = (text: string, more: string[] = [], rest = [CHART, ...more]) => ({ documentId: "doc-1", filename: "x.pdf", pageCount: 1 + rest.length, pages: [text, ...rest] });
 const claims = (d: ReturnType<typeof doc>, fact: string) => sbcQuestionClaims(d).filter((c) => c.factName === fact);
 const show = (d: ReturnType<typeof doc>, fact: string) => claims(d, fact).map((c) => [c.value.display, c.value.qualifiers.networkTier, c.value.qualifiers.conditions]);
 const rowOf = (d: ReturnType<typeof doc>, fact: string) =>
@@ -55,12 +60,64 @@ describe("SBC overall deductible and out-of-pocket limit", () => {
   });
 
   it("carries a following sentence with every amount, verbatim", () => {
-    const d = doc(page(" $0", "\nIn-network: $2,000 individual / $4,000 family. There is a separate limit on drugs: $500 individual"));
+    const d = doc(page(" $0", "\nIn-network: $2,000 individual / $4,000 family. Copayments count toward this limit."));
     expect(show(d, "out-of-pocket-maximum").map((v) => v[0])).toEqual([
-      "In-network: $2,000 individual\nThere is a separate limit on drugs: $500 individual",
-      "In-network: $4,000 family\nThere is a separate limit on drugs: $500 individual",
+      "In-network: $2,000 individual\nCopayments count toward this limit.",
+      "In-network: $4,000 family\nCopayments count toward this limit.",
     ]);
     expect(show(d, "annual-deductible")).toEqual([["$0", undefined, undefined]]);
+  });
+
+  // ---- independent review round 2 (2026-11-25): B1–B5
+  it.each([
+    "$500 Individual / $1,000 Family In-Network; $1,000 Individual / $2,000 Family Out-of-Network",
+    "$500 Individual In-Network, $1,000 Individual Out-of-Network", "$500 In-Network. $1,000 Out-of-Network.", "$0 Network. $500 Out-of-Network",
+    "$500 per year in-network, $1,000 per year out-of-network", "$500 individual per calendar year, $1,000 family per calendar year",
+    "$500 individual, In-network; Preferred: $0", "$500/individual, Tier 2 $1,000/individual", "$3,000 Family, Embedded $1,500 per person",
+    "$500 Individual, Prescription drugs $200", "In-network: $0. Deductible does not apply to preventive care. Out-of-network: $1,000",
+    "Network: $500 individual Non-Network: $1,000 individual Tier 3: $9", "Network $500 Individual, Out-of-Network", "$500 individual Out-of-network",
+    "$500 In-network providers only", "$200 individual per year for prescription drugs only",
+    "In-network: $2,000 individual / $4,000 family. There is a separate limit on drugs: $500 individual",
+  ])("keeps the whole answer: %s", (answer) => {
+    expect(show(doc(page(`\n${answer}`, " $4,000")), "annual-deductible")).toEqual([[answer, undefined, undefined]]);
+  });
+
+  it("binds network labels written with spaces", () => {
+    expect(show(doc(page("\nIn network: $500 individual. Out of network: $1,000 individual", " $4,000")), "annual-deductible").map((v) => [v[0], v[1]])).toEqual([
+      ["In network: $500 individual", "In network"], ["Out of network: $1,000 individual", "Out of network"],
+    ]);
+  });
+
+  it.each([
+    "Generally, you must pay all of the costs from providers\nfor out-of-network providers. up to the deductible amount before this plan begins to pay.",
+    "Generally, you must pay all of the costs from providers\n$1,000 Out-of-network, up to the deductible amount before this plan begins to pay.",
+  ])("makes no claim when answer text is mixed into the explanation", (why) => {
+    expect(claims(doc(page(" $500 Individual", " $4,000").replace(WHY_DED, why)), "annual-deductible")).toEqual([]);
+  });
+
+  it("makes no claim when the text does not run cell by cell", () => {
+    expect(claims(doc(page(" $500 Individual", " $4,000"), [], [CHART.replace("preventive. Ask", "$40 copay preventive. Ask")]), "annual-deductible")).toEqual([]);
+  });
+
+  it.each(["Plan name: Harbor Two", "Harbor Two\nCertificate of Insurance"])("never attributes an SBC answer to another plan: %s", (head) => {
+    const d = doc(`${head}\n${page(" $900 Individual", " $4,000")}`);
+    expect(rowOf(d, "annual-deductible").values.every((v) => v.planId === undefined)).toBe(true);
+  });
+
+  it("never reads a coverage-example table", () => {
+    const p2 = "About these Coverage Examples:\nThis is not a cost estimator.\nPeg\nJoe\nDeductible\n$910\n$920";
+    const at = (t: string, from = 0) => { const start = p2.indexOf(t, from); return { start, end: start + t.length }; };
+    const cell = (t: string, columns: number[]) => ({ text: t, spans: [at(t)], columns });
+    const tables = [{ page: 3, header: { start: p2.indexOf("Peg"), end: p2.indexOf("Joe") + 3 }, columns: [
+      { text: "Peg", lines: ["Peg"], spans: [at("Peg")], x0: 0, x1: 1 }, { text: "Joe", lines: ["Joe"], spans: [at("Joe")], x0: 1, x1: 2 },
+    ], rows: [{ label: { text: "Deductible", spans: [at("Deductible")] }, cells: [cell("$910", [0]), cell("$920", [1])] }], footnotes: [] }];
+    const d = { ...doc(page(" $900 Individual", " $4,000"), [p2]), tables };
+    expect(rowOf(d as never, "annual-deductible").values.map((v) => v.display)).toEqual(["$900 Individual"]);
+  });
+
+  it.each(["In this example, Joe pays $400.", "See About these Coverage Examples on page 6.", "Total example cost: $900"])("an ordinary brochure keeps its page: %s", (line) => {
+    const d = { documentId: "doc-1", filename: "x.pdf", pageCount: 1, pages: [`Plan name: Alpha\nAnnual deductible: $250 per person.\n${line}`] };
+    expect(rowOf(d, "annual-deductible").values.map((v) => v.display)).toEqual(["Annual deductible: $250 per person."]);
   });
 
   it("reads a label before its amount and a per-person slash", () => {
@@ -109,7 +166,7 @@ describe("SBC overall deductible and out-of-pocket limit", () => {
   });
 
   it("never takes an amount from a coverage example", () => {
-    const d = doc(page(" $900 Individual / $1,800 Family", " $4,000"), ["About these Coverage Examples:\nIn this example, Mia would pay:\nCost Sharing\nDeductibles $910\nThe total Mia would pay is $1,200"]);
+    const d = doc(page(" $900 Individual / $1,800 Family", " $4,000"), ["About these Coverage Examples:\nThis is not a cost estimator.\nIn this example, Mia would pay:\nCost Sharing\nDeductibles $910\nThe total Mia would pay is $1,200"]);
     expect(rowOf(d, "annual-deductible").values.map((v) => v.display)).toEqual(["$900 Individual", "$1,800 Family"]);
   });
 
