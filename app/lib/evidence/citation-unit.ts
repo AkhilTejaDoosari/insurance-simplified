@@ -13,6 +13,7 @@
 // Pure: reads only the documents passed in.
 
 import { continuesOnto, isTopicHeading, isUniqueOnPage, lineEndsSentence } from "@/app/lib/evidence-verification";
+import { shownHeadings } from "@/app/lib/presentation/value-rows";
 import type { LayoutTable, LayoutText } from "@/app/lib/pdf/layout-tables";
 
 export interface UnitCitation {
@@ -197,6 +198,7 @@ export function renderTableAnswer(
     const pageTables = (doc.tables ?? []).filter((t) => t.page === c.page);
     for (const table of pageTables) {
       const hit = (t: LayoutText) => t.spans.some((s) => s.start < end && s.end > start);
+      const headings = shownHeadings(table);
       for (const row of table.rows) {
         if (!hit(row.label) && !row.cells.some(hit)) continue;
         touched = true;
@@ -225,7 +227,7 @@ export function renderTableAnswer(
         }
         const head = section ? `${label} — ${section}` : label;
         for (const [i, cell] of row.cells.entries()) {
-          const header = cell.columns.map((k) => ws(table.columns[k]?.text ?? "")).filter(Boolean).join(" / ");
+          const header = cell.columns.map((k) => headings[k] ?? "").filter(Boolean).join(" / ");
           const cellText = ws(cell.text);
           const cellCites = cellMissing[i] ? span : pieceCites[i];
           const headerCites = cell.columns.flatMap((k) => textsOf(page, table.columns[k]));

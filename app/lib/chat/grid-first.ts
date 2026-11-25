@@ -14,6 +14,8 @@
 
 import type { CellValue, TableRow } from "@/app/lib/extraction/types";
 import { describeFact } from "@/app/lib/presentation/claim";
+import { shownValue } from "@/app/lib/presentation/value-rows";
+import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
 import { scopingMarkers, statesScopingMarker, verifyAnswerClaims, verifyEvidenceCitation } from "@/app/lib/evidence-verification";
 import type { ChatCitation, ChatResponse } from "@/app/lib/rag/answer";
 
@@ -99,6 +101,7 @@ interface Doc {
   documentId: string;
   pageCount: number;
   pages: string[];
+  tables?: LayoutTable[];
 }
 
 export interface GridFacts {
@@ -114,16 +117,18 @@ export type Rephrase = (facts: GridFacts, question: string) => Promise<{ answerT
 const UNCERTAIN_VERDICTS = new Set(["NEEDS VERIFICATION", "CONFLICTED"]);
 
 /** Lines for one value: its claim (or full verbatim display), each verbatim
- *  condition, and any further cited line the display does not contain (a
- *  footnote that decides its basis). */
-function valueLines(value: CellValue, factName: string): string[] {
-  const d = describeFact(value, factName);
-  const head = d.claim ?? d.sourceWording;
+ *  condition, and — for a line value — any further cited line the display does
+ *  not contain (a footnote that decides its basis). A table cell's citations
+ *  are its row, its header line and the notes already among its conditions:
+ *  none is a further line (owner decision 2026-11-24 (7)). */
+function valueLines(value: CellValue, factName: string, docs: readonly Doc[]): string[] {
+  const { claim, conditions } = shownValue(value, factName, docs);
+  if (value.anchor?.kind === "table-cell") return [claim, ...conditions];
   // A further cited line (a footnote deciding the basis) is shown only when
   // it states no figure of its own (review S6: never a second amount that
   // reads as part of the answer).
   const extra = value.evidence.slice(1).map((e) => e.quote).filter((q) => !value.display.includes(q) && !/\d/.test(q.replace(/^\s*\d{1,2}\s+/, "")));
-  return [head, ...d.conditions, ...extra];
+  return [claim, ...conditions, ...extra];
 }
 
 function verifiedInScope(value: CellValue, scoped: Doc[], session: Doc[]): ChatCitation[] | undefined {
@@ -202,7 +207,7 @@ export async function gridFirstAnswer(input: {
   const lineValueLines: string[] = [];
   const citations: ChatCitation[] = [];
   for (const { value, factName, cites } of used) {
-    for (const line of valueLines(value, factName)) {
+    for (const line of valueLines(value, factName, input.scopedDocuments)) {
       if (!lines.includes(line)) lines.push(line);
       if (!isCell(value) && !lineValueLines.includes(line)) lineValueLines.push(line);
     }
@@ -239,7 +244,7 @@ export async function gridFirstAnswer(input: {
     // Review B1: a rephrase keeps every condition verbatim and states exactly
     // the facts' negation/exception/network markers.
     const norm = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
-    const conditions = used.flatMap(({ value, factName }) => describeFact(value, factName).conditions);
+    const conditions = used.flatMap(({ value, factName }) => shownValue(value, factName, input.scopedDocuments).conditions);
     const parenthetical = lines.flatMap((l) => l.match(/\([^()]+\)/g) ?? []);
     const keepsConditions = [...conditions, ...parenthetical].every((c) => norm(text).includes(norm(c)));
     const sameMarkers = statesScopingMarker(text) === statesScopingMarker(verbatim) && scopingMarkers(text) === scopingMarkers(verbatim);
