@@ -21,6 +21,7 @@ import { withEvidenceId } from "@/app/lib/evidence-ids";
 import { verifyEvidenceCitation } from "@/app/lib/evidence-verification";
 import { REFUSAL_TEXT, UNCERTAIN_TEXT, type ChatCitation } from "@/app/lib/rag/answer";
 import { gridFirstAnswer } from "@/app/lib/chat/grid-first";
+import { comparePlansAnswer } from "@/app/lib/chat/compare-plans";
 import { rephraseVerifiedFacts } from "@/app/lib/chat/rephrase";
 import {
   answerQuestion,
@@ -275,7 +276,15 @@ export async function POST(request: NextRequest) {
     const storedForGrid = await loadStored();
     if (storedForGrid && storedForGrid.documentFingerprint === documentFingerprint(session.documents)) {
       const current = confirmStored(storedForGrid);
-      const grid = await timeAsync("chat.gridFirst", () =>
+      // A question comparing plans lists each selected plan's verified values;
+      // anything it does not handle takes the single-answer grid path.
+      const grid = comparePlansAnswer({
+        question,
+        table: { rows: current.table.rows, plans: current.table.plans },
+        scopedDocuments,
+        sessionDocuments: session.documents,
+        selection: gridSelection,
+      }) ?? await timeAsync("chat.gridFirst", () =>
         gridFirstAnswer({
           question,
           table: current.table,

@@ -950,6 +950,10 @@ select {
 .chat__a {
   margin-top: 4px;
 }
+/* An answer's lines are separate statements. */
+.chat__a > p {
+  white-space: pre-line;
+}
 .chat__refusal {
   margin-top: 4px;
   color: var(--muted);

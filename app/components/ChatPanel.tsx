@@ -67,17 +67,12 @@ function AnswerResolutions({ response }: { response: unknown }) {
       !!r && typeof r === "object" && typeof (r as AnswerResolution).factName === "string" &&
       typeof (r as AnswerResolution).status === "string",
   );
-  if (!items.length) return null;
+  // Verdict labels are internal: only a result that cannot be confirmed is
+  // told to the reader, without its internal name.
+  if (!items.some((r) => r.status !== "confirmed")) return null;
   return (
-    <div className="chat__resolutions">
-      <p className="text-muted">Related comparison results</p>
-      <ul className="list">
-        {items.map((r) => (
-          <li key={r.factName} data-status={r.status}>
-            {r.factName}: {r.status === "confirmed" ? r.verdict : "cannot be confirmed"}
-          </li>
-        ))}
-      </ul>
+    <div className="chat__resolutions" role="note">
+      <p className="text-muted">A related comparison result cannot be confirmed.</p>
     </div>
   );
 }
