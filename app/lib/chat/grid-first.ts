@@ -13,6 +13,7 @@
 // altered after issue is already "cannot be confirmed" and has no values.
 
 import type { CellValue, TableRow } from "@/app/lib/extraction/types";
+import { omitsException } from "@/app/lib/evidence/omitted-exception";
 import { describeFact } from "@/app/lib/presentation/claim";
 import { shownValue } from "@/app/lib/presentation/value-rows";
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
@@ -225,6 +226,9 @@ export async function gridFirstAnswer(input: {
     const gate = verifyAnswerClaims(lineValueLines.join("\n"), citations, citations, sessionDocs);
     if (!gate.ok) return fallback(`verbatim-rejected:${gate.reason ?? "unknown"}`);
   }
+  // Owner decision 2026-11-24 (7): table cells too — an exclusion is never
+  // shown without the exception its section states.
+  if (omitsException(verbatim, citations, sessionDocs)) return fallback("exception-omitted");
   const answer = (answerText: string, cites: ChatCitation[]) => ({
     schemaVersion: "v1" as const,
     kind: "answer" as const,

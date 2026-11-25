@@ -8,6 +8,7 @@
 // VERBATIM source span — never the model's condensed text.
 
 import { normalizeForMatch } from "@/app/lib/pdf/text-match";
+import { omitsException } from "@/app/lib/evidence/omitted-exception";
 
 export interface SessionDocumentLike {
   documentId: string;
@@ -449,7 +450,8 @@ export type RejectionReason =
   | "qualifier-mismatch"
   | "figure-label-binding"
   | "wrapped-fragment"
-  | "figure-sentence-across-lines";
+  | "figure-sentence-across-lines"
+  | "exception-omitted";
 
 /** Split text into sentences using regex boundaries. */
 function splitSentences(text: string): string[] {
@@ -1302,6 +1304,12 @@ export function verifyAnswerClaims(
     if (!quote) {
       return { ok: false, reason: uncoveredReason(sentence, canonicalQuotes, quotePages, answerText), rationale: `Unsupported claim: "${sentence}"`, ...at };
     }
+  }
+
+  // Owner decision 2026-11-24 (7): an exclusion or limitation is not verified
+  // without the exception its own section states.
+  if (omitsException(answerText, citations, sessionDocuments)) {
+    return { ok: false, reason: "exception-omitted", rationale: "Exception omitted: the cited section states an exception the answer leaves out" };
   }
 
   return { ok: true };

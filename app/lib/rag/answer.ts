@@ -21,6 +21,7 @@ import {
 import { retrievePersistentSemantic } from "@/app/lib/rag/persist-session";
 import type { RankedPassage } from "@/app/lib/rag/embeddings";
 import type { LayoutTable } from "@/app/lib/pdf/layout-tables";
+import { omitsException } from "@/app/lib/evidence/omitted-exception";
 import { completeCitations, renderTableAnswer } from "@/app/lib/evidence/citation-unit";
 import {
   verifyAnswerClaims,
@@ -794,7 +795,7 @@ export function stripPlanHeaders(answerText: string, planNames: readonly string[
 /** Why a model-path turn ended in "cannot be confirmed" (diagnostics only;
  *  the text fields may quote the document and are never logged). */
 export interface ChatRejection {
-  stage: "contents-only" | "model-cannot-answer" | "bad-reference" | "empty-after-header-strip" | "verify" | "off-topic" | "table-uncitable";
+  stage: "contents-only" | "model-cannot-answer" | "bad-reference" | "empty-after-header-strip" | "verify" | "off-topic" | "table-uncitable" | "table-exception-omitted";
   reason?: RejectionReason;
   sentence?: string;
   sentenceIndex?: number;
@@ -952,6 +953,11 @@ export async function answerViaLlm(
     console.warn(`[chat-refusal] stage=table-render reason=${table}`);
     opts.onRejection?.({ stage: "table-uncitable", answerText: raw.answerText, citations: citations ?? [] });
     return uncertainAfterModel(citations ?? [], passages, question);
+  }
+  if (table && omitsException(table.answerText, table.citations, documents)) {
+    console.warn(`[chat-refusal] stage=table-render reason=exception-omitted`);
+    opts.onRejection?.({ stage: "table-exception-omitted", answerText: table.answerText, citations: table.citations });
+    return uncertainAfterModel(table.citations, passages, question);
   }
   if (table) {
     if (!addressesQuestion(table.answerText, question)) {
