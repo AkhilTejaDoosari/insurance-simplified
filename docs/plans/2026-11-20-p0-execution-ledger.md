@@ -1137,9 +1137,16 @@ withdrawn. Run 13's table has the same doc 05 over-count (row sums to 9), so
 its 29/40 is also suspect; not re-scored here.
 
 **Blind review.** An independent reviewer scored all 40 answers from a packet
-holding only the question, the owner's key and the shown answer/refusal (no
-implementer scores, ledger or repo). Implementer scores were written to the
-archive before the review returned.
+holding only the question, the key and the shown answer/refusal. Not reading
+anything else was an instruction, not enforced by a sandbox. Implementer scores
+were written to the session scratchpad at 13:38:26, before the review (13:39:02),
+and copied unchanged to the archive after it (13:39:30).
+
+**Correction 2026-11-24.** An earlier version of this section said the scores
+were already in the archive before the review returned, and called the key "the
+owner's key"; the reviewer was told the same. The key is the one rebuilt from
+the documents on 2026-11-22 after the original was lost (its own note), before
+run 1 was recorded. The reviewer is independent of the scores, not of the key.
 
 | | Correct | Wrong | Incomplete | Flagged | Cannot be confirmed | False absence |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -1167,7 +1174,8 @@ is met on the corrected score; the second-model run awaits owner go-ahead
 (provider calls).
 
 Archive (private, outside git): `questions.json` (exact 8 wordings, sha256
-`abf09a117c1e25f6…`; identical in runs 1, 7, 9, 13, 14),
+`abf09a117c1e25f6…`, and all 40 document/question pairs, sha256
+`154790b6f134a5ef…`; identical in runs 1, 7, 9, 13, 14),
 `blind/run14-packet.json`, `blind/run14-score-implementer.json`,
 `blind/run14-review.json`, `blind/run14-compare.json`.
 
