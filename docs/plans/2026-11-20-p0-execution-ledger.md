@@ -1273,3 +1273,13 @@ Process error: `c429951` was committed with one failing unit test (the gate's
 exit status was lost in a pipe). The next commit fixes the code (only the fixed
 phrases "copay waived if admitted" / "the inpatient copay listed below" are
 allowed in a limitation); no assertion was changed.
+
+Review round 5 at `16b2a7b`: fixes 3, 5 and 6 APPROVE (fixes 1, 2 approved in
+round 3, fix 4 in round 4). Open notes, none a wrong value on a realistic
+document: text above the next page's chart headings is not checked (N1); a
+footer sentence can be carried with a limitation (N2); a network cell with two
+stacked costs and an empty out-of-network cell would bind the second cost to
+the wrong column (F3-3, recorded assumption); comma-separated number-then-label
+contacts and "Fax: claims" can be mislabelled (N4, N6); a stated fact dropped
+as a non-unique citation, or on an unread page, still reads "Not stated for
+this plan" in a comparison cell (N7, N8, unchanged from before).
