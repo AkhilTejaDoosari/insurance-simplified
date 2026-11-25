@@ -228,7 +228,7 @@ export async function gridFirstAnswer(input: {
   }
   // Owner decision 2026-11-24 (7): table cells too — an exclusion is never
   // shown without the exception its section states.
-  if (omitsException(verbatim, citations, sessionDocs)) return fallback("exception-omitted");
+  if (omitsException(verbatim, citations, input.sessionDocuments)) return fallback("exception-omitted");
   const answer = (answerText: string, cites: ChatCitation[]) => ({
     schemaVersion: "v1" as const,
     kind: "answer" as const,

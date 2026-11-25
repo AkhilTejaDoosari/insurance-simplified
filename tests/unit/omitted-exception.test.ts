@@ -176,6 +176,12 @@ describe("every answer path applies the rule", () => {
     expect(row?.values.every((v) => !v.display.includes("unless"))).toBe(true);
     expect(await gridFirstAnswer({ question: "Is maternity covered?", table: t, scopedDocuments: [TABLE], sessionDocuments: [TABLE] })).toBeUndefined();
   });
+  it("grid-first tells rows apart: another row's own exception does not block this one", async () => {
+    const doc = tableDocument("doc-1", [{ caption: "BENEFIT", headings: ["ELITE", "BASIC"], rows: [["Deductible", "$0", "$250"], ["Emergency Room Copayment", "$100 unless admitted", "$350 unless admitted"], ["Maternity Care", "Up to $5,000", "No coverage"]] }]);
+    const t = verifyComparisonTable(validateTable(extractFallback([doc] as never, {})), [doc] as never);
+    const r = await gridFirstAnswer({ question: "Is maternity covered?", table: t, scopedDocuments: [doc], sessionDocuments: [doc] });
+    expect(r?.kind === "answer" && r.answerText).toBe("Maternity Care (ELITE): Up to $5,000\nMaternity Care (BASIC): No coverage");
+  });
   it("control: the table's other row is unaffected", async () => {
     const t = verifyComparisonTable(validateTable(extractFallback([TABLE] as never, {})), [TABLE] as never);
     const r = await gridFirstAnswer({ question: "What is the deductible?", table: t, scopedDocuments: [TABLE], sessionDocuments: [TABLE] });
