@@ -3,6 +3,7 @@
 import type { CellValue } from "@/app/lib/extraction/types";
 import { verifyTableAnchor, type TableDocument } from "@/app/lib/extraction/table-facts";
 import { verifyStatementAnchor } from "@/app/lib/extraction/statement-facts";
+import { verifySbcAnchor } from "@/app/lib/extraction/sbc-questions";
 
 export function verifyClaimAnchor(
   factName: string,
@@ -11,7 +12,7 @@ export function verifyClaimAnchor(
 ): boolean {
   switch (value.anchor?.kind) {
     case "table-cell": return verifyTableAnchor(factName, value, documents);
-    case "statement": return verifyStatementAnchor(factName, value, documents);
+    case "statement": return verifyStatementAnchor(factName, value, documents) || verifySbcAnchor(factName, value, documents);
     default: return false;
   }
 }

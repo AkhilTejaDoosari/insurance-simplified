@@ -1200,3 +1200,20 @@ only other line of the block. Abstains on wrapped, generic, sample or competing
 names and on a second SBC in the file. Dev: 3 of 3 SBC names verified (was 0).
 Regression set: 0 differences. Unit suite 2,511 passed / 22 skipped (real-PDF
 suites SKIPPED without `REAL_PDFS_DIR`), types and build clean.
+
+Review round 1 of fix 1: REQUEST CHANGES (6 blockers: bundled SBCs/booklets,
+half names, insurer/employer/tagline accepted as a plan). Rewritten: the whole
+file must be one SBC; a name needs "<insurer>: <plan>" or, without an insurer,
+a plan type and a non-generic word; any unconsumed header text abstains.
+Open (not a wrong name): sessions stored before this change that hold an SBC
+need re-analysis, because the legacy read-back path is pinned to fact list v1
+by a test (review M3); nested plan names use the pre-existing chat mention
+matcher (review M2).
+
+**Fix 2 — SBC "Important Questions".** `sbc-questions.ts`: the answer is the
+text between the form's own question and its own explanation. Amount lists are
+split per enrollment and network label; a following sentence is carried
+verbatim; anything else stays one verbatim value (NEEDS VERIFICATION when it
+holds several amounts). Claims are re-derived by anchor. Coverage-example text
+is never read as a fact. Dev: deductible and out-of-pocket limit found on 3 of
+3 SBCs (was 0 of 3, with one wrong value). Regression set: 0 differences.
