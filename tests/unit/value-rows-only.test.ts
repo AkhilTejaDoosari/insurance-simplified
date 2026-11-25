@@ -94,7 +94,7 @@ describe("stray header rows and general notes", () => {
 });
 
 describe("schedule introductions, section headings and taglines", () => {
-  const INTRO = "SCHEDULE OF BENEFITS\nAll benefits shown below are in United States dollar amounts. Unless otherwise stated, all benefits are per person.";
+  const INTRO = "SCHEDULE OF BENEFITS\nAll benefits shown below are in United States dollar amounts. Unless otherwise stated, all benefits are per person, per period of coverage, and they are provided up to the amount shown.";
   const page = [INTRO, "Travel Basic\nReliable Coverage\nTravel Choice\nMost popular", "PLAN OPTIONS", "Deductible Options $0 - $5,000 $0 - $2,500"].join("\n");
   const d = doc(page, {
     header: "Travel Basic\nReliable Coverage\nTravel Choice\nMost popular", columns: [["Travel Basic", "Reliable Coverage"], ["Travel Choice", "Most popular"]],
@@ -172,7 +172,7 @@ describe("what governs a value is never dropped", () => {
     const d = doc([text, "BENEFIT ELITE BASIC", "Deductible $0 $250"].join("\n"), { header: "BENEFIT ELITE BASIC", columns: [["ELITE"], ["BASIC"]], rows: [{ label: "Deductible", cells: ["$0", "$250"] }], preamble: text });
     expect((await grid(d)).answerText).toContain(text);
   });
-  it.each(["All benefits are subject to preauthorization.", "Eligible expenses must be approved in advance.", "All benefits are subject to the deductible."])("general note shown: %s", async (text) => {
+  it.each(["All benefits are subject to preauthorization.", "Eligible expenses must be approved in advance.", "All benefits are subject to the deductible.", "All benefits are per certificate period.", "All benefits are per person."])("general note shown: %s", async (text) => {
     const d = doc(["BENEFIT ELITE BASIC", "Deductible $0 $250", text].join("\n"), { header: "BENEFIT ELITE BASIC", columns: [["ELITE"], ["BASIC"]], rows: [{ label: "Deductible", cells: ["$0", "$250"] }], postscript: text });
     expect((await grid(d)).answerText).toContain(text);
   });

@@ -183,6 +183,84 @@ describe("S2: ordinary schedules stay answerable", () => {
   it("text below the table is not a row: its exception counts", () => expect(rejected("Vision Care")).toBe(true));
 });
 
+// Review of 6539593 (R1–R8): only a true list sibling or table row excuses an
+// exception; the cited and adjacent pages are read for the answer's subject.
+describe("R1/R2: text after a labelled paragraph or a list", () => {
+  it.each([
+    "This exclusion does not apply unless the illness was stable.", "Stable illness is paid unless treated abroad.", "Emergency care: paid within the first 24 hours unless elective.",
+    "Waiver: continuous cover of 12 months removes it unless treatment lapsed.", "Stable illness: This exclusion does not apply unless treated abroad.",
+  ])("after 'Maximum Limit: …': %s", (x) => expect(omits(E, `${H}\n${E}\nMaximum Limit: $500.\n${x}\n${T}`, E)).toBe(true));
+  it.each([
+    "Charges caused by an accident are paid unless elective.", "This exclusion does not apply to children unless elective.", "Such treatment is paid for children unless elective.",
+    "They are paid if caused by an accident, unless elective.", "Accidents: charges are paid unless elective.",
+  ])("after a list: %s", (x) => expect(omits(D, `EXCLUSIONS\n• ${D}\n• Vision is not covered.\n${x}\nMATERNITY CARE`, `• ${D}`)).toBe(true));
+  it("a list under the exclusion is its own list", () =>
+    expect(omits(E, `${H}\n${E}\n• Stable illness is paid unless treated abroad.\n• Maximum 12 visits\n${T}`, E)).toBe(true));
+});
+describe("R3: topic labels inside one exclusion list", () => {
+  const WAR = "Charges from war are not paid.";
+  it.each([
+    [`GENERAL EXCLUSIONS\nThe following are excluded unless approved in advance by the Administrator:\nDENTAL CARE: Charges for teeth are not paid.\nWAR: ${WAR}\nVISION: Charges for lenses are not paid.`],
+    [`GENERAL EXCLUSIONS\nWAR: ${WAR}\nVISION: Charges for lenses are not paid.\nAll of the above exclusions apply unless approved in advance.`],
+    [`GENERAL EXCLUSIONS\nThe following are excluded unless approved in advance by the Administrator:\nDental Care\nCharges for teeth are not paid.\nWar\n${WAR}`],
+  ])("%j", (page) => expect(omits(WAR, page, WAR)).toBe(true));
+  it("a trailer on the next page", () => {
+    const c = "Charges for any illness that existed before are excluded.";
+    expect(omits(c, [`EXCLUSIONS\n(1) PRE-EXISTING CONDITIONS: ${c}\n(2) MATERNITY CARE: Charges for delivery are excluded.`, "These exclusions do not apply to assistance services, other than evacuation."], c)).toBe(true);
+  });
+  it("control: another item's own exception", () =>
+    expect(omits(WAR, `GENERAL EXCLUSIONS\nDENTAL CARE: Charges for teeth are not paid unless elective.\nWAR: ${WAR}\nVISION: Charges for lenses are not paid.`, WAR)).toBe(false));
+});
+describe("R4–R6: the named exception under any heading, over any page break", () => {
+  it.each(["EMERGENCY BENEFIT", "Emergency Treatment", "HOSPITAL CARE", "Accidental Injury", "DENTAL CARE"])("under '%s'", (h) =>
+    expect(omits(E, `${H}\n${E}\n${h}\nAcute onset of a Pre-existing Condition is paid in full.\n${T}`, E)).toBe(true));
+  it.each(["Records are kept.\nAn Acute Onset is paid up to the limit for travellers under 70.", "Records are kept.\nStable illness is paid in full unless treated abroad.", "Records are kept.\nEmergency relief of pain is paid unless elective.", "Records are kept.\nIt is paid, however, unless the illness was unstable."])("next page: %j", (p2) =>
+    expect(omits(E, [`${H}\n${E}\nThe Company reviews records.`, p2], E)).toBe(true));
+  it.each([["Acme\nGroup Policy\nEmergency Travel Plan\n", "Acme\nGroup Policy\nEmergency Travel Plan\n"], ["", "Dental Plan Certificate\n"], ["", "Acme\nMaternity and Dental Plan\n"]])("running header %j %j", (a, b) =>
+    expect(omits(E, [`${a}${H}\n${E}`, `${b}Pre-existing illness is paid unless treated abroad.`], E)).toBe(true));
+});
+describe("R7: lists introduced without a colon", () => {
+  it.each(["Dental treatment is excluded except as follows.", "Dental treatment is excluded except in the cases listed below.", "Dental treatment is excluded unless one of the following applies."])("%s", (l) => {
+    const page = `DENTAL\n${l}\n(a) accidental injury\n(b) relief of pain\nVISION\nx`;
+    expect(omits(l, page, l)).toBe(true);
+    expect(omits(`${l}\naccidental injury\nrelief of pain`, page, l)).toBe(false);
+  });
+});
+describe("R8: more wording", () => {
+  it.each([
+    "Dental treatment: 0%", "Dental treatment is paid at 0%.", "Dental treatment: N/A", "Coverage for dental treatment ends at age 70.", "Coverage for dental treatment ceases at age 70.", "Coverage for dental treatment expires at age 70.",
+    "Dental treatment falls outside this plan.", "Dental treatment is barred.", "Dental treatment is prohibited.", "Dental treatment is disallowed.", "Dental treatment must be pre-approved.", "Dental treatment is waived from cover.",
+    "The plan will refuse dental treatment.", "Dental treatment after deductible: $0 benefit", "Dental treatment is uncovered.", "No copayment benefit is paid for dental treatment.",
+  ])("%j", (l) => expect(omits(l, `DENTAL\n${l}\nInjury to teeth is paid in full unless elective.\nVISION\nx`, l)).toBe(true));
+});
+describe("over-rejection: distant text", () => {
+  it.each(["Unless required by law, records are kept.", "Except as required by law, disputes go to court.", "This provision applies except in Texas.", "Notice must be given unless the traveller is ill."])("16 pages away: %s", (x) =>
+    expect(omits(E, [`${H}\n${E}`, ...Array.from({ length: 15 }, (_, i) => `Text about administration ${"abcdefghijklmno"[i]} follows.`), x], E)).toBe(false));
+  it("a leader-dotted schedule row is not a contents line", () =>
+    expect(omits("Dental treatment is not covered.", "DENTAL\nDental treatment is not covered.\nPreventive dental visits unless referred .......... 12", "Dental treatment is not covered.")).toBe(true));
+});
+
+describe("replay: positive evidence of another matter", () => {
+  it("a column's geography or network name, or a class of people, is not a subject", () => {
+    const row = "Coinsurance (United States Out-of-Network): not more than 80%";
+    expect(omits(row, ["Citizens of the United States need cover unless exempt.", "Text.", "COINSURANCE\nCoinsurance not more than 80%"], ["Coinsurance not more than 80%", 3])).toBe(false);
+    const home = "Benefits of you or your dependents in your home country are not covered.";
+    expect(omits(home, [`BENEFITS\n${home}`, "Text.", "Delivery by a dependent is paid unless elective."], home)).toBe(false);
+  });
+  const WAR = "Charges from war are excluded.";
+  it("an item of an earlier, other list on another subject", () => {
+    const list = "A. EVACUATION\nThe Company arranges:\n(a) ground transport.\n(b) an airline ticket, unless unavailable.";
+    expect(omits(WAR, `${list}\nEXCLUSIONS\n(1) ${WAR}\n(2) Charges from lenses are excluded.`, `(1) ${WAR}`)).toBe(false);
+    // The same item naming the subject, or standing under the exclusion, counts.
+    expect(omits(WAR, `${list.replace("ticket,", "ticket out of a war,")}\nEXCLUSIONS\n(1) ${WAR}`, `(1) ${WAR}`)).toBe(true);
+    expect(omits(WAR, `EXCLUSIONS\n(1) ${WAR}\n(a) an airline ticket is paid, unless unavailable.`, `(1) ${WAR}`)).toBe(true);
+  });
+  it.each(["Benefit Summary", "BENEFIT SUMMARY"])("'Except as expressly provided for in the %s' points elsewhere", (x) =>
+    expect(omits(WAR, `EXCLUSIONS: Except as expressly provided for in the ${x}, all charges for the following are excluded:\n(1) ${WAR}`, `(1) ${WAR}`)).toBe(false));
+  it.each(["the Emergency Care provision", "the ACUTE ONSET provision", "a rider"])("but a pointer to %s is an exception", (x) =>
+    expect(omits(WAR, `EXCLUSIONS: Except as expressly provided for in ${x}, all charges for the following are excluded:\n(1) ${WAR}`, `(1) ${WAR}`)).toBe(true));
+});
+
 describe("end to end", () => {
   it.each([
     ["EXCEPTION:", [`${H}\n${E}\nEXCEPTION: This exclusion does not apply unless the illness was unstable.`], E, "Are pre-existing conditions covered?"],

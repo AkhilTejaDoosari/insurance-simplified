@@ -123,7 +123,7 @@ describe("shapes seen on real pages (replay of earlier answers)", () => {
   });
   const HOME = "Benefits incurred in your home country are not covered under this plan.";
   it("a 'Label:' paragraph is its own item", () => {
-    expect(verify(HOME, `BENEFITS\n${HOME}\nSurgical expenses: fees of a surgeon.\nIntensive care unit expenses: the daily room rate for nursing other than private duty nursing.`, HOME).ok).toBe(true);
+    expect(verify(HOME, `BENEFITS\n${HOME}\nSurgical expenses: fees of a surgeon.\nLaboratory expenses: fees for tests.\nIntensive care unit expenses: the daily room rate for nursing other than private duty nursing.`, HOME).ok).toBe(true);
     // Review of a63a772 (B3): directly after the exclusion it counts.
     rejected(verify(HOME, `BENEFITS\n${HOME}\nIntensive care unit expenses: the daily room rate for nursing other than private duty nursing.`, HOME));
   });

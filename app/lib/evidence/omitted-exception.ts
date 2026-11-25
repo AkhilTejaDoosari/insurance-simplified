@@ -4,18 +4,23 @@
 // the answer omits. This rule only REJECTS, and it reads WIDELY (review of
 // a63a772): layout never hides an exception.
 //
-//   section   — from the citation outward, over page breaks, to a heading that
-//               is positively about another topic: a heading-shaped line with
-//               a benefit-topic word, sharing no subject with the answer or
-//               the cited heading, that is not page furniture, states no
-//               marker and is not followed by a back-reference. Any other
-//               heading-like line ends nothing.
+//   section   — from the citation outward, over page breaks, to a heading on
+//               a line of its own that is positively about another topic: a
+//               benefit-topic word, no subject in common with the answer or
+//               the cited heading, not at a page edge, no marker, and no
+//               back-reference after it. A label inside a list ("WAR: …") is
+//               an item, never a section end.
 //   exception — a whole statement with a marker, and the list it introduces.
 //               A bare "unless otherwise noted" points elsewhere: none.
-//   to it     — every exception of the section, unless it is POSITIVELY about
-//               another subject: it names a subject of its own, shares none
-//               with the answer, does not refer back, and stands in another
-//               list item, labelled paragraph, table row or page.
+//   to it     — every exception of the section on the cited and adjacent
+//               pages, and any exception there that names the answer's own
+//               subject whatever heading it stands under. Excused only with
+//               positive evidence: it names a subject of its own, shares none
+//               with the answer, does not refer to the list, and stands in
+//               another item of the citation's own list or in another table
+//               row (review of 6539593). Further away in the section only an
+//               exception that names the answer's subject counts.
+//               By design: a different-subject sibling item is excused.
 //   omitted   — the answer does not state the whole exception statement (and
 //               the list it introduces) as one run of words.
 // Pure: reads only what is passed in.
@@ -37,7 +42,7 @@ interface ExceptionCitation {
 
 // ---------------------------------------------------------------- wording
 
-const FAVOURABLE = /\b(?:not\s+subject\s+to|no\s+(?:deductibles?|co-?pay(?:ment)?s?|coinsurance|waiting\s+period))\b/gi;
+const FAVOURABLE = /\b(?:not\s+subject\s+to|no\s+(?:deductibles?|co-?pay(?:ment)?s?|coinsurance|waiting\s+period)(?!\s+benefits?))\b/gi;
 /** Wording of an exclusion or limitation. A bare cap ("up to $500") is a
  *  value, not a limitation in this sense. */
 const LIMITS = new RegExp(
@@ -46,11 +51,13 @@ const LIMITS = new RegExp(
     String.raw`n['’]t\b`,
     String.raw`\bexclu(?:d(?:ed?|es|ing)|sions?|sive(?:ly)?)\b`,
     String.raw`\b(?:ineligible|non[\s-]*(?:covered|payable|eligible|reimbursable))\b`,
-    String.raw`\b(?:limited\s+to|limitations?|restrict(?:ed|ions?)|only|solely|denied|declined?|void(?:ed)?|capped|waiting\s+period|terminat(?:es?|ed|ion)|responsib(?:le|ility))\b`,
+    String.raw`\b(?:limited\s+to|limitations?|restrict(?:ed|ions?)|only|solely|denied|declined?|void(?:ed)?|capped|waiting\s+period|terminat(?:es?|ed|ion)|responsib(?:le|ility)|ends?|ceases?|expires?|outside|barred|prohibit(?:ed|s)?|disallow(?:ed|s)?|refus(?:e|es|ed|al)|uncovered|pre-?approv(?:ed|al)|waived\s+from)\b`,
+    String.raw`\bN\/A\b|(?<![\d.])0\s?%`,
   ].join("|"),
   "i",
 );
-const COST_SHARE = /\b(?:deductibles?|co-?pay(?:ment)?s?|coinsurance|out[\s-]of[\s-]pocket|premiums?)\b/i;
+/** A cost-sharing value's own label ("Deductible: $0", "Emergency Room Copay $0"). */
+const COST_SHARE = /^\W*(?:[\w-]+\s+){0,2}(?:deductibles?|co-?pay(?:ment)?s?|coinsurance|out[\s-]of[\s-]pocket|premiums?)\b/i;
 const statesLimit = (s: string) => LIMITS.test(s.replace(FAVOURABLE, " ")) || (/\$0(?![\d.,]*\d)/.test(s) && !COST_SHARE.test(s));
 
 const MARKER = /\bexcept(?:ed|ing|ions?)?\b|\bunless\b|\bother\s+than\b/i;
@@ -60,8 +67,8 @@ const marked = (s: string) => MARKER.test(s) || ACUTE.test(s);
 /** "unless otherwise noted [in the Schedule]" to the end of its clause points
  *  elsewhere and states no exception; anything after it keeps the marker. */
 const BOILERPLATE = new RegExp(
-  String.raw`\b(?:unless|except\s+as)\s+(?:(?:otherwise|specifically|expressly)\s+)+(?:stated|noted|indicated|specified|provided)(?:\s+otherwise)?` +
-    String.raw`(?:\s+(?:herein|below|above|in\s+(?:the|this)\s+(?:schedule|certificate|policy|plan|brochure|table)(?:\s+of\s+benefits)?))?(?=\s*(?:[.;,:)]|$))` +
+  String.raw`\b(?:unless|except\s+as)\s+(?:(?:otherwise|specifically|expressly)\s+)+(?:stated|noted|indicated|specified|provided)(?:\s+for)?(?:\s+otherwise)?` +
+    String.raw`(?:\s+(?:herein|below|above|in\s+(?:the|this)\s+(?:benefit\s+summary|schedule|certificate|policy|plan|brochure|table)(?:\s+of\s+benefits)?))?(?=\s*(?:[.;,:)]|$))` +
     String.raw`|\bunless\s+stated\s+as\s+(?:a\s+)?maximum\s+limit(?=\s*(?:[.;,:)]|$))`,
   "gi",
 );
@@ -71,10 +78,12 @@ const CONTENTS_LINE = /\.{4,}\s*\d{1,4}\s*$/;
 
 /** Back-reference to the rule being stated. */
 const THIS_RULE = /\b(?:this|such|these|the\s+(?:above|foregoing|following|preceding))\s*(?:exclusions?|limitations?|restrictions?|rules?|provisions?|applies|apply|charges?|items?|(?:is|are)\b)/i;
+/** Names the rule itself: counts at any distance inside the section. */
+const THIS_EXCLUSION = /\b(?:this|these|the\s+(?:above|foregoing|preceding))\s+(?:exclusions?|limitations?|restrictions?)\b/i;
 /** Back-reference to the whole list. */
 const THE_LIST = /\b(?:(?:the|all\s+of\s+the)\s+(?:above|foregoing|preceding|following)|(?:any|none|all|each)\s+of\s+these|these\s+(?:items|exclusions|limitations|charges|are)|items?\s+\(?\d)/i;
 const OPENS_WITH_MARKER = /^\s*(?:(?:please\s+)?note:?\s*|important(?:\s+note)?:?\s*)?(?:except(?:ed|ing|ions?)?|unless|other\s+than)\b/i;
-const NOTE_LABEL = /^\s*(?:please\s+note|note|notes|important(?:\s+note)?|exceptions?|notice|warning|reminder|however)\b/i;
+const NOTE_LABEL = /^\s*(?:please\s+note|note|notes|important(?:\s+note)?|exceptions?|however)\b|^\s*(?:notice|warning|reminder)\s*:/i;
 const refersBack = (s: string) => THIS_RULE.test(s) || THE_LIST.test(s) || OPENS_WITH_MARKER.test(s) || NOTE_LABEL.test(s);
 
 // ---------------------------------------------------------------- subjects
@@ -99,6 +108,7 @@ const GENERIC = new Set((
   "only subject per day year month visit general schedule provision definition term certificate up refer which such shall may must each apply applie applies full " +
   "amount stated noted indicated provided provide lifetime result resulting directly indirectly arising relating related incur incurred receive received available including " +
   "and but also so you your you're they them who whose whom when where while during until after before can could may might do does did because into out over more most " +
+  "united state states usa international worldwide network ppo dependent spouse child children student you " +
   "both either each every these those those some additional total current following above below see"
 ).split(/\s+/).map((w) => stem(w)));
 const subject = (s: string) => new Set(words(s).filter((w) => w.length > 2 && !/\d/.test(w)).map(stem).filter((w) => !GENERIC.has(w)));
@@ -109,16 +119,19 @@ const shares = (a: ReadonlySet<string>, b: ReadonlySet<string>) => [...a].some((
 const TOPIC = new Set((
   "maternity dental vision hearing mental nervous preventative preventive wellness prescription drug medication evacuation repatriation ambulance " +
   "sport war terrorism eligibility claim premium refund cancellation deductible coinsurance copayment preexisting physiotherapy chiropractic acupuncture " +
-  "transplant cosmetic surgery hospital emergency urgent baggage luggage accidental death dismemberment telehealth substance abuse"
+  "transplant cosmetic baggage luggage telehealth"
 ).split(" ").map(stem));
 const SMALL = new Set("a an and as at by for from in of on or the to with".split(" "));
 const NUMBERED = /^\(?(?:\d{1,3}|[a-z]|[ivx]{1,4})[).]\s+/i;
+
+/** "LABEL: …" in capitals. */
+const RUN_IN = /^([A-Z][A-Z0-9 \-–/&,'’()]{2,80}):(?:\s|$)/;
 
 /** The words of a heading-shaped line: "LABEL: …", an all-capitals line, or a
  *  title-case line between finished sentences. Shape only. */
 function headingShape(line: string, prev: string | undefined): string | undefined {
   const text = line.trim().replace(NUMBERED, "");
-  const runIn = /^([A-Z][A-Z0-9 \-–/&,'’()]{2,80}):(?:\s|$)/.exec(text);
+  const runIn = RUN_IN.exec(text);
   if (runIn) return runIn[1];
   if (/^[•·▪◦*–-]\s/.test(line.trim()) || /[\d$%]/.test(text) || /[.;!?,]\s*$/.test(text)) return undefined;
   const ws = text.replace(/:\s*$/, "").split(/\s+/).filter(Boolean);
@@ -134,11 +147,10 @@ function headingShape(line: string, prev: string | undefined): string | undefine
 function endsSection(lines: readonly Line[], i: number, about: ReadonlySet<string>): boolean {
   const h = lines[i].heading;
   if (!h || lines[i].row !== undefined || marked(h) || NOTE_LABEL.test(h)) return false;
+  if (lines[i].edge || RUN_IN.test(lines[i].text.trim().replace(NUMBERED, ""))) return false;
   const own = subject(h);
   if (![...own].some((w) => TOPIC.has(w)) || shares(own, about)) return false;
-  const next = lines[i + 1]?.text ?? "";
-  const rest = lines[i].text.slice(lines[i].text.indexOf(h) + h.length).replace(/^:\s*/, "");
-  return !refersBack(rest.trim() ? rest : next);
+  return !refersBack(lines[i + 1]?.text ?? "");
 }
 
 // ------------------------------------------------------------------- lines
@@ -149,6 +161,9 @@ interface Line {
   heading?: string;
   /** Table row the whole line belongs to. */
   row?: string;
+  /** Among the first three or last two lines of its page (where running
+   *  headers and footers stand): never a section end. */
+  edge?: boolean;
 }
 
 const edgeKey = (s: string) => run(s).replace(/\d+/g, "#");
@@ -176,7 +191,7 @@ function linesOf(doc: ExceptionDocument): Line[] {
     }
     return out;
   });
-  const EDGE = 2;
+  const EDGE = 5;
   const count = new Map<string, number>();
   for (const ls of pages) {
     const keys = new Set([...ls.slice(0, EDGE), ...ls.slice(-EDGE)].map((l) => edgeKey(l.text)));
@@ -186,6 +201,8 @@ function linesOf(doc: ExceptionDocument): Line[] {
   for (const ls of pages) {
     ls.forEach((l, i) => {
       const edge = i < EDGE || i >= ls.length - EDGE;
+      // Page 1 has no section before it to end; a one-line page has no edge.
+      if (l.page > 1 && (i < 3 || i >= ls.length - 2)) l.edge = true;
       const furniture = edge && !lineEndsSentence(l.text) && !marked(l.text) && ((count.get(edgeKey(l.text)) ?? 0) > 1 || /^\W*\d+\W*$/.test(l.text) || /\bpage\s+\d+/i.test(l.text));
       if (!furniture) out.push(l);
     });
@@ -229,33 +246,34 @@ function itemStyle(line: string): string | undefined {
   if (!n) return undefined;
   return `${n[1]}${/\d/.test(n[2]) ? "1" : /[A-Z]/.test(n[2]) ? "A" : "a"}${n[3]}`;
 }
-/** "Label: text" opens its own paragraph, unless the label is a note or an
- *  exception. */
-const labelled = (s: string) => /^[A-Z][^.:;]{2,80}:\s+\S/.test(s) && !marked(s.slice(0, s.indexOf(":"))) && !NOTE_LABEL.test(s);
+/** A benefit paragraph of a schedule ("Intensive care unit expenses: …"). */
+const BENEFIT_LABEL = /^[A-Z][^.:;]{2,80}\b(?:expenses?|charges)\s*:\s+\S/;
 
-/** Each line's item: its table row, its list item, its labelled paragraph, or
- *  "" (text outside any). A list item keeps its sub-items. */
+/** Each line's item: its table row, its list item (a list item keeps its
+ *  sub-items), or "" (text outside any). Capital run-in labels are the items
+ *  of a list, and so are benefit paragraphs when the page has at least three.
+ *  After an item's finished sentence, a line that opens a new sentence without
+ *  a marker is outside the list again. */
 function itemsOf(lines: readonly Line[], from: number, to: number): string[] {
+  const benefit = new Map<number, number>();
+  for (let i = from; i <= to; i++) if (BENEFIT_LABEL.test(lines[i].text.trim())) benefit.set(lines[i].page, (benefit.get(lines[i].page) ?? 0) + 1);
   const out: string[] = [];
   let open: { style: string; id: string }[] = [];
-  let para = "";
   for (let i = from; i <= to; i++) {
     const l = lines[i];
     const text = l.text.trim();
-    if (l.row !== undefined) { open = []; para = ""; out.push(`row ${l.page} ${l.row}`); continue; }
-    const style = itemStyle(text);
+    if (l.row !== undefined) { open = []; out.push(`row ${l.page} ${l.row}`); continue; }
+    const label = RUN_IN.exec(text)?.[1];
+    const style = itemStyle(text) ??
+      (label !== undefined && !marked(label) && !NOTE_LABEL.test(label) ? "LABEL" : undefined) ??
+      (BENEFIT_LABEL.test(text) && (benefit.get(l.page) ?? 0) >= 3 && !marked(text.slice(0, text.indexOf(":"))) ? "BENEFIT" : undefined);
     if (style) {
       const k = open.findIndex((o) => o.style === style);
-      open = [...(k >= 0 ? open.slice(0, k) : open), { style, id: `item ${i}` }];
-      para = "";
-    } else if (labelled(text)) {
+      open = [...(k >= 0 ? open.slice(0, k) : open), { style, id: `${style} ${i}` }];
+    } else if (i > from && (lineEndsSentence(lines[i - 1].text) || l.heading !== undefined || NOTE_LABEL.test(text)) && /^["“(]?[A-Z]/.test(text)) {
       open = [];
-      para = `para ${i}`;
-    } else if (refersBack(text) && (i === from || lineEndsSentence(lines[i - 1].text))) {
-      // "The above …", "Note …" after a list or paragraph belongs to all of it.
-      if (THE_LIST.test(text) || NOTE_LABEL.test(text) || OPENS_WITH_MARKER.test(text)) { open = []; para = ""; }
     }
-    out.push(open[0]?.id ?? para);
+    out.push(open[0]?.id ?? "");
   }
   return out;
 }
@@ -296,7 +314,7 @@ function needOf(sentence: string, isLast: boolean, k: number, statements: readon
   // A run-in topic heading is not part of the statement.
   const runIn = /^([A-Z][A-Z0-9 \-–/&,'’()]{2,80}):\s+(?=\S)/.exec(stripMarker(sentence));
   const own = runIn && !marked(runIn[1]) && !NOTE_LABEL.test(runIn[1]) ? stripMarker(sentence).slice(runIn[0].length) : stripMarker(sentence);
-  const introduces = isLast && (/:\s*$/.test(own) || /\bexceptions?\b[^.]{0,20}\bapply\b/i.test(own) || /\b(?:the\s+)?following\b[^.]{0,30}$/i.test(own) || (!lineEndsSentence(own) && own.split(/\s+/).length <= 9 && lines[statements[k].to].heading !== undefined));
+  const introduces = isLast && (/:\s*$/.test(own) || /\b(?:exceptions?|follows|following|below|listed)\b/i.test(own) || (!lineEndsSentence(own) && own.split(/\s+/).length <= 9 && lines[statements[k].to].heading !== undefined));
   if (!introduces) return run(own);
   const parts = [own];
   const first = statements[k + 1];
@@ -314,6 +332,19 @@ function needOf(sentence: string, isLast: boolean, k: number, statements: readon
 
 // -------------------------------------------------------------------- rule
 
+const PRE_EXISTING = /\bpre[\s-]*existing\b/i;
+
+/** True when text outside any list stands between two lines: the first
+ *  line's list ended before the second. */
+const lists = (items: readonly string[], i: number, j: number) => items.slice(i, j).some((x) => x === "");
+
+/** A table-of-contents line beside another one, or under "Contents". */
+function contentsLine(lines: readonly Line[], i: number): boolean {
+  if (!CONTENTS_LINE.test(lines[i].text)) return false;
+  for (let k = Math.max(0, i - 40); k < i; k++) if (lines[k].page === lines[i].page && /^\s*(?:table\s+of\s+)?contents\s*$/i.test(lines[k].text)) return true;
+  return [i - 1, i + 1].some((k) => lines[k]?.page === lines[i].page && CONTENTS_LINE.test(lines[k].text));
+}
+
 const HEADING_LIMITS = /\b(?:exclu(?:ded|sions?)|not\s+covered|limitations?)\b/i;
 
 /** True when the answer states an exclusion or limitation and leaves out an
@@ -328,6 +359,10 @@ export function omitsException(
   const limited = answerText.split(/\n+|(?<=[.!?])\s+(?=[A-Z"(])/).some(statesLimit) || statesLimit(answerText.replace(/\s+/g, " "));
   const about = subject(answerText);
   const cache = new Map<string, Line[]>();
+  const omitted = (...args: Parameters<typeof needOf>) => {
+    const need = needOf(...args);
+    return need !== "" && !said.includes(` ${need} `);
+  };
 
   for (const c of citations) {
     const doc = documents.find((d) => d.documentId === c.documentId);
@@ -355,31 +390,49 @@ export function omitsException(
         if (!lead.some((s) => HEADING_LIMITS.test(s.text)) || [...cited].every((i) => i.startsWith("row "))) continue;
       }
 
-      // The statements next to the citation are always read as about it.
-      const near = new Set([
-        statements.filter((s) => s.to < a).pop(),
-        statements.find((s) => s.from > b),
-      ]);
+      const preExisting = PRE_EXISTING.test(`${answerText} ${lines[h].heading ?? ""}`);
+      // The citation's own lists: a sibling is another item of one of them.
+      const style = (id: string) => id.slice(0, id.lastIndexOf(" "));
+      const citedStyles = new Set([...cited].filter((i) => i && !i.startsWith("row ")).map(style));
       for (const [k, s] of statements.entries()) {
         const item = at(s.from);
         const isRow = item.startsWith("row ");
         // The cited row's own cells are shown by the row itself.
         if (isRow && cited.has(item)) continue;
+        const far = Math.abs(lines[s.from].page - c.page) > 1;
         const sentences = sentencesOf(s.text);
         for (const [si, sentence] of sentences.entries()) {
-          if (CONTENTS_LINE.test(sentence) || !marked(sentence.replace(BOILERPLATE, " "))) continue;
+          if (!marked(sentence.replace(BOILERPLATE, " ")) || contentsLine(lines, s.from)) continue;
           const own = subject(sentence);
-          const otherSubject = own.size > 0 && named.size > 0 && about.size > 0 && !shares(own, named);
-          const sibling = item !== "" && !cited.has(item);
-          // "this exclusion" inside a sibling item is about that item.
-          const back = sibling ? THE_LIST.test(sentence) : refersBack(sentence);
-          const leadIn = s.to < a && /:\s*$/.test(s.text);
-          const listSibling = sibling && (item.startsWith("item ") || isRow);
-          const adjacent = near.has(s) && !listSibling;
-          const apart = sibling || lines[s.from].page !== c.page;
-          if (otherSubject && !back && !leadIn && !adjacent && apart) continue;
-          const need = needOf(sentence, si === sentences.length - 1, k, statements, lines, items, from);
-          if (need && !said.includes(` ${need} `)) return true;
+          const sharing = shares(own, named) || (preExisting && ACUTE.test(sentence) && !isRow);
+          const sibling = item !== "" && !cited.has(item) && (isRow || citedStyles.has(style(item)) || item.startsWith("BENEFIT "));
+          // An item of another list, standing before the citation's own.
+          const earlier = item !== "" && !cited.has(item) && s.to < a && lines[s.from].heading === undefined && lists(items, s.from - from, a - from);
+          const other = own.size > 0 && about.size > 0 && !sharing;
+          if ((sibling || earlier) && other && !THE_LIST.test(sentence)) continue;
+          if (far && !sharing && !THIS_EXCLUSION.test(sentence)) continue;
+          if (omitted(sentence, si === sentences.length - 1, k, statements, lines, items, from)) return true;
+        }
+      }
+
+      // The cited and adjacent pages outside the section: an exception that
+      // names the answer's own subject, or the exclusions of a whole list.
+      const lo = lines.findIndex((l) => l.page >= c.page - 1);
+      let hi = lines.length - 1;
+      while (hi > 0 && lines[hi].page > c.page + 1) hi--;
+      for (const [x, y] of [[lo, from - 1], [to + 1, hi]]) {
+        if (x < 0 || y < x) continue;
+        const its = itemsOf(lines, x, y);
+        const outside = statementsOf(lines, its, x, y).filter((s) => s.text.trim());
+        for (const [k, s] of outside.entries()) {
+          if (lines[s.from].row !== undefined || contentsLine(lines, s.from)) continue;
+          const sentences = sentencesOf(s.text);
+          for (const [si, sentence] of sentences.entries()) {
+            if (!marked(sentence.replace(BOILERPLATE, " "))) continue;
+            const list = THE_LIST.test(sentence) && statesLimit(sentence);
+            if (!shares(subject(sentence), about) && !list && !(preExisting && ACUTE.test(sentence))) continue;
+            if (omitted(sentence, si === sentences.length - 1, k, outside, lines, its, x)) return true;
+          }
         }
       }
     }

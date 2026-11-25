@@ -22,7 +22,7 @@ const PER = String.raw`per\s+(?:person|insured\s+person|(?:certificate\s+)?perio
 const INTRODUCTIONS = [
   String.raw`(?:all\s+)?(?:benefits|amounts)(?:\s+(?:shown|listed)\s+below)?\s+are\s+(?:shown\s+)?in\s+(?:united\s+states|u\.?s\.?)\s+dollars?(?:\s+amounts)?`,
   String.raw`(?:all\s+)?(?:(?:medical(?:\s+and\s+dental)?|eligible)\s+)?(?:benefits|expenses)\s+are\s+subject\s+to\s+${COSTS}(?:,?\s+and\s+are\s+${PER})?(?:\s+${UNLESS})?`,
-  String.raw`(?:${UNLESS},?\s+)?all\s+benefits\s+are\s+${PER}(?:,?\s+(?:and\s+)?${PER})*(?:,?\s+and\s+(?:they\s+are\s+)?provided\s+up\s+to\s+the\s+amount\s+shown)?`,
+  String.raw`(?:${UNLESS},?\s+)?all\s+benefits\s+are\s+${PER}(?:,?\s+(?:and\s+)?${PER})*(?:,?\s+and\s+(?:they\s+are\s+)?provided\s+up\s+to\s+the\s+amount\s+shown)`,
   String.raw`schedule\s+of\s+benefits`,
 ].map((x) => new RegExp(`^(?:schedule\\s+of\\s+benefits\\s+)?${x}\\s*[.:]?$`, "i"));
 
