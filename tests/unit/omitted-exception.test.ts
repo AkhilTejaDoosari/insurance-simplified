@@ -11,6 +11,7 @@ vi.mock("@/app/lib/rag/embeddings", async (importOriginal) => ({
   embedTexts: vi.fn(async (texts: string[]) => texts.map(() => [1, 0])),
 }));
 
+import { omitsException } from "@/app/lib/evidence/omitted-exception";
 import { verifyAnswerClaims } from "@/app/lib/evidence-verification";
 import { answerViaLlm } from "@/app/lib/rag/answer";
 import { gridFirstAnswer } from "@/app/lib/chat/grid-first";
@@ -122,7 +123,9 @@ describe("shapes seen on real pages (replay of earlier answers)", () => {
   });
   const HOME = "Benefits incurred in your home country are not covered under this plan.";
   it("a 'Label:' paragraph is its own item", () => {
-    expect(verify(HOME, `BENEFITS\n${HOME}\nIntensive care unit expenses: the daily room rate for nursing other than private duty nursing.`, HOME).ok).toBe(true);
+    expect(verify(HOME, `BENEFITS\n${HOME}\nSurgical expenses: fees of a surgeon.\nIntensive care unit expenses: the daily room rate for nursing other than private duty nursing.`, HOME).ok).toBe(true);
+    // Review of a63a772 (B3): directly after the exclusion it counts.
+    rejected(verify(HOME, `BENEFITS\n${HOME}\nIntensive care unit expenses: the daily room rate for nursing other than private duty nursing.`, HOME));
   });
   it.each(["Exception: emergency visits home of up to 14 days.", "Exceptions: emergency visits home of up to 14 days."])("'%s' is not such an item", (ex) => {
     rejected(verify(HOME, `BENEFITS\n${HOME}\nIntensive care unit expenses: the daily room rate.\n${ex}`, HOME));
@@ -131,10 +134,12 @@ describe("shapes seen on real pages (replay of earlier answers)", () => {
     rejected(verify(HOME, `BENEFITS\n${HOME}\nHome country visits: paid for emergencies unless longer than 14 days.`, HOME));
   });
   it("another row's 'acute onset' label is not an exception to maternity", () => {
-    const row = "Maternity Care No coverage";
-    expect(verify(row, `BENEFIT SMART\nMeningitis vaccine No coverage\nAcute Onset of Pre-existing\nCondition paid in full\n${row}`, row).ok).toBe(true);
-    // Read widely: directly under the header line it looks like a heading.
-    rejected(verify(row, `BENEFIT SMART\nAcute Onset of Pre-existing\nCondition paid in full\n${row}`, row));
+    const doc = tableDocument("d", [{ caption: "BENEFIT", headings: ["ELITE", "BASIC"], rows: [["Vaccines", "$10", "No coverage"], ["Acute Onset", "$25,000", "$10,000"], ["Maternity Care", "Up to $5,000", "No coverage"]] }]);
+    const line = doc.pages[0].split("\n").find((l) => l.startsWith("Maternity Care "))!.trim();
+    const cites = [{ documentId: "d", page: 1, quote: line }];
+    expect(omitsException("Maternity Care (BASIC): No coverage", cites, [doc])).toBe(false);
+    // Without the table layout the rows cannot be told apart: read widely.
+    expect(omitsException("Maternity Care (BASIC): No coverage", cites, [{ ...doc, tables: [] }])).toBe(true);
   });
   it("'acute onset' is an exception to a pre-existing exclusion named only by its heading", () => {
     const line = "Charges for such conditions are excluded from coverage.";
