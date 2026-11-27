@@ -58,6 +58,7 @@ from app.recovery.semantic import (
     judge_request,
     parse_judge,
 )
+from app.recovery.visual import ReviewItem, review_items
 from app.schemas.document import Document
 
 ROUTABLE = {GapKind.UNSETTLED_ROW, GapKind.CONFLICT, GapKind.TABLE_NOT_FOUND}
@@ -96,6 +97,7 @@ class RecoveryResult:
     coverage: CoverageReport | None = None  # P0-02: parser-independent completeness
     clauses: list[ClauseFact] = field(default_factory=list)  # P0-01: verified prose
     clause_verdicts: list[ClauseVerdict] = field(default_factory=list)
+    review: list[ReviewItem] = field(default_factory=list)  # P0-03: scanned pages
 
 
 class RecoveryPipeline:
@@ -549,7 +551,9 @@ class RecoveryPipeline:
         gaps: dict[int, PageGaps],
         targets: list[int],
         ledger: Ledger,
+        shown: dict[int, tuple[bytes, tuple[int, ...]]] | None = None,
     ) -> list[Candidate]:
+        """``shown`` (out): target page -> (page-subset bytes, its pages), for provenance."""
         model = self.engines.visual_model
         assert model is not None  # noqa: S101
         following = {p for p, g in gaps.items() if GapKind.CONTINUES_ON_NEXT_PAGE in g.kinds}
@@ -572,6 +576,8 @@ class RecoveryPipeline:
             batch = targets[i : i + size]
             page_map = with_context(batch, n_pages, True, following)
             subset = page_subset_pdf(pdf, page_map)
+            if shown is not None:
+                shown.update({p: (subset, tuple(page_map)) for p in batch})
             focus = {p: gaps[p].rows for p in batch if p in gaps}
             instruction = proposals.visual_request(page_map, batch, focus)
             digest = hashlib.sha256(subset + instruction.encode()).hexdigest()
@@ -677,6 +683,23 @@ class RecoveryPipeline:
                 )
                 rec, gaps = settle("visual")
 
+        review: list[ReviewItem] = []
+        scanned = [p for p, g in gaps.items() if GapKind.NO_TEXT_LAYER in g.kinds]
+        if self.engines.visual_model and scanned:
+            # P0-03: image-only pages are read by the visual model, but nothing on them
+            # can be checked against printed text - review-required, never verified.
+            if self._allowed("anthropic", "visual", sha, authorization, ledger):
+                shown: dict[int, tuple[bytes, tuple[int, ...]]] = {}
+                proposed = self._visual_stage(
+                    pdf, sha, len(layouts), gaps=gaps, targets=scanned, ledger=ledger, shown=shown
+                )
+                review = review_items(
+                    proposed,
+                    model=self.engines.visual_model.model,
+                    prompt_version=proposals.PROMPT_VERSION,
+                    shown=shown,
+                )
+
         clauses, clause_verdicts = self._clauses(docs, layouts, rec, extra_clauses)
         facts = link(rec.facts, layouts, rec.verdicts)
         self._semantic(sha, facts, clauses, authorization, ledger)
@@ -694,6 +717,7 @@ class RecoveryPipeline:
             ),
             clauses=clauses,
             clause_verdicts=clause_verdicts,
+            review=review,
             ledger=ledger,
             verified_by_stage=verified_by_stage,
             reconciled=rec,

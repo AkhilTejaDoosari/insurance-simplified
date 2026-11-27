@@ -203,6 +203,7 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
             ).most_common(12)
         ),
         "unresolved_items": sum(len(r.unresolved) for r in results.values()),
+        "review_required_items": sum(len(r.review) for r in results.values()),
         "unresolved_by_state": dict(
             Counter(str(u.state) for r in results.values() for u in r.unresolved)
         ),
