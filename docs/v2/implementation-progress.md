@@ -18,6 +18,53 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-27 (c) — remediation part 2: prose, key 2, visual, governing context
+
+Owner (2026-11-27): part 1 accepted subject to code review; R6 kept. Priorities: prose
+clauses, key 2, visual review states, targeted model recovery on existing artifacts,
+governing context via the existing RAG approach, incremental measurement.
+
+**Done** (all on `integration/recovery-r7`, local commits)
+- **P0-01 prose clauses** (`recovery/clauses.py`): own representation and verifier.
+  Failure-driven: 55 of 80 SBC "Important Questions" answers were missed because
+  "Answers" sits in a dark header band with no rule under it. Ruled Q&A: whole anchor
+  cell → whole adjacent cell, single value cell per row (benefit rows stay table facts),
+  column only when printed on the header row; unruled: heading line → whole block.
+  Reader table cells never verify as prose on unruled pages.
+- **Key 2** (`recovery/semantic.py`): code reading from printed words (kind, number,
+  basis, tier, level, negation, conditions; compound cells per qualifier) + a judge of
+  another family that can only confirm/reject fields; strict batch parsing; the judge
+  alone never confirms. `presentable_as_verified` = key 1 + key 2 + no open conditions.
+- **P0-03 scanned pages** (`recovery/visual.py`): visual proposals → `review_required`
+  items with page/model/prompt/image-hash provenance; never verified.
+- **Model recovery prep**: proposals v2 with prose clauses; opt-in routing of pages
+  with unproposed printed amounts; `evaluation/build_reader_cache.py` (existing
+  artifacts, byte-identical cache); run script replays `READERS_DIR`; `--judge`.
+- **P1-01 governing context** (`recovery/governing.py`): mirrors web RAG chunk/BM25/RRF
+  (k=60), structural second leg, no embeddings; in-document references located,
+  external ones labelled, exclusion matches go to the judge only (measured over-flagging).
+- **Contract output** (`recovery/present.py`): engine facts → `schemas.facts.Fact`;
+  the contract validators enforce both keys.
+
+**Measured** (17 validation SBCs, keys v1.1 DRAFT, local stages, no model calls):
+
+| Metric | Part 1 | Now |
+|---|---|---|
+| Correct keys (table + clause) / false verified | 348 / 0 | **395 / 0** |
+| Clause facts: correct / false / unkeyed | — | 47 / 0 / 22 |
+| Of the 30 previously unflagged missed keys | — | 12 recovered |
+| Verified facts passing the code reading (key 2, layer 1) | — | 1,041 / 1,153 |
+| Facts presentable / contract VERIFIED | 0 | 0 (judge not run) |
+| Open conditions: governing unverified / xref unresolved / external | 293 / 192 / — | 293 / 94 / 86 |
+
+**Checks:** ruff, format, mypy strict, pytest 168 passed / 1 skipped, licenses ok.
+`docker build engine` SKIPPED (no Docker in the build workspace).
+
+**Blocked on the owner:** model measurements (no provider keys here): run
+`run_recovery_eval.sh` with `READERS_DIR` (cache from `build_reader_cache`); judge
+runs show how many facts become presentable. Student/travel keys still missing (P1-02):
+the unruled prose path is tested only on synthetic pages.
+
 ## Session 2026-11-27 (b) — independent review remediation, part 1
 
 Review (2026-11-27): architecture approved, production integration not approved; P0-01…05,

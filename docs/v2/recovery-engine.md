@@ -117,12 +117,28 @@ workspace); OpenDataLoader also run live here (identical result).
   **Coverage gain and false-verified count on real pages: not measured yet.**
   Volume: 77 gap pages → ~41 Nemotron calls (~1 M characters in total) for the 17 SBCs.
 
+## 4b. After the 2026-11-27 review (part 2)
+
+| Module | Role | Gate |
+|---|---|---|
+| `recovery/clauses.py` | prose clauses (Q&A answers, headed paragraphs) | own verifier; never a way around table rules |
+| `recovery/semantic.py` | key 2: code reading + judge of another family | judge alone never confirms |
+| `recovery/governing.py` | context elsewhere in the document (web RAG mirror) | ranking is never evidence |
+| `recovery/visual.py` | scanned pages | `review_required`, never verified |
+| `recovery/coverage.py` | printed amounts by state | `not_stated` only on proven absence |
+| `recovery/present.py` | engine facts → contract `Fact` | contract validators (two keys) |
+
+Measured on the 17 SBCs: 395/454 correct keys, 0 false verified; 0 facts presentable
+until the judge runs. Progress record: `implementation-progress.md`.
+
 ## 5. Owner actions
 
 1. **Run the AI-assisted measurement** (public corpus only):
    `CORPUS_DIR=… OUT_DIR=… ENGINE_CLOUD_RETENTION_REVIEWED=… ENGINE_EVAL_GRANTED_BY=… ENGINE_PRICE_…=… bash engine/scripts/run_recovery_eval.sh`
-   — probe, then local / +Nemotron / +Claude / both / both uncapped. Acceptance: correct keys
-   up, **false verified stays 0**.
+   — probe, then local / +Nemotron / +Claude / both / judge runs, all under the spend
+   ledger (no uncapped run). Set `READERS_DIR` to a cache from
+   `python -m evaluation.build_reader_cache` to reuse existing artifacts. Acceptance:
+   correct keys up, **false verified stays 0**.
 2. **Approvals needed before any real customer document is sent to a cloud model**
    (`ENGINE_CLOUD_CUSTOMER_DOCUMENTS=approved` is the switch; the policy refuses until then):
    * provider retention/training terms reviewed and recorded per provider (Anthropic API
