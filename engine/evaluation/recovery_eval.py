@@ -92,6 +92,27 @@ def _completeness(key: Key, vf: VerifiedFact) -> str:
     return "attached_unmatched_text" if attached else "silent"
 
 
+def _presentable_keys(results: dict[str, RecoveryResult], by_doc: dict[str, list[Key]]) -> set[Key]:
+    keys: set[Key] = set()
+    for doc, doc_keys in by_doc.items():
+        res = next(r for sha, r in results.items() if sha.startswith(doc))
+        for vf in res.facts:
+            if vf.presentable_as_verified:
+                f = vf.fact
+                pk = [k for k in doc_keys if k.page == f.page]
+                v, k = judge(pk, f.label, f.group_labels, (f.header,), f.value)
+                if v == "correct" and k is not None:
+                    keys.add(k)
+        for c in res.clauses:
+            if c.presentable_as_verified:
+                e = c.evidence
+                pk = [k for k in doc_keys if k.page == e.pages[0]]
+                v, k = judge(pk, e.anchor, (), (e.column,), e.text)
+                if v == "correct" and k is not None:
+                    keys.add(k)
+    return keys
+
+
 def _score_clauses(
     results: dict[str, RecoveryResult], by_doc: dict[str, list[Key]]
 ) -> tuple[Counter[str], set[Key]]:
@@ -106,6 +127,8 @@ def _score_clauses(
             if verdict == "wrong_column" and not e.column:
                 verdict = "column_unproven"  # claims no column: not a wrong claim
             outcome[verdict] += 1
+            if c.presentable_as_verified:
+                outcome[f"presentable:{verdict}"] += 1
             if verdict == "correct" and key is not None:
                 hit.add(key)
     return outcome, hit
@@ -127,6 +150,9 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
     completeness: Counter[str] = Counter()
     open_conditions: Counter[str] = Counter()
     presentable = 0
+    # what a user would see as verified (key 1 + key 2 + nothing open), judged by the
+    # frozen matcher: the false-verified count that matters for the product
+    shown: Counter[str] = Counter()
     for doc, doc_keys in by_doc.items():
         res = next(r for sha, r in results.items() if sha.startswith(doc))
         for vf in res.facts:
@@ -136,6 +162,8 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
             pk = [k for k in doc_keys if k.page == f.page]
             verdict, key = judge(pk, f.label, f.group_labels, (f.header,), f.value)
             outcome[verdict] += 1
+            if vf.presentable_as_verified and not vf.is_governing_text:
+                shown[verdict] += 1
             if verdict == "correct" and key is not None and key not in hit:
                 hit.add(key)
                 has = key.restrictions.strip() != ""
@@ -192,6 +220,15 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
         "correct_keys_by_proposer": dict(by_source),
         "restriction_completeness": dict(completeness),
         "facts_with_open_conditions": dict(open_conditions),
+        "presentable_correct": shown["correct"] + clause_outcome["presentable:correct"],
+        "presentable_false_verified": shown["wrong_value"]
+        + shown["wrong_column"]
+        + clause_outcome["presentable:wrong_value"]
+        + clause_outcome["presentable:wrong_column"],
+        "presentable_unkeyed": shown["unkeyed"] + clause_outcome["presentable:unkeyed"],
+        "presentable_correct_keys": len(
+            {k for k in hit | clause_hit if k in _presentable_keys(results, by_doc)}
+        ),
         "facts_presentable_as_fully_verified": presentable
         + sum(c.presentable_as_verified for r in results.values() for c in r.clauses),
         "semantic_reasons": dict(
@@ -248,6 +285,12 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--stages", default="primary,docling")
     ap.add_argument("--text", action="store_true", help="Nemotron stage")
     ap.add_argument("--visual", action="store_true", help="Claude stage")
+    ap.add_argument(
+        "--alt-judge",
+        choices=("none", "anthropic", "nvidia"),
+        default="none",
+        help="judge for facts the main judge's own family proposed (other family required)",
+    )
     ap.add_argument(
         "--route-missed",
         action="store_true",
@@ -315,19 +358,32 @@ def _cost_cap(value: str) -> float | None:
     return cap
 
 
-def _set_judge(ap: argparse.ArgumentParser, which: str, engines: Engines) -> None:
+def _set_judge(
+    ap: argparse.ArgumentParser, which: str, engines: Engines, *, alt: bool = False
+) -> None:
+    model: AnthropicClient | NvidiaClient
+    if which == "none":
+        return
     if which == "anthropic":
         an = AnthropicConfig.from_env()
         if an is None:
-            ap.error("--judge anthropic needs ENGINE_ANTHROPIC_API_KEY")
-        engines.judge = AnthropicClient(an)
-        engines.judge_provider, engines.judge_family = "anthropic", "anthropic-claude"
-    elif which == "nvidia":
+            ap.error("a Claude judge needs ENGINE_ANTHROPIC_API_KEY")
+        model, provider, family = AnthropicClient(an), "anthropic", "anthropic-claude"
+    else:
         nv = NvidiaConfig.from_env()
         if nv is None:
-            ap.error("--judge nvidia needs LLM_BASE_URL and LLM_API_KEY")
-        engines.judge = NvidiaClient(nv)
-        engines.judge_provider, engines.judge_family = "nvidia", "nvidia-nemotron"
+            ap.error("a Nemotron judge needs LLM_BASE_URL and LLM_API_KEY")
+        model, provider, family = NvidiaClient(nv), "nvidia", "nvidia-nemotron"
+    if alt:
+        if family == engines.judge_family and engines.judge is not None:
+            ap.error("--alt-judge must be another model family than --judge")
+        engines.alt_judge, engines.alt_judge_provider, engines.alt_judge_family = (
+            model,
+            provider,
+            family,
+        )
+    else:
+        engines.judge, engines.judge_provider, engines.judge_family = model, provider, family
 
 
 def _spend_ledger(
@@ -335,7 +391,7 @@ def _spend_ledger(
 ) -> SpendLedger | None:
     """P0-05: model stages run only under both a per-document cap and the cumulative
     evaluation budget. No uncapped paid experiments."""
-    if not (args.text or args.visual or args.judge != "none"):
+    if not (args.text or args.visual or args.judge != "none" or args.alt_judge != "none"):
         return None
     if max_cost is None:
         ap.error("--max-cost-usd none is refused when a model stage is on")
@@ -379,6 +435,7 @@ def _main(argv: list[str]) -> int:
             ap.error("--visual needs ENGINE_ANTHROPIC_API_KEY")
         engines.visual_model = AnthropicClient(an)
     _set_judge(ap, args.judge, engines)
+    _set_judge(ap, args.alt_judge, engines, alt=True)
     max_cost = _cost_cap(args.max_cost_usd)
     spend = _spend_ledger(ap, args, max_cost)
     pipeline = RecoveryPipeline(
@@ -411,6 +468,7 @@ def _main(argv: list[str]) -> int:
         | ({"text"} if args.text else set())
         | ({"visual"} if args.visual else set())
         | ({f"judge:{args.judge}"} if args.judge != "none" else set())
+        | ({f"alt_judge:{args.alt_judge}"} if args.alt_judge != "none" else set())
     )
     report["max_cost_usd_per_document"] = max_cost
     if spend is not None:

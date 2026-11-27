@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.providers.base import ModelReply, Usage, json_text
-from app.providers.http import ProviderError, RateLimiter, post_json
+from app.providers.http import ProviderError, RateLimiter, get_json, post_json
 
 PROVIDER = "anthropic"
 DEFAULT_MODEL = "claude-opus-5-5"
@@ -54,6 +54,21 @@ class AnthropicClient:
     @property
     def model(self) -> str:
         return self.config.model
+
+    def probe(self) -> dict[str, Any]:
+        """Key and model check through the Models API: no tokens, no document content.
+        Reports the host and status only - never the key."""
+        host = self.config.base_url.split("//", 1)[-1].split("/", 1)[0]
+        out: dict[str, Any] = {"model": self.config.model, "base_url_host": host}
+        headers = {"x-api-key": self.config.api_key, "anthropic-version": API_VERSION}
+        try:
+            data = get_json(
+                PROVIDER, f"{self.config.base_url}/v1/models/{self.config.model}", headers, 30
+            )
+            out["model_available"] = isinstance(data, dict) and data.get("id") == self.config.model
+        except ProviderError as exc:
+            out["model_available"] = f"error:{exc.status}"  # 401 key, 404 model
+        return out
 
     def complete_json(
         self, system: str, user: str, schema_name: str, schema: dict[str, Any], max_tokens: int

@@ -182,3 +182,76 @@ def test_judge_calls_are_limited_and_reserved(monkeypatch: pytest.MonkeyPatch) -
     judge2 = FakeJudge()
     _run(judge2, RunLimits(max_judge_calls=0))
     assert judge2.requests == []
+
+
+class FakeNemotronJudge(FakeJudge):
+    model = "fake-nemotron"
+
+
+def test_facts_claude_proposed_go_to_the_other_family_judge_only() -> None:
+    from tests.test_recovery import FakeVisual, _gappy_primary  # noqa: PLC0415
+
+    pdf = _pdf()
+    visual = FakeVisual(
+        {
+            "facts": [
+                {
+                    "page": 1,
+                    "group_label": "",
+                    "row_label": "Specialist visit",
+                    "column_header": NET,
+                    "value": "$45 copay/visit",
+                }
+            ]
+        }
+    )
+    claude, nemotron = FakeJudge(), FakeNemotronJudge()
+    result = RecoveryPipeline(
+        Engines(_gappy_primary(), visual_model=visual, judge=claude, alt_judge=nemotron),
+        policy=OPEN,
+    ).run(pdf, _auth(pdf))
+    fact = next(f for f in result.facts if f.fact.label == "Specialist visit")
+    assert any(p.startswith("visual:") for p in fact.fact.proposed_by)
+    assert fact.semantic_confirmed and fact.judge.family == "nvidia-nemotron"
+    assert all("$45 copay/visit" not in r for r in claude.requests)  # never self-judged
+    assert any("$45 copay/visit" in r for r in nemotron.requests)
+
+
+def test_without_an_other_family_judge_claude_facts_stay_unconfirmed() -> None:
+    from tests.test_recovery import FakeVisual, _gappy_primary  # noqa: PLC0415
+
+    pdf = _pdf()
+    visual = FakeVisual(
+        {
+            "facts": [
+                {
+                    "page": 1,
+                    "group_label": "",
+                    "row_label": "Specialist visit",
+                    "column_header": NET,
+                    "value": "$45 copay/visit",
+                }
+            ]
+        }
+    )
+    result = RecoveryPipeline(
+        Engines(_gappy_primary(), visual_model=visual, judge=FakeJudge()), policy=OPEN
+    ).run(pdf, _auth(pdf))
+    fact = next(f for f in result.facts if f.fact.label == "Specialist visit")
+    assert not fact.semantic_confirmed and fact.semantic_reasons == ["judge_not_run"]
+
+
+def test_claude_probe_spends_no_tokens_and_reveals_no_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.providers import anthropic  # noqa: PLC0415
+
+    seen: dict[str, Any] = {}
+
+    def fake_get(provider: str, url: str, headers: dict[str, str], timeout: float) -> Any:
+        seen["url"] = url
+        return {"id": "claude-opus-5-5", "type": "model"}
+
+    monkeypatch.setattr(anthropic, "get_json", fake_get)
+    client = anthropic.AnthropicClient(anthropic.AnthropicConfig(api_key="sk-secret"))
+    out = client.probe()
+    assert out["model_available"] is True and seen["url"].endswith("/v1/models/claude-opus-5-5")
+    assert "sk-secret" not in repr(out)

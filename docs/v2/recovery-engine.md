@@ -133,12 +133,14 @@ until the judge runs. Progress record: `implementation-progress.md`.
 
 ## 5. Owner actions
 
-1. **Run the AI-assisted measurement** (public corpus only):
-   `CORPUS_DIR=… OUT_DIR=… ENGINE_CLOUD_RETENTION_REVIEWED=… ENGINE_EVAL_GRANTED_BY=… ENGINE_PRICE_…=… bash engine/scripts/run_recovery_eval.sh`
-   — probe, then local / +Nemotron / +Claude / both / judge runs, all under the spend
-   ledger (no uncapped run). Set `READERS_DIR` to a cache from
-   `python -m evaluation.build_reader_cache` to reuse existing artifacts. Acceptance:
-   correct keys up, **false verified stays 0**.
+1. **Run the AI-assisted measurement** (17 pinned public validation SBCs only):
+   `bash engine/scripts/run_model_eval_mac.sh ~/Repositories/insurance-corpus-private`
+   (`--local-only` first for a free setup check). It finds the configuration in the
+   existing env files (`evaluation/eval_env.py`, names only, agreed endpoints only),
+   reuses the reader artifacts (fingerprint-checked), probes both providers without
+   tokens or secrets, then scores `local → +Nemotron → +Claude visual → +judge` with the
+   $25 cumulative ledger, stopping on any false verified fact. Acceptance: correct keys
+   up, **false verified stays 0**, including among facts presentable to users.
 2. **Approvals needed before any real customer document is sent to a cloud model**
    (`ENGINE_CLOUD_CUSTOMER_DOCUMENTS=approved` is the switch; the policy refuses until then):
    * provider retention/training terms reviewed and recorded per provider (Anthropic API

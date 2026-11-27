@@ -58,6 +58,7 @@ from app.recovery.semantic import (
     interpret,
     judge_request,
     parse_judge,
+    proposer_families,
 )
 from app.recovery.visual import ReviewItem, review_items
 from app.schemas.document import Document
@@ -76,6 +77,11 @@ class Engines:
     judge: TextModel | None = None
     judge_provider: str = "anthropic"  # cloud-policy and price name
     judge_family: str = "anthropic-claude"
+    # judges the facts the main judge's own family proposed (e.g. Nemotron for facts
+    # Claude read on a page); never used for any other fact
+    alt_judge: TextModel | None = None
+    alt_judge_provider: str = "nvidia"
+    alt_judge_family: str = "nvidia-nemotron"
 
 
 @dataclass(frozen=True)
@@ -264,14 +270,25 @@ class RecoveryPipeline:
             pending.append((cf, code, item))
         verdicts: dict[int, JudgeVerdict] = {}
         judgeable = [i for i, (_f, code, _it) in enumerate(pending) if code.passed]
-        judge = self.engines.judge
-        if (
-            judge is not None
-            and judgeable
-            and self._allowed(self.engines.judge_provider, "judge", sha, authorization, ledger)
+        eng = self.engines
+        main = [
+            i
+            for i in judgeable
+            if eng.judge_family not in proposer_families(pending[i][0].proposed_by_all)
+        ]
+        alt = [i for i in judgeable if i not in set(main)]
+        for idx, model, provider, family in (
+            (main, eng.judge, eng.judge_provider, eng.judge_family),
+            (alt, eng.alt_judge, eng.alt_judge_provider, eng.alt_judge_family),
         ):
-            verdicts = self._judge(sha, judge, [pending[i][2] for i in judgeable], ledger)
-            verdicts = {judgeable[k]: v for k, v in verdicts.items()}
+            if model is None or not idx:
+                continue
+            if not self._allowed(provider, "judge", sha, authorization, ledger):
+                continue
+            got = self._judge(
+                sha, model, [pending[i][2] for i in idx], ledger, provider=provider, family=family
+            )
+            verdicts.update({idx[k]: v for k, v in got.items()})
         for i, (fact, code, _item) in enumerate(pending):
             ok, why = confirmed(code, verdicts.get(i), fact.proposed_by_all)
             fact.semantic_confirmed = ok
@@ -280,11 +297,17 @@ class RecoveryPipeline:
             fact.judge = verdicts.get(i)
 
     def _judge(
-        self, sha: str, judge: TextModel, items: list[JudgeItem], ledger: Ledger
+        self,
+        sha: str,
+        judge: TextModel,
+        items: list[JudgeItem],
+        ledger: Ledger,
+        *,
+        provider: str,
+        family: str,
     ) -> dict[int, JudgeVerdict]:
         out: dict[int, JudgeVerdict] = {}
         size = max(1, self.limits.judge_facts_per_call)
-        provider, family = self.engines.judge_provider, self.engines.judge_family
         for start in range(0, len(items), size):
             batch = items[start : start + size]
             if ledger.calls("judge") >= self.limits.max_judge_calls or self._exhausted(ledger):

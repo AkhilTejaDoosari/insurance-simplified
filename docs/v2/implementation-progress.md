@@ -18,6 +18,25 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-27 (d) — model and judge measurement, prepared
+
+Owner approved the push (branch only) and real model + judge measurements on the
+existing artifacts, $25 cumulative cap. This workspace has no provider keys and no
+route to build.nvidia.com, so the run is the owner's: `engine/scripts/run_model_eval_mac.sh`.
+
+**Added:** `evaluation/eval_env.py` (finds the configuration in existing env files;
+refuses non-NVIDIA gateways for Nemotron and other models; never prints a value; the
+privacy declarations must be given); Claude probe through the Models API (no tokens);
+a Nemotron judge for facts Claude proposed (the same-family rule otherwise blocks them);
+presentable-fact correctness metrics; `evaluation/compare_runs.py` (before/after table,
+exit 1 on any false verified fact). The script pins the 17 public validation SHA-256s,
+checks the reader cache fingerprint, requires the baseline (395/0) before any paid call,
+and checks the remaining ledger before every stage.
+
+**Verified here:** `--local-only` end to end (baseline 395/454, 0 false verified, 1,144
+couldn't confirm, cache byte-identical after a rebuild from the corpus's Docling output);
+missing configuration and a failing probe both stop before any stage. pytest 175 passed.
+
 ## Session 2026-11-27 (c) — remediation part 2: prose, key 2, visual, governing context
 
 Owner (2026-11-27): part 1 accepted subject to code review; R6 kept. Priorities: prose
