@@ -71,11 +71,16 @@ class VerifiedFact:
     restrictions: list[str] = field(default_factory=list)
     footnotes: list[str] = field(default_factory=list)
     open_conditions: list[str] = field(default_factory=list)
-    semantic_confirmed: bool = False  # D-034 key 2 (WP8); no stage sets it yet
+    semantic_confirmed: bool = False  # D-034 key 2: code reading + judge (semantic.py)
+    semantic_reasons: list[str] = field(default_factory=list)
 
     @property
     def is_governing_text(self) -> bool:
         return bool(GOVERNING_COLUMN.search(self.fact.header))
+
+    @property
+    def proposed_by_all(self) -> set[str]:
+        return set(self.fact.proposed_by)
 
     @property
     def structurally_verified(self) -> bool:

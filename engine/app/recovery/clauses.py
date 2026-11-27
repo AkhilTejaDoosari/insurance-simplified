@@ -126,10 +126,15 @@ class ClauseFact:
     footnotes: list[str] = field(default_factory=list)
     open_conditions: list[str] = field(default_factory=list)
     semantic_confirmed: bool = False  # key 2; see app.recovery.semantic
+    semantic_reasons: list[str] = field(default_factory=list)
 
     @property
     def page(self) -> int:
         return self.evidence.pages[0]
+
+    @property
+    def proposed_by_all(self) -> set[str]:
+        return set(self.proposed_by)
 
     @property
     def presentable_as_verified(self) -> bool:

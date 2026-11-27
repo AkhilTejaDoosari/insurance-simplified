@@ -17,6 +17,9 @@ class RunLimits:
     max_page_chars: int = 12_000  # independent page text sent per page
     text_max_tokens: int = 16_000
     visual_max_tokens: int = 16_000
+    max_judge_calls: int = 12  # semantic judge (key 2), facts batched per call
+    judge_facts_per_call: int = 10
+    judge_max_tokens: int = 4_000
     # D-036 per-document cost gate. Model calls stop once the document's recorded cost
     # reaches it; with a cap set, a provider without a configured price is not called
     # (an unknown cost cannot be held to a cap). None = no cap (evaluation runs only).

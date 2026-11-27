@@ -189,7 +189,19 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
         "correct_keys_by_proposer": dict(by_source),
         "restriction_completeness": dict(completeness),
         "facts_with_open_conditions": dict(open_conditions),
-        "facts_presentable_as_fully_verified": presentable,
+        "facts_presentable_as_fully_verified": presentable
+        + sum(c.presentable_as_verified for r in results.values() for c in r.clauses),
+        "semantic_reasons": dict(
+            Counter(
+                reason
+                for r in results.values()
+                for reasons in [
+                    *(f.semantic_reasons for f in r.facts),
+                    *(c.semantic_reasons for c in r.clauses),
+                ]
+                for reason in reasons
+            ).most_common(12)
+        ),
         "unresolved_items": sum(len(r.unresolved) for r in results.values()),
         "unresolved_by_state": dict(
             Counter(str(u.state) for r in results.values() for u in r.unresolved)
@@ -232,6 +244,12 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--stages", default="primary,docling")
     ap.add_argument("--text", action="store_true", help="Nemotron stage")
     ap.add_argument("--visual", action="store_true", help="Claude stage")
+    ap.add_argument(
+        "--judge",
+        choices=("none", "anthropic", "nvidia"),
+        default="none",
+        help="semantic judge for key 2 (must differ from the proposing model families)",
+    )
     ap.add_argument("--granted-by", default=os.environ.get("ENGINE_EVAL_GRANTED_BY", ""))
     ap.add_argument(
         "--max-cost-usd",
@@ -263,12 +281,27 @@ def _cost_cap(value: str) -> float | None:
     return cap
 
 
+def _set_judge(ap: argparse.ArgumentParser, which: str, engines: Engines) -> None:
+    if which == "anthropic":
+        an = AnthropicConfig.from_env()
+        if an is None:
+            ap.error("--judge anthropic needs ENGINE_ANTHROPIC_API_KEY")
+        engines.judge = AnthropicClient(an)
+        engines.judge_provider, engines.judge_family = "anthropic", "anthropic-claude"
+    elif which == "nvidia":
+        nv = NvidiaConfig.from_env()
+        if nv is None:
+            ap.error("--judge nvidia needs LLM_BASE_URL and LLM_API_KEY")
+        engines.judge = NvidiaClient(nv)
+        engines.judge_provider, engines.judge_family = "nvidia", "nvidia-nemotron"
+
+
 def _spend_ledger(
     ap: argparse.ArgumentParser, args: argparse.Namespace, max_cost: float | None
 ) -> SpendLedger | None:
     """P0-05: model stages run only under both a per-document cap and the cumulative
     evaluation budget. No uncapped paid experiments."""
-    if not (args.text or args.visual):
+    if not (args.text or args.visual or args.judge != "none"):
         return None
     if max_cost is None:
         ap.error("--max-cost-usd none is refused when a model stage is on")
@@ -311,6 +344,7 @@ def _main(argv: list[str]) -> int:
         if an is None:
             ap.error("--visual needs ENGINE_ANTHROPIC_API_KEY")
         engines.visual_model = AnthropicClient(an)
+    _set_judge(ap, args.judge, engines)
     max_cost = _cost_cap(args.max_cost_usd)
     spend = _spend_ledger(ap, args, max_cost)
     pipeline = RecoveryPipeline(
@@ -338,7 +372,10 @@ def _main(argv: list[str]) -> int:
         print(f"  {doc}: {len(results[pdf.stem].facts)} verified", file=sys.stderr)
     report = score(results, keys)
     report["stages"] = sorted(
-        stages | ({"text"} if args.text else set()) | ({"visual"} if args.visual else set())
+        stages
+        | ({"text"} if args.text else set())
+        | ({"visual"} if args.visual else set())
+        | ({f"judge:{args.judge}"} if args.judge != "none" else set())
     )
     report["max_cost_usd_per_document"] = max_cost
     if spend is not None:

@@ -46,6 +46,18 @@ from app.recovery.engines import DocumentReader, PageReader, TextModel, VisualMo
 from app.recovery.gaps import GapKind, PageGaps, find_gaps
 from app.recovery.policy import CloudAuthorization, CloudPolicy
 from app.recovery.restrictions import VerifiedFact, link
+from app.recovery.semantic import (
+    JUDGE_PROMPT_VERSION,
+    JUDGE_SCHEMA,
+    JUDGE_SYSTEM,
+    CodeCheck,
+    JudgeItem,
+    JudgeVerdict,
+    confirmed,
+    interpret,
+    judge_request,
+    parse_judge,
+)
 from app.schemas.document import Document
 
 ROUTABLE = {GapKind.UNSETTLED_ROW, GapKind.CONFLICT, GapKind.TABLE_NOT_FOUND}
@@ -58,6 +70,10 @@ class Engines:
     pdfplumber: PageReader | None = None
     text_model: TextModel | None = None
     visual_model: VisualModel | None = None
+    # semantic judge (key 2): a text model of a family other than any proposer's
+    judge: TextModel | None = None
+    judge_provider: str = "anthropic"  # cloud-policy and price name
+    judge_family: str = "anthropic-claude"
 
 
 @dataclass(frozen=True)
@@ -190,6 +206,149 @@ class RecoveryPipeline:
             if (c.page, norm(c.evidence.anchor), norm(c.evidence.text)) not in table
         ]
         return facts, verdicts
+
+    # ---------------------------------------------------------------- key 2
+
+    def _semantic(
+        self,
+        sha: str,
+        facts: list[VerifiedFact],
+        clauses: list[ClauseFact],
+        authorization: CloudAuthorization | None,
+        ledger: Ledger,
+    ) -> None:
+        """Code reading for every verified fact; the judge only for those that pass it.
+        semantic_confirmed needs both (semantic.confirmed); the judge alone never does."""
+        pending: list[tuple[VerifiedFact | ClauseFact, CodeCheck, JudgeItem]] = []
+        for vf in facts:
+            if vf.is_governing_text:
+                continue
+            f = vf.fact
+            label = " ".join((*f.group_labels, f.label))
+            governing = [*vf.restrictions, *vf.footnotes]
+            code = interpret(f.value, label=label, header=f.header, governing=governing)
+            item = JudgeItem(
+                label, f.header, f.value, tuple(governing), tuple(code.interpretations)
+            )
+            pending.append((vf, code, item))
+        for cf in clauses:
+            e = cf.evidence
+            governing = [*cf.restrictions, *cf.footnotes]
+            code = interpret(
+                e.text, label=e.anchor, header=e.column, governing=governing, prose=True
+            )
+            item = JudgeItem(
+                e.anchor, e.column, e.text, tuple(governing), tuple(code.interpretations)
+            )
+            pending.append((cf, code, item))
+        verdicts: dict[int, JudgeVerdict] = {}
+        judgeable = [i for i, (_f, code, _it) in enumerate(pending) if code.passed]
+        judge = self.engines.judge
+        if (
+            judge is not None
+            and judgeable
+            and self._allowed(self.engines.judge_provider, "judge", sha, authorization, ledger)
+        ):
+            verdicts = self._judge(sha, judge, [pending[i][2] for i in judgeable], ledger)
+            verdicts = {judgeable[k]: v for k, v in verdicts.items()}
+        for i, (fact, code, _item) in enumerate(pending):
+            ok, why = confirmed(code, verdicts.get(i), fact.proposed_by_all)
+            fact.semantic_confirmed = ok
+            fact.semantic_reasons = list(why)
+
+    def _judge(
+        self, sha: str, judge: TextModel, items: list[JudgeItem], ledger: Ledger
+    ) -> dict[int, JudgeVerdict]:
+        out: dict[int, JudgeVerdict] = {}
+        size = max(1, self.limits.judge_facts_per_call)
+        provider, family = self.engines.judge_provider, self.engines.judge_family
+        for start in range(0, len(items), size):
+            batch = items[start : start + size]
+            if ledger.calls("judge") >= self.limits.max_judge_calls or self._exhausted(ledger):
+                ledger.add(LedgerEntry("judge", provider, judge.model, (), 0.0, "skipped", "limit"))
+                break
+            request = judge_request(batch)
+            key = Cache.key(
+                sha,
+                "judge",
+                provider,
+                judge.model,
+                prompt=JUDGE_PROMPT_VERSION,
+                pages=[],
+                request=hashlib.sha256(request.encode()).hexdigest(),
+            )
+            data = self.cache.get(key)
+            if data is not None:
+                ledger.add(LedgerEntry("judge", provider, judge.model, (), 0.0, "cached"))
+            else:
+                data = self._judge_call(judge, provider, request, ledger, sha)
+                if data is not None:
+                    self.cache.put(key, data)
+            for k, v in enumerate(parse_judge(data, len(batch), family, judge.model)):
+                out[start + k] = v
+        return out
+
+    def _judge_call(
+        self, judge: TextModel, provider: str, request: str, ledger: Ledger, sha: str
+    ) -> Any:
+        price = price_from_env(provider)
+        est = estimate_text_tokens(JUDGE_SYSTEM, request, json.dumps(JUDGE_SCHEMA))
+        worst = worst_case_usd(price, est, self.limits.judge_max_tokens) if price else None
+        reserved = None if worst is None else worst * _attempts(judge)
+        refusal, rid = self._reserve(reserved, ledger, f"{sha[:12]}:judge")
+        if refusal:
+            ledger.add(LedgerEntry("judge", provider, judge.model, (), 0.0, "skipped", refusal))
+            return None
+        t = ledger.elapsed()
+        try:
+            reply = judge.complete_json(
+                JUDGE_SYSTEM, request, "judge", JUDGE_SCHEMA, self.limits.judge_max_tokens
+            )
+        except Exception as exc:
+            charged = None
+            if worst is not None and isinstance(exc, ProviderError):
+                charged = (token_cost(price, exc.input_tokens, exc.output_tokens) or 0.0) + (
+                    retry_charge_usd(exc.failed_attempts, worst)
+                )
+            elif worst is not None:
+                charged = worst
+            if rid is not None and self.spend is not None and charged is not None:
+                self.spend.settle(rid, charged)
+            ledger.add(
+                LedgerEntry(
+                    "judge",
+                    provider,
+                    judge.model,
+                    (),
+                    ledger.elapsed() - t,
+                    "failed",
+                    getattr(exc, "reason", type(exc).__name__),
+                    cost_usd=charged,
+                    bytes_disclosed=len(request.encode()),
+                )
+            )
+            return None
+        cost = token_cost(price, reply.usage.input_tokens, reply.usage.output_tokens)
+        if cost is not None and worst is not None:
+            cost += retry_charge_usd(reply.failed_attempts, worst)
+        if rid is not None and self.spend is not None and cost is not None:
+            self.spend.settle(rid, cost)
+        ledger.add(
+            LedgerEntry(
+                "judge",
+                provider,
+                reply.model,
+                (),
+                reply.seconds,
+                "ok",
+                "",
+                reply.usage.input_tokens,
+                reply.usage.output_tokens,
+                cost,
+                len(request.encode()),
+            )
+        )
+        return reply.data
 
     # ---------------------------------------------------------------- models
 
@@ -519,9 +678,11 @@ class RecoveryPipeline:
                 rec, gaps = settle("visual")
 
         clauses, clause_verdicts = self._clauses(docs, layouts, rec, extra_clauses)
+        facts = link(rec.facts, layouts, rec.verdicts)
+        self._semantic(sha, facts, clauses, authorization, ledger)
         return RecoveryResult(
             document_sha256=sha,
-            facts=link(rec.facts, layouts, rec.verdicts),
+            facts=facts,
             conflicts=rec.conflicts,
             unresolved=_unresolved(rec, gaps),
             coverage=coverage(

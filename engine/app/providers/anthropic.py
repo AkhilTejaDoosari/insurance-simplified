@@ -55,29 +55,40 @@ class AnthropicClient:
     def model(self) -> str:
         return self.config.model
 
+    def complete_json(
+        self, system: str, user: str, schema_name: str, schema: dict[str, Any], max_tokens: int
+    ) -> ModelReply:
+        """Text in, schema-bound JSON out (the semantic judge). No document file is sent."""
+        del schema_name  # Anthropic's structured output takes the schema only
+        return self._messages(system, [{"type": "text", "text": user}], schema, max_tokens)
+
     def read_pdf_pages(
         self, pdf: bytes, system: str, instruction: str, schema: dict[str, Any], max_tokens: int
+    ) -> ModelReply:
+        document = {
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": base64.b64encode(pdf).decode(),
+            },
+        }
+        return self._messages(
+            system, [document, {"type": "text", "text": instruction}], schema, max_tokens
+        )
+
+    def _messages(
+        self,
+        system: str,
+        content: list[dict[str, Any]],
+        schema: dict[str, Any],
+        max_tokens: int,
     ) -> ModelReply:
         body = {
             "model": self.config.model,
             "max_tokens": max_tokens,
             "system": system,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "document",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "application/pdf",
-                                "data": base64.b64encode(pdf).decode(),
-                            },
-                        },
-                        {"type": "text", "text": instruction},
-                    ],
-                }
-            ],
+            "messages": [{"role": "user", "content": content}],
             "output_config": {"format": {"type": "json_schema", "schema": schema}},
         }
         headers = {"x-api-key": self.config.api_key, "anthropic-version": API_VERSION}

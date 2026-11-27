@@ -44,6 +44,10 @@ run local
 run text --text
 run visual --visual
 run text_visual --text --visual
+# Key 2: the semantic judge on the local-stage facts (parser-proposed, so either family
+# may judge), then with Nemotron proposals judged by Claude (different family).
+run judge_claude --judge anthropic
+run text_judge_claude --text --judge anthropic
 # No uncapped run (P0-05). To see what the D-036 gate costs in coverage, rerun with a
 # higher MAX_COST_USD_PER_DOC; the cumulative ledger still caps the total.
 echo "evaluation spend so far: $(python3 -c "import json,sys
