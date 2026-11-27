@@ -36,6 +36,7 @@ from app.recovery.engines import (
 )
 from app.recovery.pipeline import Engines, RecoveryPipeline, RecoveryResult
 from app.recovery.policy import CloudAuthorization, CloudPolicy, DocumentClass
+from app.recovery.restrictions import VerifiedFact
 from app.schemas.document import Document
 from evaluation.score_keys import Key, judge, load_keys
 
@@ -72,6 +73,22 @@ def _restriction_attached(key: Key, restrictions: list[str]) -> bool:
     return False
 
 
+def _says_none(text: str) -> bool:
+    """A key whose restriction is the printed word "None" records a resolved state."""
+    from app.reconcile.layout import norm  # noqa: PLC0415
+
+    return norm(text.split("(", maxsplit=1)[0]) in {"none", "na", "notapplicable", "nolimitations"}
+
+
+def _completeness(key: Key, vf: VerifiedFact) -> str:
+    attached = [*vf.restrictions, *vf.footnotes]
+    if attached and _restriction_attached(key, attached):
+        return "attached_matching"
+    if vf.open_conditions:
+        return "flagged_open"
+    return "attached_unmatched_text" if attached else "silent"
+
+
 def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, object]:
     by_doc: dict[str, list[Key]] = defaultdict(list)
     for k in keys:
@@ -82,9 +99,17 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
     restricted_wrong = 0  # attached text that is not the key's restriction
     keyed_with_restriction = 0
     by_source: Counter[str] = Counter()
+    # P0-04 restriction completeness, over correct keys whose key records a restriction:
+    # the governing text is attached and matches, or the fact says it is open; "silent"
+    # is a restricted fact that would look complete - the failure this metric guards.
+    completeness: Counter[str] = Counter()
+    open_conditions: Counter[str] = Counter()
+    presentable = 0
     for doc, doc_keys in by_doc.items():
         res = next(r for sha, r in results.items() if sha.startswith(doc))
         for vf in res.facts:
+            open_conditions.update(vf.open_conditions)
+            presentable += vf.presentable_as_verified
             f = vf.fact
             pk = [k for k in doc_keys if k.page == f.page]
             verdict, key = judge(pk, f.label, f.group_labels, (f.header,), f.value)
@@ -93,6 +118,8 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
                 hit.add(key)
                 has = key.restrictions.strip() != ""
                 keyed_with_restriction += has
+                if has and not _says_none(key.restrictions):
+                    completeness[_completeness(key, vf)] += 1
                 if vf.restrictions or vf.footnotes:
                     if has and _restriction_attached(key, [*vf.restrictions, *vf.footnotes]):
                         restricted_ok += 1
@@ -129,6 +156,9 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
         "restrictions_attached_correct_keys": restricted_ok,
         "restrictions_attached_not_matching_key": restricted_wrong,
         "correct_keys_by_proposer": dict(by_source),
+        "restriction_completeness": dict(completeness),
+        "facts_with_open_conditions": dict(open_conditions),
+        "facts_presentable_as_fully_verified": presentable,
         "unresolved_items": sum(len(r.unresolved) for r in results.values()),
         "conflicts": sum(len(r.conflicts) for r in results.values()),
         "pages_routed": dict(pages),

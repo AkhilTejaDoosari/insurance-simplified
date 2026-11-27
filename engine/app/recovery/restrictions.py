@@ -8,7 +8,7 @@ required" or a dagger points to a footnote. Two links are made, both determinist
    value and that column's cell are verified facts of the same printed row (same page,
    row label and group), the limitation is attached. Cells that only say "none" attach
    nothing; two governing cells in one row are ambiguous and attach nothing.
-2. **Footnote markers.** When the verified value or its printed row label carries a
+2. **Footnote markers.** When the verified value, its row label or its group label has a
    marker (†, ‡, §, *), the footnote is the line in the PDF's text layer that starts
    with that marker, outside the table row, on the same page or - for tables whose
    notes are printed later - the first following page that has one. If that page has
@@ -17,6 +17,22 @@ required" or a dagger points to a footnote. Two links are made, both determinist
 
 Unverified text is never attached; a limitation cell that continues onto the next page
 is unresolved in the verifier and therefore attaches nothing.
+
+**Open conditions (P0-04).** Structural verification (D-034 key 1) proves the value is
+printed in that row and column. It does not prove the fact is complete for the user.
+Every verified fact therefore lists what is still open about the text that governs it:
+
+* ``footnote_unresolved`` - the value or its row label carries a marker whose footnote
+  could not be linked to exactly one printed line (missing or ambiguous);
+* ``governing_text_unverified`` - the page has a governing column (some row's
+  limitation cell was proposed or verified) but this row's cell is not verified;
+* ``governing_text_ambiguous`` - two verified governing cells in the row;
+* ``cross_reference_unresolved`` - the value, or text attached to it, sends the reader
+  elsewhere ("see …", "refer to …", a page or section, the plan document).
+
+A fact is presentable as fully verified only when key 1 holds, no condition is open and
+the semantic check (key 2, WP8) has confirmed it. Until key 2 exists, nothing qualifies:
+the UI must show verified facts with their open conditions, never as complete.
 """
 
 import re
@@ -26,12 +42,27 @@ from dataclasses import dataclass, field
 
 from app.reconcile.engine import Fact
 from app.reconcile.layout import PageLayout, Word, norm
+from app.reconcile.verify import Status, Verdict
 
 GOVERNING_COLUMN = re.compile(
-    r"limitation|exception|important information|restriction|prior auth|notes?\b", re.I
+    r"limitation|exception|important information|restriction|prior auth|notes?\b|why this matters",
+    re.I,
 )
 MARKERS = ("†", "‡", "§", "*")
 _EMPTY = {"", "none", "na", "notapplicable", "nolimitations"}
+CROSS_REFERENCE = re.compile(
+    r"\bsee\b|\brefer(?:s|red)? to\b|\bpage \d|\bsection\b|\bplan document|"
+    r"\bpolicy (?:document|certificate)|\bcertificate of coverage|\bsummary plan description"
+    r"|\bevidence of coverage|\bfor more information\b|\bdetails? (?:in|at)\b",
+    re.I,
+)
+
+
+class OpenCondition:
+    FOOTNOTE = "footnote_unresolved"
+    GOVERNING_UNVERIFIED = "governing_text_unverified"
+    GOVERNING_AMBIGUOUS = "governing_text_ambiguous"
+    CROSS_REFERENCE = "cross_reference_unresolved"
 
 
 @dataclass
@@ -39,10 +70,25 @@ class VerifiedFact:
     fact: Fact
     restrictions: list[str] = field(default_factory=list)
     footnotes: list[str] = field(default_factory=list)
+    open_conditions: list[str] = field(default_factory=list)
+    semantic_confirmed: bool = False  # D-034 key 2 (WP8); no stage sets it yet
 
     @property
     def is_governing_text(self) -> bool:
         return bool(GOVERNING_COLUMN.search(self.fact.header))
+
+    @property
+    def structurally_verified(self) -> bool:
+        return True  # only key-1 facts become VerifiedFacts
+
+    @property
+    def presentable_as_verified(self) -> bool:
+        """The only state the UI may call fully verified (P0-04)."""
+        return self.structurally_verified and self.semantic_confirmed and not self.open_conditions
+
+    def _open(self, condition: str) -> None:
+        if condition not in self.open_conditions:
+            self.open_conditions.append(condition)
 
 
 def _lines(words: Sequence[Word]) -> list[list[Word]]:
@@ -81,25 +127,61 @@ def _markers(*texts: str) -> list[str]:
     return [m for m in MARKERS if any(t.rstrip().endswith(m) or f"{m} " in t for t in texts)]
 
 
-def link(facts: list[Fact], layouts: Sequence[PageLayout] = ()) -> list[VerifiedFact]:
+def link(
+    facts: list[Fact],
+    layouts: Sequence[PageLayout] = (),
+    verdicts: Sequence[Verdict] = (),
+) -> list[VerifiedFact]:
     out = [VerifiedFact(f) for f in facts]
+    _link_rows(out, verdicts)
+    _link_footnotes(out, layouts)
+    for vf in out:
+        if any(CROSS_REFERENCE.search(t) for t in (vf.fact.value, *vf.restrictions, *vf.footnotes)):
+            vf._open(OpenCondition.CROSS_REFERENCE)
+    return out
+
+
+def _link_rows(out: list[VerifiedFact], verdicts: Sequence[Verdict]) -> None:
     rows: dict[tuple[int, str, str], list[VerifiedFact]] = defaultdict(list)
     for vf in out:
         f = vf.fact
         rows[(f.page, norm(" ".join(f.group_labels)), norm(f.label))].append(vf)
-    for members in rows.values():
-        governing = [m for m in members if m.is_governing_text]
-        if len(governing) != 1 or norm(governing[0].fact.value) in _EMPTY:
-            continue
-        text = governing[0].fact.value
-        for m in members:
-            if m is not governing[0]:
-                m.restrictions.append(text)
 
+    # pages with a governing column: some row's limitation cell was proposed or verified
+    governing_pages = {vf.fact.page for vf in out if vf.is_governing_text}
+    proposed_governing: set[tuple[int, str]] = set()
+    for v in verdicts:
+        c = v.candidate
+        if c.header_path and GOVERNING_COLUMN.search(c.header_path[-1]):
+            governing_pages.add(c.page)
+            if v.status is not Status.VERIFIED:
+                proposed_governing.add((c.page, norm(c.label)))
+
+    for (page, _group, label), members in rows.items():
+        governing = [m for m in members if m.is_governing_text]
+        values = [m for m in members if not m.is_governing_text]
+        if len(governing) > 1:
+            for m in values:
+                m._open(OpenCondition.GOVERNING_AMBIGUOUS)
+            continue
+        if not governing:
+            if page in governing_pages or (page, label) in proposed_governing:
+                for m in values:
+                    m._open(OpenCondition.GOVERNING_UNVERIFIED)
+            continue
+        if norm(governing[0].fact.value) in _EMPTY:
+            continue  # verified "None": resolved, nothing to attach
+        text = governing[0].fact.value
+        for m in values:
+            m.restrictions.append(text)
+
+
+def _link_footnotes(out: list[VerifiedFact], layouts: Sequence[PageLayout]) -> None:
     by_page = {lay.number: lay for lay in layouts}
     for vf in out:
         f = vf.fact
-        for marker in _markers(f.value, f.label):
+        for marker in _markers(f.value, f.label, *f.group_labels):
+            linked = False
             for page in range(f.page, max(by_page, default=0) + 1):
                 layout = by_page.get(page)
                 if layout is None:
@@ -110,5 +192,7 @@ def link(facts: list[Fact], layouts: Sequence[PageLayout] = ()) -> list[Verified
                     continue
                 if len(notes) == 1:
                     vf.footnotes.append(notes[0])
+                    linked = True
                 break  # the first page that defines the marker decides (or is ambiguous)
-    return out
+            if not linked:
+                vf._open(OpenCondition.FOOTNOTE)

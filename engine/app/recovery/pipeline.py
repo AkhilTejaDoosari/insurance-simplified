@@ -482,7 +482,7 @@ class RecoveryPipeline:
 
         return RecoveryResult(
             document_sha256=sha,
-            facts=link(rec.facts, layouts),
+            facts=link(rec.facts, layouts, rec.verdicts),
             conflicts=rec.conflicts,
             unresolved=_unresolved(rec, gaps),
             ledger=ledger,

@@ -586,3 +586,54 @@ def test_http_layer_reports_every_failed_attempt(monkeypatch: pytest.MonkeyPatch
     failed: list[int] = []
     out = http.post_json("p", "https://x", {}, {}, timeout_s=1, failed_attempts=failed)
     assert out == {"ok": True} and failed == [503, 503]
+
+
+# ------------------------------------------------- P0-04 open conditions (completeness)
+
+LIM = "Limitations, Exceptions, & Other Important Information"
+
+
+def test_structural_verification_alone_is_never_fully_verified() -> None:
+    (vf,) = link([_fact("Specialist visit", NET, "$45 copay/visit")])
+    assert vf.open_conditions == []
+    assert not vf.presentable_as_verified  # key 2 (semantic) has not confirmed it
+    vf.semantic_confirmed = True
+    assert vf.presentable_as_verified
+
+
+def test_unverified_governing_cell_keeps_the_fact_open() -> None:
+    out = link(
+        [
+            _fact("Specialist visit", NET, "$45 copay/visit"),
+            _fact("Urgent care", NET, "$90 copay/visit"),
+            _fact("Urgent care", LIM, "None"),  # this page has a governing column
+        ]
+    )
+    vf = next(v for v in out if v.fact.label == "Specialist visit")
+    assert vf.open_conditions == ["governing_text_unverified"]
+    vf.semantic_confirmed = True
+    assert not vf.presentable_as_verified
+    urgent = next(v for v in out if v.fact.label == "Urgent care" and v.fact.header == NET)
+    assert urgent.open_conditions == []  # a verified "None" is resolved
+
+
+def test_two_governing_cells_in_one_row_are_ambiguous() -> None:
+    out = link(
+        [
+            _fact("Specialist visit", NET, "$45 copay/visit"),
+            _fact("Specialist visit", LIM, "Prior authorization required."),
+            _fact("Specialist visit", "Why This Matters", "Referral needed."),
+        ]
+    )
+    vf = next(v for v in out if v.fact.header == NET)
+    assert vf.open_conditions == ["governing_text_ambiguous"] and vf.restrictions == []
+
+
+def test_marker_without_a_linked_footnote_is_open() -> None:
+    (vf,) = link([_fact("Imaging†", NET, "$100 copay")], read_layouts(_pdf()))
+    assert "footnote_unresolved" in vf.open_conditions
+
+
+def test_cross_reference_is_open() -> None:
+    (vf,) = link([_fact("Out-of-pocket limit", NET, "$5,000. See your plan document.")])
+    assert vf.open_conditions == ["cross_reference_unresolved"]
