@@ -21,10 +21,10 @@ Sections 1–4 below are the pre-V2 record and are no longer the plan.
 
 | WP | Work | Status |
 | --- | --- | --- |
-| 0 | Preserve + baseline: `backup/*` branches for Mac-only work, tag `baseline/pre-v2-2026-11-26`, baseline numbers | Partial — tag made on `integration/m5-m7`; Mac-only branches pending (owner) |
-| 1 | Consolidate: app moved to `web/` with no logic change | Tested locally on `v2/foundation` (unit 1459 → 1459 kept + 3 contract; tsc; build) |
+| 0 | Preserve + baseline: `backup/*` branches for Mac-only work, tag `baseline/pre-v2-2026-11-26`, baseline numbers | Done — tag `baseline/pre-v2-2026-11-26` and `backup/demo-compare-chat`, `backup/gen-unseen-docs` on GitHub; baseline numbers in audit §11 |
+| 1 | Consolidate: app moved to `web/` with no logic change | Tested — CI (run 45915395465: unit 1462 passed / 22 skipped = 1459 kept + 3 contract; e2e 55 passed / 1 skipped; DB suites 7 passed; tsc; build) |
 | 2 | Sourcing check, sealed blind batches A/B, validation answer keys | Not started — blocker: ≈45 more public PDFs |
-| 3 | Engine skeleton: FastAPI, Pydantic contract with guardrails, trace-id logs, Docker, CI (lint, types, tests, licenses, contract, secret scan) | Tested locally on `v2/foundation` (38 pytest, ruff, mypy strict; image build runs in CI) |
+| 3 | Engine skeleton: FastAPI, Pydantic contract with guardrails, trace-id logs, Docker, CI (lint, types, tests, licenses, contract, secret scan) | Tested — CI (run 45915395465: 38 pytest, ruff, mypy strict, licenses, contract current, image builds and answers /health, gitleaks clean) |
 | 4 | Document model + parser evaluation (decision rule written before the run) | Not started |
 | 5 | Jobs table (migration 0008), worker loop, parser sandbox; web calls the engine behind `ENGINE_URL` | Not started |
 | 6 | Classification + plan families/levels | Not started |
