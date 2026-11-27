@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from app.parsing.grid import table_from_grid
+from app.parsing.grid import TableAssembler
 from app.schemas.common import Market
 from app.schemas.document import Document, Page, ParserInfo, Table
 
@@ -60,9 +60,10 @@ def docling_grid(table: dict[str, Any]) -> list[list[Cell]]:
 def from_docling(doc: dict[str, Any], sha: str) -> Document:
     n = max((int(k) for k in doc.get("pages", {})), default=1)
     tables: dict[int, list[Table]] = {}
-    for i, table in enumerate(doc.get("tables", [])):
-        page = table["prov"][0]["page_no"] if table.get("prov") else 1
-        built = table_from_grid(docling_grid(table), page, f"p{page}t{i}", "")
+    assembler = TableAssembler()
+    found = [(t["prov"][0]["page_no"] if t.get("prov") else 1, t) for t in doc.get("tables", [])]
+    for i, (page, table) in enumerate(sorted(found, key=lambda pt: pt[0])):
+        built = assembler.add(docling_grid(table), page, f"p{page}t{i}", "")
         if built:
             tables.setdefault(page, []).append(built)
     version = str(doc.get("version", "?"))
@@ -110,9 +111,11 @@ def odl_grid(table: dict[str, Any]) -> list[list[Cell]]:
 
 def from_opendataloader(doc: dict[str, Any], sha: str) -> Document:
     tables: dict[int, list[Table]] = {}
-    for i, table in enumerate(_odl_tables(doc.get("kids") or [])):
-        page = table["page number"]
-        built = table_from_grid(odl_grid(table), page, f"p{page}t{i}", "")
+    assembler = TableAssembler()
+    found = sorted(_odl_tables(doc.get("kids") or []), key=lambda t: int(t["page number"]))
+    for i, table in enumerate(found):
+        page = int(table["page number"])
+        built = assembler.add(odl_grid(table), page, f"p{page}t{i}", "")
         if built:
             tables.setdefault(page, []).append(built)
     return _document(sha, "opendataloader", "json", tables, int(doc["number of pages"]))

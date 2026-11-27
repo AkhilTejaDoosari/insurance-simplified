@@ -21,19 +21,34 @@ from app.parsing.sandbox import Limits, parse_isolated
 from app.schemas.document import Document
 
 MANIFEST = Path(__file__).resolve().parents[2] / "evaluation" / "manifests" / "corpus-v2.json"
-QUESTIONS = {"deductible": r"overall\s+deductible", "out-of-pocket": r"out[- ]of[- ]pocket\s+limit"}
+QUESTIONS = {
+    "deductible": r"overall\s+deductible",
+    "out-of-pocket": r"out[-\s]*of[-\s]*pocket\s+limit",
+}
 SERVICES = {
     "primary care": r"primary care visit",
     "specialist": r"specialist visit",
     "emergency room": r"emergency room",
     "generic drugs": r"generic drugs",
 }
+_OUT_OF_NETWORK = re.compile(
+    r"out[-\s]+of[-\s]+network|non[-\s]+network|non[-\s]*participating", re.IGNORECASE
+)
+_IN_NETWORK_TERMS = re.compile(r"network|participating|preferred|provider|tier\s*1", re.IGNORECASE)
 _ANSWER = re.compile(r"\$|\bno\b|\bnone\b|\bnot applicable\b", re.IGNORECASE)
+
+
+def _in_network(header: str) -> bool:
+    """The lowest-cost network column, however the plan names it ("Network Provider",
+    "Participating Provider", "Tier 1 Preferred", "Non-IHCP In-Network Provider")."""
+    if "limitation" in header or not _IN_NETWORK_TERMS.search(header):
+        return False
+    return not _OUT_OF_NETWORK.search(header) or bool(re.search(r"\bin[-\s]+network", header))
 
 
 def sbc_bound(doc: Document) -> set[str]:
     got: set[str] = set()
-    for page in doc.pages[:4]:
+    for page in doc.pages:
         for table in page.tables:
             headers = {c.id: " ".join(c.header_path).lower() for c in table.columns}
             labels = {r.id: r.label for r in table.rows}
@@ -46,7 +61,7 @@ def sbc_bound(doc: Document) -> set[str]:
                         and _ANSWER.search(cell.text)
                     ):
                         got.add(key)
-                in_network = "network" in header and "out" not in header and "non" not in header
+                in_network = _in_network(header)
                 for key, rx in SERVICES.items():
                     if in_network and re.search(rx, label, re.I) and cell.text.strip():
                         got.add(key)

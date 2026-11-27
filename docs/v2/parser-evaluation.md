@@ -82,9 +82,50 @@ The SBC check is a **structural proxy**, not the answer-key score: it asks wheth
 | **OpenDataLoader PDF** (basic mode) | Apache-2.0 | Java | 37/37 parsed in 28 s; SBC check **64/102**; explicit row/column spans, header flags and a bounding box per element |
 | pdfplumber + OpenDataLoader (either binds) | — | — | **72/102** — the two fail on different tables (pdfplumber: question/answer tables; OpenDataLoader: the cost chart) |
 | PyMuPDF | AGPL-3.0 | Python | excluded (license; 7 native crashes) |
-| Docling (IBM; TableFormer) | MIT | layout + table models | running in the private corpus repo's CI (models can't be downloaded from this workspace) |
+| Docling (IBM; TableFormer, accurate mode, no OCR) | MIT | layout + table models | 37/37 in the private repo's CI, ~60 s/document on a 4-vCPU runner (max 189 s); SBC check 70/102 before the fixes below |
 | MinerU | moved from AGPL to its own Apache-based license (3.1) | larger models, GPU preferred | next candidate after Docling |
 | Marker | GPL-3.0 | models | excluded by rule 1 (copyleft) unless the owner approves |
 | OpenDataLoader hybrid mode, PaddleOCR-VL, olmOCR | Apache-2.0 / model licenses | a model server or GPU | later, if the CPU readers leave gaps the answer keys show matter |
 
 Converters for readers that run outside the engine: `engine/evaluation/import_external.py` (Docling JSON, OpenDataLoader JSON → document model, same grid rules).
+
+## Round 2 — all three readers, after two measurement fixes and two engine rules (2026-11-26, 22:45)
+
+Looking at the 30 checks no reader passed showed that most were not reading failures:
+
+* **Measurement (the check itself, `evaluation/real_run.py`, applied to every reader alike):**
+  it looked only at pages 1–4 (drug rows are often on page 5+), accepted only columns
+  named "network" (plans also say "Participating Provider", "Tier 1 Preferred",
+  "Non-IHCP In-Network Provider") and rejected the hyphenated question label
+  "out-of- pocket limit" that every reader reproduces faithfully.
+* **Engine (`app/parsing/grid.py`, shared by every reader):**
+  rule 5 — a table that opens a page with a value row and has the same width as the last
+  table of the previous page continues it and takes its header text (no header spans on
+  the new page: the page-span guardrail is unchanged); rule 4b — a wrapped label whose
+  value is printed on the wrapped line merges into the line above when that line has no
+  value.
+
+SBC structural check, 17 validation SBCs × 6 fields = 102:
+
+| Readers | Old check | Check fixed | Rules 4b + 5 only | Both |
+|---|---|---|---|---|
+| pdfplumber | 49 | 58 | 52 | 61 |
+| OpenDataLoader | 64 | 85 | 67 | 88 |
+| Docling | 70 | 88 | 73 | **91** |
+| pdfplumber + OpenDataLoader | 72 | 93 | 75 | **96** |
+| Docling + OpenDataLoader | 72 | 93 | 75 | 96 |
+
+The six that remain are the check's vocabulary, by inspection: three plans never use the
+word "generic" for their drug tier, and one multi-level plan titles its answer columns by
+tier instead of "Answers". No remaining miss is a value the readers failed to read.
+
+Speed on the same 37 PDFs: OpenDataLoader 28 s in total, pdfplumber 54 s, Docling
+~2,200 s (CPU). Docling adds nothing on top of pdfplumber + OpenDataLoader here.
+
+**Provisional choice (owner approval needed — OpenDataLoader adds a Java runtime):**
+OpenDataLoader for table structure, pdfplumber for page text and spans, both in the
+sandbox; Docling kept as the candidate for scanned or image-only pages (it has OCR).
+External readers emit no page text in the importer, so their cells get citations only
+after their text is located in pdfplumber's page text — the evidence contract is
+unchanged. This is a structural check on 6 SBC fields; the decision is final only after
+the answer keys (all 37 documents, every value) are scored.

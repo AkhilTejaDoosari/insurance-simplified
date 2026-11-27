@@ -11,7 +11,13 @@ Rules learned from the V2 validation set (2026-11-26):
    filled down over the rows it spans, the last is the row's own label.
 4. A row whose own label is empty or starts in lower case, and which carries no value,
    continues the row above (a wrapped line), so it is merged rather than becoming a
-   fake row.
+   fake row. The same holds when the value sits on the wrapped line and the row above
+   carries none ("What is the out-of-" / "pocket limit for this plan?  $1,800").
+5. A table that opens a page with a value row (no header of its own) and has the same
+   width as the last table of the previous page continues that table: it takes the
+   previous header text. The header is not printed on this page, so the carried columns
+   have no header spans here (a page's spans never point at another page); each
+   value's own cell span is still on its own page.
 Values are never guessed: a cell keeps the text the reader found, and its span is
 recorded only when that exact text is found on the page.
 """
@@ -110,13 +116,13 @@ def _label_columns(data: list[list[str]], width: int) -> int:
     return 1
 
 
-def _is_continuation(row: list[str], k: int) -> bool:
+def _is_continuation(row: list[str], k: int, above: list[str]) -> bool:
     if any(row[c] for c in range(k - 1)):  # a new group starts here
         return False
     own = row[k - 1]
-    values = row[k:]
-    if any(has_value(v) for v in values):
-        return False
+    if any(has_value(v) for v in row[k:]):
+        # rule 4b: the value is printed on the wrapped line, the label line holds none
+        return bool(own) and own[0].islower() and not any(has_value(v) for v in above[k:])
     return not own or own[0].islower()
 
 
@@ -135,7 +141,7 @@ def _merge_wrapped(data: list[list[str]], k: int) -> tuple[list[list[str]], list
     groups: list[list[str]] = []
     current = [""] * (k - 1)
     for row in data:
-        if merged and _is_continuation(row, k):
+        if merged and _is_continuation(row, k, merged[-1]):
             merged[-1] = [
                 " ".join(filter(None, (a, b))) for a, b in zip(merged[-1], row, strict=True)
             ]
@@ -144,6 +150,31 @@ def _merge_wrapped(data: list[list[str]], k: int) -> tuple[list[list[str]], list
         merged.append(row)
         groups.append(list(current))
     return merged, groups
+
+
+def _label_count(table: Table) -> int:
+    first = int(table.columns[0].id.rsplit("-c", 1)[1]) if table.columns else 1
+    return max(1, first)
+
+
+def _width(table: Table) -> int:
+    return _label_count(table) + len(table.columns)
+
+
+class TableAssembler:
+    """Builds a document's tables in reading order, so rule 5 can see the previous page."""
+
+    def __init__(self) -> None:
+        self._last: Table | None = None
+        self._page = 0
+
+    def add(self, grid: Grid, page: int, table_id: str, page_text: str) -> Table | None:
+        previous = self._last if page != self._page else None
+        self._page = page
+        table = table_from_grid(grid, page, table_id, page_text, previous)
+        if table is not None:
+            self._last = table
+        return table
 
 
 def _columns(
@@ -160,7 +191,7 @@ def _columns(
     return columns
 
 
-def table_from_grid(grid: Grid, page: int, table_id: str, page_text: str) -> Table | None:
+def _prepare(grid: Grid) -> list[list[str | None]] | None:
     raw = [list(r) for r in grid if any(clean(c) for c in r)]
     if not raw:
         return None
@@ -171,16 +202,37 @@ def table_from_grid(grid: Grid, page: int, table_id: str, page_text: str) -> Tab
     width = len(keep)
     while raw and _is_banner(raw[0], width):
         raw = raw[1:]
-    if len(raw) < 2 or width < 2:
+    if not raw or width < 2:
         return None
     raw = _merge_split_columns(raw)
-    width = len(raw[0])
-    if width < 2:
+    return raw if len(raw[0]) >= 2 else None
+
+
+def table_from_grid(
+    grid: Grid, page: int, table_id: str, page_text: str, previous: Table | None = None
+) -> Table | None:
+    """Build one table. ``previous`` is the last table of the previous page (rule 5)."""
+    raw = _prepare(grid)
+    if raw is None:
         return None
-    n_head = _header_count(raw)
-    heads = _header_paths(raw[:n_head])
-    data = [[clean(c) for c in r] for r in raw[n_head:]]
-    k = _label_columns(data, width)
+    width = len(raw[0])
+    carried = (
+        previous is not None
+        and previous.page == page - 1
+        and any(has_value(clean(c)) for c in raw[0])
+        and _width(previous) == width
+    )
+    if not carried and len(raw) < 2:  # a header with no rows under it
+        return None
+    if carried and previous is not None:
+        heads: list[list[str]] = []
+        data = [[clean(c) for c in r] for r in raw]
+        k = _label_count(previous)
+    else:
+        n_head = _header_count(raw)
+        heads = _header_paths(raw[:n_head])
+        data = [[clean(c) for c in r] for r in raw[n_head:]]
+        k = _label_columns(data, width)
     merged, groups = _merge_wrapped(data, k)
 
     rows, cells = [], []
@@ -207,5 +259,11 @@ def table_from_grid(grid: Grid, page: int, table_id: str, page_text: str) -> Tab
             for c in range(k, width)
             if row[c]
         ]
-    columns = _columns(heads, k, width, table_id=table_id, page_text=page_text, page=page)
+    if carried and previous is not None:
+        columns = [
+            TableColumn(id=f"{table_id}-c{k + i}", header_path=col.header_path)
+            for i, col in enumerate(previous.columns)
+        ]
+    else:
+        columns = _columns(heads, k, width, table_id=table_id, page_text=page_text, page=page)
     return Table(id=table_id, page=page, columns=columns, rows=rows, cells=cells)
