@@ -118,8 +118,14 @@ class RecoveryPipeline:
         policy: CloudPolicy | None = None,
         spend: SpendLedger | None = None,
         progress: Callable[[str], None] | None = None,
+        tokens: SpendLedger | None = None,
+        token_providers: frozenset[str] = frozenset({"anthropic"}),
     ) -> None:
         self.engines = engines
+        # Cumulative token allowance (evaluation only), counted in tokens, for providers
+        # whose gateway meters tokens (KodeKey); same reserve-then-settle rule as spend.
+        self.tokens = tokens
+        self.token_providers = token_providers
         self.progress = progress  # optional per-call progress lines (evaluation only)
         self.spend = spend  # cumulative evaluation budget (P0-05); None in production
         self.limits = limits or RunLimits()
@@ -280,6 +286,8 @@ class RecoveryPipeline:
             if eng.judge_family not in proposer_families(pending[i][0].proposed_by_all)
         ]
         alt = [i for i in judgeable if i not in set(main)]
+        main.sort(key=lambda i: (_model_only(pending[i][0].proposed_by_all), i))
+        alt.sort(key=lambda i: (_model_only(pending[i][0].proposed_by_all), i))
         for idx, model, provider, family in (
             (main, eng.judge, eng.judge_provider, eng.judge_family),
             (alt, eng.alt_judge, eng.alt_judge_provider, eng.alt_judge_family),
@@ -344,7 +352,10 @@ class RecoveryPipeline:
         est = estimate_text_tokens(JUDGE_SYSTEM, request, json.dumps(JUDGE_SCHEMA))
         worst = worst_case_usd(price, est, self.limits.judge_max_tokens) if price else None
         reserved = None if worst is None else worst * _attempts(judge)
-        refusal, rid = self._reserve(reserved, ledger, f"{sha[:12]}:judge")
+        one_tokens = est + self.limits.judge_max_tokens
+        refusal, rid, tid = self._admit(
+            provider, reserved, one_tokens * _attempts(judge), ledger, f"{sha[:12]}:judge"
+        )
         if refusal:
             ledger.add(LedgerEntry("judge", provider, judge.model, (), 0.0, "skipped", refusal))
             return None
@@ -355,6 +366,7 @@ class RecoveryPipeline:
                 JUDGE_SYSTEM, request, "judge", JUDGE_SCHEMA, self.limits.judge_max_tokens
             )
         except Exception as exc:
+            self._settle_tokens(tid, exc, one_tokens)
             charged = None
             if worst is not None and isinstance(exc, ProviderError):
                 charged = (token_cost(price, exc.input_tokens, exc.output_tokens) or 0.0) + (
@@ -378,6 +390,7 @@ class RecoveryPipeline:
                 )
             )
             return None
+        self._settle_tokens(tid, reply, one_tokens)
         cost = token_cost(price, reply.usage.input_tokens, reply.usage.output_tokens)
         if cost is not None and worst is not None:
             cost += retry_charge_usd(reply.failed_attempts, worst)
@@ -458,7 +471,14 @@ class RecoveryPipeline:
         price = price_from_env(provider)
         worst = worst_case_usd(price, estimate_in, max_out) if price is not None else None
         reserved = None if worst is None else worst * max(1, max_attempts)
-        refusal, rid = self._reserve(reserved, ledger, f"{sha[:12]}:{stage}:{targets}")
+        one_tokens = estimate_in + max_out
+        refusal, rid, tid = self._admit(
+            provider,
+            reserved,
+            one_tokens * max(1, max_attempts),
+            ledger,
+            f"{sha[:12]}:{stage}:{targets}",
+        )
         if refusal:
             ledger.add(LedgerEntry(stage, provider, model, tuple(targets), 0.0, "skipped", refusal))
             return []
@@ -467,6 +487,7 @@ class RecoveryPipeline:
         try:
             reply = call()
         except Exception as exc:
+            self._settle_tokens(tid, exc, one_tokens)
             charged: float | None
             if worst is None:
                 charged = None
@@ -494,6 +515,7 @@ class RecoveryPipeline:
                 )
             )
             return []
+        self._settle_tokens(tid, reply, one_tokens)
         cost = token_cost(price, reply.usage.input_tokens, reply.usage.output_tokens)
         if cost is not None and worst is not None:
             cost += retry_charge_usd(reply.failed_attempts, worst)
@@ -521,6 +543,44 @@ class RecoveryPipeline:
         if clauses_out is not None:
             clauses_out += proposals.to_clauses(source, parsed, set(targets))
         return proposals.to_candidates(source, parsed, set(targets))
+
+    def _admit(
+        self, provider: str, usd: float | None, tokens: int, ledger: Ledger, label: str
+    ) -> tuple[str, str | None, str | None]:
+        """Both reservations or neither: (refusal reason or "", spend id, token id)."""
+        refusal, rid = self._reserve(usd, ledger, label)
+        if refusal:
+            return refusal, None, None
+        refusal, tid = self._reserve_tokens(provider, tokens, label)
+        if refusal and rid is not None and self.spend is not None:
+            self.spend.settle(rid, 0.0)  # nothing was sent
+        return refusal, rid, tid
+
+    def _reserve_tokens(self, provider: str, tokens: int, label: str) -> tuple[str, str | None]:
+        """Reserve a call's worst-case tokens (input estimate + max output, per attempt)
+        against the token allowance; providers it does not meter pass untouched."""
+        if self.tokens is None or provider not in self.token_providers:
+            return "", None
+        try:
+            return "", self.tokens.reserve(float(tokens), label)
+        except BudgetExceededError:
+            return "evaluation_token_reservation", None
+
+    def _settle_tokens(self, tid: str | None, outcome: Any, one_call: int) -> None:
+        """Replace the reservation with the tokens used: reported usage plus the worst case
+        for each failed attempt that may have been processed; unknown failures keep the
+        worst case of one call."""
+        if tid is None or self.tokens is None:
+            return
+        if isinstance(outcome, ProviderError):
+            used = float(outcome.input_tokens + outcome.output_tokens)
+            used += retry_charge_usd(outcome.failed_attempts, float(one_call))
+        elif isinstance(outcome, Exception):
+            used = float(one_call)
+        else:
+            used = float(outcome.usage.input_tokens + outcome.usage.output_tokens)
+            used += retry_charge_usd(outcome.failed_attempts, float(one_call))
+        self.tokens.settle(tid, used)
 
     def _reserve(self, usd: float | None, ledger: Ledger, label: str) -> tuple[str, str | None]:
         """P0-05: admit a call only if its worst case fits the document cap and the
@@ -857,6 +917,11 @@ def _unresolved(rec: Reconciled, gaps: dict[int, PageGaps]) -> list[Unresolved]:
     for a, b in rec.conflicts:
         out.append(Unresolved(a.page, a.label, ItemState.CONFLICTING, (a.value, b.value)))
     return out
+
+
+def _model_only(proposed_by: set[str]) -> bool:
+    """Proposed by a model and by no reader (sorts after reader-found facts)."""
+    return bool(proposed_by) and all(p.startswith(("text:", "visual:")) for p in proposed_by)
 
 
 def _attempts(model: Any) -> int:

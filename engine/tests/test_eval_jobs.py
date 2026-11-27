@@ -53,3 +53,31 @@ def test_one_job_is_sequential(tmp_path: Path) -> None:
     args = argparse.Namespace(pdfs=tmp_path, granted_by=None, jobs=1)
     assert list(_run_docs(pipe, docs, args, None)) == docs  # type: ignore[arg-type]
     assert pipe.peak == 1
+
+
+def _ns(**kw: Any) -> argparse.Namespace:
+    base = {
+        "visual": False,
+        "judge": "none",
+        "alt_judge": "none",
+        "token_ledger": None,
+        "token_cap": None,
+    }
+    return argparse.Namespace(**{**base, **kw})
+
+
+def test_claude_stages_need_the_token_allowance(tmp_path: Path) -> None:
+    import pytest  # noqa: PLC0415
+
+    from evaluation.recovery_eval import _parser, _token_ledger  # noqa: PLC0415
+
+    ap = _parser()
+    ledger = tmp_path / "tokens.jsonl"
+    assert _token_ledger(ap, _ns(token_ledger=ledger)) is None  # Nemotron only: not metered
+    for claude in ({"visual": True}, {"judge": "anthropic"}, {"alt_judge": "anthropic"}):
+        with pytest.raises(SystemExit):
+            _token_ledger(ap, _ns(token_ledger=ledger, **claude))
+    with pytest.raises(SystemExit):
+        _token_ledger(ap, _ns(token_cap=1000))  # a cap needs its ledger
+    got = _token_ledger(ap, _ns(token_ledger=ledger, token_cap=1000, visual=True))
+    assert got is not None and got.cap_usd == 1000

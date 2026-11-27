@@ -6,16 +6,21 @@
 # --local-only: free setup check - documents, reader artifacts and the baseline stage,
 # no provider call and no configuration needed.
 #
-# One pass, stage by stage, each scored before the next starts:
-#   local     existing reader artifacts only (must reproduce 395/454, 0 false verified)
-#   text      + Nemotron on gap pages and pages with printed amounts nobody proposed
-#   visual    + Claude on the pages still open after Nemotron
-#   judged    + key 2: Claude judges parser/Nemotron facts, Nemotron judges Claude's
-# Model replies are cached, so a later stage pays only for what it adds. Every paid
-# call is reserved against the cumulative $25 evaluation ledger before it is sent.
+# Stages, each scored before the next starts:
+#   local        existing reader artifacts only (must reproduce 395/454, 0 false verified)
+#   text         + Nemotron on gap pages and pages with printed amounts nobody proposed
+#   judge_local  key 2 on the local facts (Claude judge) - runs AT THE SAME TIME as text
+#   visual_pilot + Claude page images on 3 documents: measures Claude tokens per document
+#   visual       + Claude on the pages still open after Nemotron (only if the pilot's
+#                  projection fits the remaining token allowance)
+#   judged       + key 2 on everything (judge replies for unchanged facts come from cache)
+# Model replies are cached, so a later stage pays only for what it adds, and a stopped
+# run resumes. Every paid call is reserved against the cumulative $25 ledger, and every
+# Claude call against the Claude token allowance ENGINE_EVAL_CLAUDE_TOKEN_CAP (KodeKey
+# meters tokens), before it is sent. Without that allowance only the free stages run.
 # It stops on: missing configuration, a failed provider probe, a document outside the
 # pinned public validation set, a baseline that does not reproduce, a false verified
-# fact, or a budget that cannot cover the next stage.
+# fact, or a budget or token allowance that cannot cover the next stage.
 #
 # Works with macOS's bash 3.2. Needs: uv, git, python3; Java 17+ only when the reader
 # cache must be rebuilt. Writes aggregates to OUT_DIR (default ~/insurance-eval-out);
@@ -129,7 +134,7 @@ fi
 fi
 
 # ------------------------------------------------------------------ 5. budget
-committed() { python3 - "$ENGINE_EVAL_SPEND_LEDGER" <<'PY'
+committed() { python3 - "${1:-$ENGINE_EVAL_SPEND_LEDGER}" <<'PY'
 import json, os, sys
 r, s = {}, {}
 p = sys.argv[1]
@@ -150,19 +155,54 @@ need() {  # $1 stage ceiling in USD
 # ------------------------------------------------------------------- 6. stages
 STAGES=""
 JOBS="${EVAL_JOBS:-4}"  # documents at once; model calls mostly wait on the provider
-run() {  # name, ceiling USD, extra args
-  local name=$1 ceiling=$2; shift 2
-  say "Stage $name"
-  need "$ceiling"
+export ENGINE_EVAL_TOKEN_LEDGER="$OUT_DIR/claude-tokens.jsonl"  # cumulative, like spend
+TOKEN_CAP="${ENGINE_EVAL_CLAUDE_TOKEN_CAP:-}"
+unset ENGINE_EVAL_CLAUDE_TOKEN_CAP  # given to the Claude stages only
+
+stage() {  # name, extra args: one scored run; output lines carry the stage name
+  local name=$1; shift
   local t0; t0=$(date +%s)
   uv run -q python -m evaluation.recovery_eval --keys "$KEYS" --pdfs "$CORPUS_DIR" \
     --readers "$READERS_DIR" --stages primary,docling --max-cost-usd "$MAX_COST" --jobs "$JOBS" \
-    --out "$OUT_DIR/$name.json" "$@" 2>&1 > /dev/null | tee "$OUT_DIR/$name.log"
+    --out "$OUT_DIR/$name.json" "$@" 2>&1 > /dev/null \
+    | awk -v p="[$name] " '{ print p $0; fflush() }' | tee "$OUT_DIR/$name.log"
   echo $(( $(date +%s) - t0 )) > "$OUT_DIR/$name.wall"
-  STAGES="$STAGES $name"
+}
+with_claude() {  # a stage that may call Claude: the token allowance applies
+  ENGINE_EVAL_CLAUDE_TOKEN_CAP="$TOKEN_CAP" stage "$@"
+}
+compare() {
   # shellcheck disable=SC2086
   uv run -q python -m evaluation.compare_runs "$OUT_DIR" $STAGES || {
-    echo "stopped after $name: false verified facts"; exit 6; }
+    echo "stopped: false verified facts"; exit 6; }
+}
+tokens_left() { python3 -c "print(int($TOKEN_CAP - $(committed "$ENGINE_EVAL_TOKEN_LEDGER")))"; }
+summary() {
+  say "Summary"
+  {
+    echo "# Model and judge measurement - $(date -u +%Y-%m-%dT%H:%MZ)"
+    echo
+    echo "17 public validation SBCs, keys v1.1 DRAFT, frozen scorer. Aggregates only."
+    echo
+    # shellcheck disable=SC2086
+    uv run -q python -m evaluation.compare_runs "$OUT_DIR" $STAGES
+    echo
+    echo "Cumulative evaluation spend: \$$(committed) of \$25 (ledger: $ENGINE_EVAL_SPEND_LEDGER)"
+    if [ -n "$TOKEN_CAP" ]; then
+      echo "Claude tokens used: $(committed "$ENGINE_EVAL_TOKEN_LEDGER" | cut -d. -f1) of $TOKEN_CAP"
+    fi
+  } | tee "$OUT_DIR/summary.md"
+  echo
+  echo "Done. Share $OUT_DIR/summary.md (aggregates, no document text)."
+}
+
+run() {  # name, ceiling USD, extra args: one stage, then the before/after table
+  local name=$1 ceiling=$2; shift 2
+  say "Stage $name"
+  need "$ceiling"
+  stage "$name" "$@"
+  STAGES="$STAGES $name"
+  compare
 }
 
 run local 0
@@ -178,22 +218,68 @@ echo
 echo "Model stages print one line per call, $JOBS documents at a time (EVAL_JOBS to change)."
 echo "A Nemotron call can take 1-3 minutes on the free tier (up to 3 attempts, 180 s each)."
 echo "Ctrl-C is safe: finished replies stay in the model cache and the next run reuses them."
-echo "An interrupted Claude call stays counted at its reserved worst case in the \$25 ledger."
-run text   1  --text --route-missed
-run visual 12 --text --route-missed --visual
-run judged 10 --text --route-missed --visual --judge anthropic --alt-judge nvidia
+echo "An interrupted Claude call stays counted at its reserved worst case (dollars and tokens)."
+
+if [ -z "$TOKEN_CAP" ]; then
+  run text 1 --text --route-missed
+  echo
+  echo "Claude stages skipped: no Claude token allowance set. Add one line to engine/.env.local,"
+  echo "  ENGINE_EVAL_CLAUDE_TOKEN_CAP=<tokens you allow this evaluation to use on KodeKey>"
+  echo "and run this script again - everything finished so far is reused."
+  summary
+  exit 0
+fi
+
+# Nemotron (free) and the Claude judge on the local facts do not depend on each other.
+say "Stages text + judge_local, at the same time"
+need 7
+echo "Claude tokens: $(tokens_left) left of $TOKEN_CAP"
+stage text --text --route-missed &
+p_text=$!
+with_claude judge_local --judge anthropic &
+p_judge=$!
+failed=0
+wait "$p_text" || failed=1
+wait "$p_judge" || failed=1
+[ "$failed" = 0 ] || { echo "a stage failed - see $OUT_DIR/text.log and $OUT_DIR/judge_local.log"; exit 8; }
+STAGES="$STAGES text judge_local"
+compare
+
+# Pilot: Claude page images on 3 documents, to project the rest from measured tokens.
+say "Stage visual_pilot (3 documents)"
+need 3
+with_claude visual_pilot --text --route-missed --visual --docs-limit 3
+python3 - "$OUT_DIR/visual_pilot.json" "$OUT_DIR/judge_local.json" "$(tokens_left)" <<'PY' || { summary; exit 9; }
+import json, sys
+pilot, judge, left = json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), int(sys.argv[3])
+if pilot["false_verified_with_clauses"]:
+    print("pilot produced a false verified fact - stopping")
+    sys.exit(1)
+t = pilot["claude_tokens"]
+per_doc = (t["input"] + t["output"]) / max(1, pilot["documents"])
+j = judge["claude_tokens"]
+need = int(per_doc * (17 - pilot["documents"]) * 1.25 + (j["input"] + j["output"]) * 0.3)
+print(f"pilot: {t['calls']} Claude calls, {t['input'] + t['output']:,} tokens for "
+      f"{pilot['documents']} documents ({per_doc:,.0f} per document)")
+print(f"projected for the rest (visual + judging new facts, 25% margin): {need:,} tokens; "
+      f"{left:,} left of the allowance")
+if need > left:
+    print("does not fit - stopping before the full Claude stages. Raise "
+          "ENGINE_EVAL_CLAUDE_TOKEN_CAP to continue; finished work is reused.")
+    sys.exit(1)
+PY
+
+say "Stage visual"
+need 12
+with_claude visual --text --route-missed --visual
+STAGES="$STAGES visual"
+compare
+
+say "Stage judged"
+need 10
+with_claude judged --text --route-missed --visual --judge anthropic --alt-judge nvidia
+STAGES="$STAGES judged"
+compare
 
 # ------------------------------------------------------------------- 7. summary
-say "Summary"
-{
-  echo "# Model and judge measurement - $(date -u +%Y-%m-%dT%H:%MZ)"
-  echo
-  echo "17 public validation SBCs, keys v1.1 DRAFT, frozen scorer. Aggregates only."
-  echo
-  # shellcheck disable=SC2086
-  uv run -q python -m evaluation.compare_runs "$OUT_DIR" $STAGES
-  echo
-  echo "Cumulative evaluation spend: \$$(committed) of \$25 (ledger: $ENGINE_EVAL_SPEND_LEDGER)"
-} | tee "$OUT_DIR/summary.md"
-echo
-echo "Done. Share $OUT_DIR/summary.md and the stage JSON reports (aggregates, no document text)."
+summary

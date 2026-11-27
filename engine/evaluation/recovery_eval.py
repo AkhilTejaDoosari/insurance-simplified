@@ -330,6 +330,24 @@ def _parser() -> argparse.ArgumentParser:
         default=os.environ.get("ENGINE_EVAL_SPEND_LEDGER") or None,
         help="append-only spending ledger shared by every evaluation run (required for models)",
     )
+    ap.add_argument(
+        "--token-ledger",
+        type=Path,
+        default=os.environ.get("ENGINE_EVAL_TOKEN_LEDGER") or None,
+        help="append-only Claude token ledger shared by every run (gateway allowance)",
+    )
+    ap.add_argument(
+        "--token-cap",
+        type=int,
+        default=int(os.environ.get("ENGINE_EVAL_CLAUDE_TOKEN_CAP") or 0) or None,
+        help="cumulative Claude tokens (input + output) allowed across runs",
+    )
+    ap.add_argument(
+        "--docs-limit",
+        type=int,
+        default=None,
+        help="score only the first N documents (a pilot; keys restricted to those documents)",
+    )
     ap.add_argument("--out", type=Path)
     return ap
 
@@ -408,6 +426,47 @@ def _spend_ledger(
     if args.spend_ledger is None:
         ap.error("model stages need --spend-ledger (or ENGINE_EVAL_SPEND_LEDGER)")
     return SpendLedger(args.spend_ledger, args.eval_budget_usd)
+
+
+def _token_ledger(ap: argparse.ArgumentParser, args: argparse.Namespace) -> SpendLedger | None:
+    """With a token ledger configured, Claude stages run only under a cap; stages that
+    never call Claude ignore it. A cap without a ledger is a configuration error."""
+    uses_claude = args.visual or "anthropic" in (args.judge, args.alt_judge)
+    if args.token_cap is not None and args.token_ledger is None:
+        ap.error("--token-cap needs --token-ledger (or ENGINE_EVAL_TOKEN_LEDGER)")
+    if args.token_cap is None:
+        if uses_claude and args.token_ledger is not None:
+            ap.error("Claude stages need --token-cap (ENGINE_EVAL_CLAUDE_TOKEN_CAP)")
+        return None
+    return SpendLedger(args.token_ledger, float(args.token_cap))
+
+
+def _claude_tokens(results: dict[str, RecoveryResult]) -> dict[str, int]:
+    used = {"input": 0, "output": 0, "calls": 0}
+    for r in results.values():
+        for e in r.ledger.entries:
+            if e.engine == "anthropic" and e.status in ("ok", "invalid_output", "failed"):
+                used["input"] += e.input_tokens
+                used["output"] += e.output_tokens
+                used["calls"] += 1
+    return used
+
+
+def _budget_report(
+    report: dict[str, object],
+    results: dict[str, RecoveryResult],
+    max_cost: float | None,
+    spend: SpendLedger | None,
+    tokens: SpendLedger | None,
+) -> None:
+    report["max_cost_usd_per_document"] = max_cost
+    if spend is not None:
+        report["evaluation_budget_usd"] = spend.cap_usd
+        report["evaluation_committed_usd"] = spend.committed_usd()
+    report["claude_tokens"] = _claude_tokens(results)
+    if tokens is not None:
+        report["evaluation_token_cap"] = int(tokens.cap_usd)
+        report["evaluation_tokens_committed"] = int(tokens.committed_usd())
 
 
 def _run_docs(
@@ -502,6 +561,7 @@ def _main(argv: list[str]) -> int:
     _set_judge(ap, args.alt_judge, engines, alt=True)
     max_cost = _cost_cap(args.max_cost_usd)
     spend = _spend_ledger(ap, args, max_cost)
+    tokens = _token_ledger(ap, args)
     t_run = time.monotonic()
     print_lock = threading.Lock()
 
@@ -517,10 +577,14 @@ def _main(argv: list[str]) -> int:
         cache=Cache.from_env(),
         policy=CloudPolicy.from_env(),
         spend=spend,
+        tokens=tokens,
     )
 
     keys = load_keys(args.keys)
     docs = sorted({k.doc for k in keys})
+    if args.docs_limit is not None:
+        docs = docs[: max(1, args.docs_limit)]
+        keys = [k for k in keys if k.doc in set(docs)]
     results = _run_docs(pipeline, docs, args, progress if model_stages else None)
     report = score(results, keys)
     report["contract_facts_by_state"] = _contract_states(results, args.pdfs)
@@ -531,10 +595,7 @@ def _main(argv: list[str]) -> int:
         | ({f"judge:{args.judge}"} if args.judge != "none" else set())
         | ({f"alt_judge:{args.alt_judge}"} if args.alt_judge != "none" else set())
     )
-    report["max_cost_usd_per_document"] = max_cost
-    if spend is not None:
-        report["evaluation_budget_usd"] = spend.cap_usd
-        report["evaluation_committed_usd"] = spend.committed_usd()
+    _budget_report(report, results, max_cost, spend, tokens)
     print(json.dumps(report, indent=1))
     if args.out:
         args.out.write_text(json.dumps(report, indent=1))

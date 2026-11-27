@@ -772,3 +772,48 @@ def test_progress_can_be_given_per_document() -> None:
         Engines(_gappy_primary(), text_model=text), policy=OPEN, progress=shared.append
     ).run(pdf, _auth(pdf), progress=mine.append)
     assert mine and not shared
+
+
+def test_claude_calls_stop_at_the_token_allowance(tmp_path: Any) -> None:
+    pdf = _pdf()
+    tokens = SpendLedger(tmp_path / "tokens.jsonl", cap_usd=1_000)  # far below one call
+    visual = FakeVisual(_proposal(*GOOD_SPECIALIST))
+    result = RecoveryPipeline(
+        Engines(_gappy_primary(), visual_model=visual), policy=OPEN, tokens=tokens
+    ).run(pdf, _auth(pdf))
+    assert visual.pdfs == []  # nothing was sent
+    entry = next(e for e in result.ledger.entries if e.stage == "visual")
+    assert (entry.status, entry.detail) == ("skipped", "evaluation_token_reservation")
+    assert tokens.committed_usd() == 0
+
+
+def test_token_allowance_is_settled_to_reported_usage(tmp_path: Any) -> None:
+    pdf = _pdf()
+    tokens = SpendLedger(tmp_path / "tokens.jsonl", cap_usd=10_000_000)
+    visual = FakeVisual(_proposal(*GOOD_SPECIALIST))
+    RecoveryPipeline(
+        Engines(_gappy_primary(), visual_model=visual), policy=OPEN, tokens=tokens
+    ).run(pdf, _auth(pdf))
+    assert len(visual.pdfs) == 1
+    assert tokens.committed_usd() == 1050  # Usage(1000, 50): the reservation is released
+
+
+def test_nemotron_calls_do_not_use_the_claude_allowance(tmp_path: Any) -> None:
+    pdf = _pdf()
+    tokens = SpendLedger(tmp_path / "tokens.jsonl", cap_usd=1)
+    text = FakeText(_proposal(*GOOD_SPECIALIST))
+    RecoveryPipeline(Engines(_gappy_primary(), text_model=text), policy=OPEN, tokens=tokens).run(
+        pdf, _auth(pdf)
+    )
+    assert len(text.requests) == 1
+    assert tokens.committed_usd() == 0
+
+
+def test_judge_batches_put_reader_found_facts_first() -> None:
+    from app.recovery.pipeline import _model_only  # noqa: PLC0415
+
+    assert not _model_only({"opendataloader"})
+    assert not _model_only({"opendataloader", "text:nemotron"})  # a reader found it too
+    assert _model_only({"text:nemotron"})
+    assert _model_only({"visual:claude"})
+    assert not _model_only(set())

@@ -56,6 +56,7 @@ NAMES = (
     "KODEKEY_BASE_URL",
     "KODEKEY_CLAUDE_MODEL",
     "EVAL_CLAUDE_VIA",
+    "ENGINE_EVAL_CLAUDE_TOKEN_CAP",
 )
 GATEWAY_HOSTS = ("kodekey", "kodekloud")
 FILES = (".env", ".env.local", "engine/.env", "engine/.env.local", "web/.env", "web/.env.local")
@@ -269,6 +270,9 @@ def _declarations(values: dict[str, str], out: Found) -> None:
             "ENGINE_EVAL_GRANTED_BY=<your name> (authorizes sending the public validation SBCs)"
         )
     env["ENGINE_CLOUD_PROVIDERS"] = "nvidia,anthropic"
+    cap = values.get("ENGINE_EVAL_CLAUDE_TOKEN_CAP", "").replace(",", "").replace("_", "")
+    if cap.isdigit() and int(cap) > 0:  # optional: Claude stages stop without it
+        env["ENGINE_EVAL_CLAUDE_TOKEN_CAP"] = str(int(cap))
 
 
 def resolve(

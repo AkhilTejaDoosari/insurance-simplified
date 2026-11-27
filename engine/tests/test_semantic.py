@@ -255,3 +255,44 @@ def test_claude_probe_spends_no_tokens_and_reveals_no_key(monkeypatch: pytest.Mo
     out = client.probe()
     assert out["model_available"] is True and seen["url"].endswith("/v1/models/claude-opus-5-5")
     assert "sk-secret" not in repr(out)
+
+
+def test_a_later_stage_reuses_judge_replies_for_reader_found_facts(tmp_path: Any) -> None:
+    """Judging the reader-found facts first (judge-only stage) and again after Nemotron
+    added a fact must only pay for the batch holding the new fact."""
+    from app.recovery.cache import Cache  # noqa: PLC0415
+    from tests.test_recovery import (  # noqa: PLC0415
+        GOOD_SPECIALIST,
+        OUT,
+        FakeText,
+        _proposal,
+    )
+
+    def reader() -> FakeReader:  # every cell but the network specialist copay
+        return FakeReader(
+            _doc(
+                "opendataloader",
+                [
+                    ("Specialist visit", OUT, "50% coinsurance"),
+                    ("Urgent care", NET, "$90 copay/visit"),
+                    ("Urgent care", OUT, "Not covered"),
+                ],
+            )
+        )
+
+    pdf = _pdf()
+    limits = RunLimits(judge_facts_per_call=2, route_missed_amounts=True)
+    first = FakeJudge()
+    before = RecoveryPipeline(
+        Engines(reader(), judge=first), limits=limits, cache=Cache(tmp_path), policy=OPEN
+    ).run(pdf, _auth(pdf))
+    second = FakeJudge()
+    after = RecoveryPipeline(
+        Engines(reader(), text_model=FakeText(_proposal(*GOOD_SPECIALIST)), judge=second),
+        limits=limits,
+        cache=Cache(tmp_path),
+        policy=OPEN,
+    ).run(pdf, _auth(pdf))
+    assert len(before.facts) == 3 and len(after.facts) == 4 and len(first.requests) == 2
+    assert len(second.requests) == 1  # the reader-found batches come from the cache
+    assert "$45 copay/visit" in second.requests[0]

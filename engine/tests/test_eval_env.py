@@ -182,3 +182,14 @@ def test_explicit_names_resolve_the_owner_layout(tmp_path: Path) -> None:
         "kk-2",
         "https://api.ai.kodekloud.example/v1",
     )
+
+
+@pytest.mark.parametrize(
+    ("written", "exported"), [("2,000,000", "2000000"), ("0", None), ("lots", None)]
+)
+def test_claude_token_cap_is_optional_and_numeric(
+    tmp_path: Path, written: str, exported: str | None
+) -> None:
+    repo = _repo(tmp_path, "", f"ENGINE_EVAL_CLAUDE_TOKEN_CAP={written}\n")
+    env, _notes, _missing, _ = resolve(*collect(repo))
+    assert env.get("ENGINE_EVAL_CLAUDE_TOKEN_CAP") == exported

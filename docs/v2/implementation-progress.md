@@ -32,6 +32,16 @@ provider. **Verified here:** `--jobs 1` and `--jobs 4` give identical reports on
 (395/0) apart from timings; the spend ledger never exceeds its cap under 8 concurrent
 reservers. pytest 186 passed, 1 skipped. **Not yet measured:** any model stage result.
 
+**Then (owner: "hard way", KodeKey meters tokens):** a Claude token allowance
+(`ENGINE_EVAL_CLAUDE_TOKEN_CAP`, cumulative file-locked ledger, reserve worst case per
+attempt, settle to reported usage; Nemotron not metered; Claude stages refuse to run
+without it). Script order: local → Nemotron **and** the Claude judge on the local facts
+at the same time → Claude page-image pilot on 3 documents → projection of the rest from
+measured tokens (stops if it does not fit) → visual → judged. Judge batches put
+reader-found facts first, so the final stage reuses the earlier judge replies (test fails
+without it). Script control flow dry-run with a stand-in `uv` (no cap / fits / does not
+fit). Local baseline unchanged (395/0). pytest 195 passed, 1 skipped.
+
 ## Session 2026-11-27 (d) — model and judge measurement, prepared
 
 Owner approved the push (branch only) and real model + judge measurements on the
