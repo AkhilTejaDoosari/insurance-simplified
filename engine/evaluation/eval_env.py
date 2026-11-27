@@ -121,6 +121,10 @@ def _nemotron(values: dict[str, str], source: dict[str, str], out: Found) -> Non
     env, origin, notes, missing = out
     base, key = values.get("LLM_BASE_URL", ""), values.get("LLM_API_KEY", "")
     origin_key = source.get("LLM_API_KEY", "")
+    if key and not base:
+        # a key without its endpoint is never assumed to be NVIDIA's (it may be KodeKey's)
+        notes.append("LLM_API_KEY has no LLM_BASE_URL beside it: not used for Nemotron")
+        key = ""
     if base and _host(base) != NVIDIA_HOST:
         notes.append(
             f"LLM_BASE_URL ({source['LLM_BASE_URL']}) points to {_host(base)}, "

@@ -126,3 +126,11 @@ def test_gateway_probe_checks_both_request_shapes(monkeypatch: pytest.MonkeyPatc
     assert [s["url"] for s in sent] == ["https://kk.example/v1/messages"] * 2
     assert sent[0]["auth"] == "Bearer"
     assert "SECRET" not in repr(out)
+
+
+def test_a_key_without_its_endpoint_is_never_assumed_to_be_nvidia(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, "", "LLM_API_KEY=some-gateway-key\n")
+    env, notes, missing, _ = resolve(*collect(repo))
+    assert "LLM_API_KEY" not in env
+    assert any("no LLM_BASE_URL" in n for n in notes)
+    assert any(m.startswith("NVIDIA_API_KEY") for m in missing)
