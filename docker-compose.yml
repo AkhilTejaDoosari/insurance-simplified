@@ -1,6 +1,8 @@
+# Local stack: web (Next.js) + engine (FastAPI) + private embeddings.
+# Ports are loopback-only; the engine is never published beyond this host.
 services:
   app:
-    build: .
+    build: ./web
     # Loopback-only: Caddy terminates public TLS and reverse-proxies here.
     # Never publish the app port publicly.
     ports:
@@ -20,6 +22,9 @@ services:
       - SUPABASE_URL=${SUPABASE_URL:-}
       - SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY:-}
       - SUPABASE_STORAGE_BUCKET=${SUPABASE_STORAGE_BUCKET:-}
+      # Engine (V2): reached over the compose network only, with a service token.
+      - ENGINE_URL=http://engine:8000
+      - ENGINE_SERVICE_TOKEN=${ENGINE_SERVICE_TOKEN:-}
       # NOTE: DATABASE_URL / SUPABASE_DB_URL are operator/migration
       # credentials (psql) and are intentionally NOT injected here —
       # runtime code never reads them. No NEXT_PUBLIC_* vars: the app
@@ -27,12 +32,23 @@ services:
     restart: unless-stopped
     depends_on:
       - ollama
+      - engine
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3333/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  # Document intelligence engine (engine/). Not published to the host by
+  # default; for local debugging use: docker compose run -p 127.0.0.1:8000:8000 engine
+  engine:
+    build: ./engine
+    environment:
+      - ENGINE_ENV=${ENGINE_ENV:-production}
+      - ENGINE_SERVICE_TOKEN=${ENGINE_SERVICE_TOKEN:-}
+      - ENGINE_LOG_LEVEL=${ENGINE_LOG_LEVEL:-INFO}
+    restart: unless-stopped
 
   # Private embedding provider: 1024-dim qwen3-embedding:0.6b served over
   # the app Docker network only. No ports published — not reachable from

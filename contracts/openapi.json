@@ -1,0 +1,1793 @@
+{
+  "components": {
+    "schemas": {
+      "BBox": {
+        "additionalProperties": false,
+        "properties": {
+          "x0": {
+            "minimum": 0,
+            "title": "X0",
+            "type": "number"
+          },
+          "x1": {
+            "minimum": 0,
+            "title": "X1",
+            "type": "number"
+          },
+          "y0": {
+            "minimum": 0,
+            "title": "Y0",
+            "type": "number"
+          },
+          "y1": {
+            "minimum": 0,
+            "title": "Y1",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x0",
+          "y0",
+          "x1",
+          "y1"
+        ],
+        "title": "BBox",
+        "type": "object"
+      },
+      "Basis": {
+        "description": "What an amount applies to. Amounts are never shown without one.",
+        "enum": [
+          "per_year",
+          "per_incident",
+          "per_visit",
+          "per_day",
+          "per_admission",
+          "per_period_of_coverage",
+          "lifetime",
+          "not_applicable",
+          "unclear"
+        ],
+        "title": "Basis",
+        "type": "string"
+      },
+      "Block": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BBox"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BlockKind"
+          },
+          "reading_order": {
+            "minimum": 0,
+            "title": "Reading Order",
+            "type": "integer"
+          },
+          "span": {
+            "$ref": "#/components/schemas/TextSpan"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "span",
+          "reading_order"
+        ],
+        "title": "Block",
+        "type": "object"
+      },
+      "BlockKind": {
+        "enum": [
+          "heading",
+          "paragraph",
+          "list_item",
+          "page_header",
+          "page_footer",
+          "caption",
+          "other"
+        ],
+        "title": "BlockKind",
+        "type": "string"
+      },
+      "ChatAnswer": {
+        "additionalProperties": false,
+        "properties": {
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "fact_ids": {
+            "items": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "title": "Fact Ids",
+            "type": "array"
+          },
+          "plan_ids_named": {
+            "items": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "title": "Plan Ids Named",
+            "type": "array"
+          },
+          "route": {
+            "$ref": "#/components/schemas/ChatRoute"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "route",
+          "text"
+        ],
+        "title": "ChatAnswer",
+        "type": "object"
+      },
+      "ChatRoute": {
+        "enum": [
+          "comparison",
+          "document_fact",
+          "calculation",
+          "general_term",
+          "not_mentioned",
+          "refuse"
+        ],
+        "title": "ChatRoute",
+        "type": "string"
+      },
+      "CheckResult": {
+        "additionalProperties": false,
+        "properties": {
+          "checker": {
+            "description": "Code check name or model id.",
+            "minLength": 1,
+            "title": "Checker",
+            "type": "string"
+          },
+          "checker_version": {
+            "minLength": 1,
+            "title": "Checker Version",
+            "type": "string"
+          },
+          "model_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Set for model-based checks.",
+            "title": "Model Family"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "passed",
+          "checker",
+          "checker_version"
+        ],
+        "title": "CheckResult",
+        "type": "object"
+      },
+      "Citation": {
+        "additionalProperties": false,
+        "properties": {
+          "document_sha256": {
+            "description": "Lowercase hex SHA-256.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Document Sha256",
+            "type": "string"
+          },
+          "page": {
+            "description": "1-based PDF page number.",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "span": {
+            "$ref": "#/components/schemas/TextSpan"
+          }
+        },
+        "required": [
+          "document_sha256",
+          "page",
+          "span"
+        ],
+        "title": "Citation",
+        "type": "object"
+      },
+      "Comparator": {
+        "enum": [
+          "at_most",
+          "at_least",
+          "covered"
+        ],
+        "title": "Comparator",
+        "type": "string"
+      },
+      "Comparison": {
+        "additionalProperties": false,
+        "properties": {
+          "plan_ids": {
+            "items": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "maxItems": 25,
+            "minItems": 1,
+            "title": "Plan Ids",
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plan_ids",
+          "rows"
+        ],
+        "title": "Comparison",
+        "type": "object"
+      },
+      "ComparisonRow": {
+        "additionalProperties": false,
+        "properties": {
+          "category_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Category Key"
+          },
+          "cells": {
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$": {
+                "$ref": "#/components/schemas/Fact"
+              }
+            },
+            "title": "Cells",
+            "type": "object"
+          },
+          "group": {
+            "$ref": "#/components/schemas/ImportanceGroup"
+          },
+          "key": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "markers": {
+            "items": {
+              "$ref": "#/components/schemas/RowMarker"
+            },
+            "title": "Markers",
+            "type": "array"
+          },
+          "section": {
+            "$ref": "#/components/schemas/Section"
+          },
+          "weight": {
+            "minimum": 0,
+            "title": "Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "group",
+          "weight",
+          "section",
+          "cells"
+        ],
+        "title": "ComparisonRow",
+        "type": "object"
+      },
+      "Contact": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "minItems": 1,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ContactKind"
+          },
+          "plan_family_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Plan Family Id",
+            "type": "string"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/ContactPurpose"
+          },
+          "purpose_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The document's own wording.",
+            "title": "Purpose Label"
+          },
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_family_id",
+          "kind",
+          "value",
+          "purpose",
+          "evidence"
+        ],
+        "title": "Contact",
+        "type": "object"
+      },
+      "ContactKind": {
+        "enum": [
+          "phone",
+          "email",
+          "website",
+          "mailing_address"
+        ],
+        "title": "ContactKind",
+        "type": "string"
+      },
+      "ContactPurpose": {
+        "enum": [
+          "customer_service",
+          "claims",
+          "pre_approval",
+          "emergency_assistance",
+          "other"
+        ],
+        "title": "ContactPurpose",
+        "type": "string"
+      },
+      "Document": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "description": "ISO 4217 code.",
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "language": {
+            "description": "BCP 47.",
+            "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$",
+            "title": "Language",
+            "type": "string"
+          },
+          "market": {
+            "$ref": "#/components/schemas/Market"
+          },
+          "model_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Model Version",
+            "type": "string"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/Page"
+            },
+            "minItems": 1,
+            "title": "Pages",
+            "type": "array"
+          },
+          "parser": {
+            "$ref": "#/components/schemas/ParserInfo"
+          },
+          "sha256": {
+            "description": "Lowercase hex SHA-256.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "market",
+          "currency",
+          "language",
+          "parser",
+          "pages"
+        ],
+        "title": "Document",
+        "type": "object"
+      },
+      "Evidence": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BBox"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "column_header_spans": {
+            "items": {
+              "$ref": "#/components/schemas/TextSpan"
+            },
+            "title": "Column Header Spans",
+            "type": "array"
+          },
+          "document_sha256": {
+            "description": "Lowercase hex SHA-256.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Document Sha256",
+            "type": "string"
+          },
+          "page": {
+            "description": "1-based PDF page number.",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "printed_page": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Printed Page"
+          },
+          "row_label_span": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextSpan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "value_span": {
+            "$ref": "#/components/schemas/TextSpan"
+          }
+        },
+        "required": [
+          "document_sha256",
+          "page",
+          "value_span"
+        ],
+        "title": "Evidence",
+        "type": "object"
+      },
+      "Fact": {
+        "additionalProperties": false,
+        "properties": {
+          "benefit_label": {
+            "description": "The document's own wording.",
+            "minLength": 1,
+            "title": "Benefit Label",
+            "type": "string"
+          },
+          "category_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Dictionary category, used only to match and order rows.",
+            "title": "Category Key"
+          },
+          "check_page": {
+            "anyOf": [
+              {
+                "description": "1-based PDF page number.",
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where the user should look (couldn't confirm).",
+            "title": "Check Page"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "mentioned_by_plan_ids": {
+            "description": "Other selected plans that state this benefit (not mentioned only).",
+            "items": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "title": "Mentioned By Plan Ids",
+            "type": "array"
+          },
+          "plan_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "qualifiers": {
+            "$ref": "#/components/schemas/Qualifiers"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/FactScope",
+            "default": "shared"
+          },
+          "searched_document": {
+            "default": false,
+            "description": "The whole document was searched before 'not mentioned'.",
+            "title": "Searched Document",
+            "type": "boolean"
+          },
+          "semantics": {
+            "$ref": "#/components/schemas/Semantics"
+          },
+          "state": {
+            "$ref": "#/components/schemas/FactState"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FactValue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "id",
+          "plan_id",
+          "benefit_label",
+          "state",
+          "provenance"
+        ],
+        "title": "Fact",
+        "type": "object"
+      },
+      "FactScope": {
+        "enum": [
+          "shared",
+          "level_specific"
+        ],
+        "title": "FactScope",
+        "type": "string"
+      },
+      "FactState": {
+        "enum": [
+          "verified",
+          "not_covered",
+          "not_mentioned",
+          "couldnt_confirm",
+          "conflicting"
+        ],
+        "title": "FactState",
+        "type": "string"
+      },
+      "FactValue": {
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "$ref": "#/components/schemas/Basis"
+          },
+          "counts_toward_deductible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only when the document states it.",
+            "title": "Counts Toward Deductible"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "description": "ISO 4217 code.",
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Currency"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ValueKind"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Amount, percent, count or days.",
+            "title": "Number"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Short value in plain words.",
+            "title": "Text"
+          },
+          "year_kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/YearKind"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "kind",
+          "basis"
+        ],
+        "title": "FactValue",
+        "type": "object"
+      },
+      "Footnote": {
+        "additionalProperties": false,
+        "properties": {
+          "marker": {
+            "minLength": 1,
+            "title": "Marker",
+            "type": "string"
+          },
+          "span": {
+            "$ref": "#/components/schemas/TextSpan"
+          }
+        },
+        "required": [
+          "marker",
+          "span"
+        ],
+        "title": "Footnote",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "const": true,
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "Health",
+        "type": "object"
+      },
+      "ImportanceGroup": {
+        "enum": [
+          "must_know",
+          "important",
+          "good_to_know",
+          "admin"
+        ],
+        "title": "ImportanceGroup",
+        "type": "string"
+      },
+      "Job": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "minimum": 1,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Checkpoint"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Code only; never document text.",
+            "title": "Error Code"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "progress": {
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Progress",
+            "type": "integer"
+          },
+          "session_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/JobState"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "state",
+          "progress",
+          "attempt"
+        ],
+        "title": "Job",
+        "type": "object"
+      },
+      "JobState": {
+        "enum": [
+          "uploaded",
+          "parsing",
+          "extracting",
+          "verifying",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "JobState",
+        "type": "string"
+      },
+      "Market": {
+        "description": "Market packs. Design is market-neutral; US is the first pack.",
+        "enum": [
+          "US"
+        ],
+        "title": "Market",
+        "type": "string"
+      },
+      "MatchScore": {
+        "additionalProperties": false,
+        "properties": {
+          "missed_must_haves": {
+            "items": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+              "type": "string"
+            },
+            "title": "Missed Must Haves",
+            "type": "array"
+          },
+          "percent": {
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Percent",
+            "type": "integer"
+          },
+          "plan_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/NeedResult"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plan_id",
+          "percent",
+          "results"
+        ],
+        "title": "MatchScore",
+        "type": "object"
+      },
+      "Meta": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "document_model_version": {
+            "title": "Document Model Version",
+            "type": "string"
+          },
+          "engine_version": {
+            "title": "Engine Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine_version",
+          "contract_version",
+          "document_model_version"
+        ],
+        "title": "Meta",
+        "type": "object"
+      },
+      "Need": {
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Basis"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Compared like basis with like basis."
+          },
+          "category_key": {
+            "title": "Category Key",
+            "type": "string"
+          },
+          "comparator": {
+            "$ref": "#/components/schemas/Comparator"
+          },
+          "importance": {
+            "$ref": "#/components/schemas/NeedImportance"
+          },
+          "key": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Threshold"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "category_key",
+          "importance",
+          "comparator"
+        ],
+        "title": "Need",
+        "type": "object"
+      },
+      "NeedImportance": {
+        "enum": [
+          "must_have",
+          "nice_to_have"
+        ],
+        "title": "NeedImportance",
+        "type": "string"
+      },
+      "NeedOutcome": {
+        "enum": [
+          "met",
+          "not_met",
+          "unconfirmed",
+          "not_scored_not_mentioned",
+          "not_scored_different_basis"
+        ],
+        "title": "NeedOutcome",
+        "type": "string"
+      },
+      "NeedResult": {
+        "additionalProperties": false,
+        "properties": {
+          "fact_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fact Id"
+          },
+          "importance": {
+            "$ref": "#/components/schemas/NeedImportance"
+          },
+          "need_key": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Need Key",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/NeedOutcome"
+          }
+        },
+        "required": [
+          "need_key",
+          "importance",
+          "outcome"
+        ],
+        "title": "NeedResult",
+        "type": "object"
+      },
+      "NetworkTier": {
+        "enum": [
+          "in_network",
+          "out_of_network",
+          "any",
+          "unspecified"
+        ],
+        "title": "NetworkTier",
+        "type": "string"
+      },
+      "Page": {
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "items": {
+              "$ref": "#/components/schemas/Block"
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "footnotes": {
+            "items": {
+              "$ref": "#/components/schemas/Footnote"
+            },
+            "title": "Footnotes",
+            "type": "array"
+          },
+          "height": {
+            "exclusiveMinimum": 0,
+            "title": "Height",
+            "type": "number"
+          },
+          "number": {
+            "description": "1-based PDF page number.",
+            "minimum": 1,
+            "title": "Number",
+            "type": "integer"
+          },
+          "printed_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Page number printed on the page, if any.",
+            "title": "Printed Label"
+          },
+          "readable": {
+            "description": "False for image-only pages (no text layer).",
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/Table"
+            },
+            "title": "Tables",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "width": {
+            "exclusiveMinimum": 0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "number",
+          "width",
+          "height",
+          "readable",
+          "text"
+        ],
+        "title": "Page",
+        "type": "object"
+      },
+      "ParserInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "ParserInfo",
+        "type": "object"
+      },
+      "PersonLevel": {
+        "enum": [
+          "individual",
+          "family",
+          "unspecified"
+        ],
+        "title": "PersonLevel",
+        "type": "string"
+      },
+      "PlanFamily": {
+        "additionalProperties": false,
+        "properties": {
+          "document_sha256": {
+            "description": "Lowercase hex SHA-256.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Document Sha256",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/PlanLevel"
+            },
+            "minItems": 1,
+            "title": "Levels",
+            "type": "array"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "document_sha256",
+          "levels"
+        ],
+        "title": "PlanFamily",
+        "type": "object"
+      },
+      "PlanLevel": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "minItems": 1,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "description": "Plan id used by facts, comparison, scoring and chat.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "None when the family has one level.",
+            "title": "Name"
+          },
+          "order": {
+            "description": "Document order. Levels are never ranked by name.",
+            "minimum": 0,
+            "title": "Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "order",
+          "evidence"
+        ],
+        "title": "PlanLevel",
+        "type": "object"
+      },
+      "Provenance": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "extractor_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Extractor Model"
+          },
+          "extractor_model_family": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Extractor Model Family"
+          },
+          "judge_check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "parser": {
+            "$ref": "#/components/schemas/ParserInfo"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prompt Version"
+          },
+          "structural_check": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CheckResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "parser",
+          "created_at"
+        ],
+        "title": "Provenance",
+        "type": "object"
+      },
+      "Qualifiers": {
+        "additionalProperties": false,
+        "properties": {
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Condition"
+          },
+          "network_tier": {
+            "$ref": "#/components/schemas/NetworkTier",
+            "default": "unspecified"
+          },
+          "person_level": {
+            "$ref": "#/components/schemas/PersonLevel",
+            "default": "unspecified"
+          },
+          "plan_level_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Plan Level Id"
+          }
+        },
+        "title": "Qualifiers",
+        "type": "object"
+      },
+      "RowMarker": {
+        "enum": [
+          "differs",
+          "different_basis",
+          "same_for_all_levels"
+        ],
+        "title": "RowMarker",
+        "type": "string"
+      },
+      "Section": {
+        "enum": [
+          "in_all",
+          "in_some",
+          "only_one"
+        ],
+        "title": "Section",
+        "type": "string"
+      },
+      "Semantics": {
+        "additionalProperties": false,
+        "properties": {
+          "conditions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
+          "exceptions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Exceptions",
+            "type": "array"
+          },
+          "limits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limits",
+            "type": "array"
+          },
+          "negated": {
+            "default": false,
+            "title": "Negated",
+            "type": "boolean"
+          }
+        },
+        "title": "Semantics",
+        "type": "object"
+      },
+      "Table": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BBox"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/TableCell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/TableColumn"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "page": {
+            "description": "1-based PDF page number.",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/TableRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "page",
+          "columns",
+          "rows",
+          "cells"
+        ],
+        "title": "Table",
+        "type": "object"
+      },
+      "TableCell": {
+        "additionalProperties": false,
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BBox"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "col_span": {
+            "default": 1,
+            "minimum": 1,
+            "title": "Col Span",
+            "type": "integer"
+          },
+          "column_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Column Id",
+            "type": "string"
+          },
+          "row_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Row Id",
+            "type": "string"
+          },
+          "row_span": {
+            "default": 1,
+            "minimum": 1,
+            "title": "Row Span",
+            "type": "integer"
+          },
+          "span": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextSpan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "row_id",
+          "column_id",
+          "text"
+        ],
+        "title": "TableCell",
+        "type": "object"
+      },
+      "TableColumn": {
+        "additionalProperties": false,
+        "properties": {
+          "header_path": {
+            "description": "Header text from outermost to innermost row (multi-row headers).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Header Path",
+            "type": "array"
+          },
+          "header_spans": {
+            "items": {
+              "$ref": "#/components/schemas/TextSpan"
+            },
+            "title": "Header Spans",
+            "type": "array"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "header_path"
+        ],
+        "title": "TableColumn",
+        "type": "object"
+      },
+      "TableRow": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "label_span": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TextSpan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "TableRow",
+        "type": "object"
+      },
+      "TextSpan": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "exclusiveMinimum": 0,
+            "title": "End",
+            "type": "integer"
+          },
+          "page": {
+            "description": "1-based PDF page number.",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "start": {
+            "minimum": 0,
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "start",
+          "end"
+        ],
+        "title": "TextSpan",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "ValueKind": {
+        "enum": [
+          "amount",
+          "percent",
+          "count",
+          "duration_days",
+          "covered",
+          "text"
+        ],
+        "title": "ValueKind",
+        "type": "string"
+      },
+      "YearKind": {
+        "enum": [
+          "calendar",
+          "policy",
+          "unspecified"
+        ],
+        "title": "YearKind",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "title": "Insurance Simplified engine",
+    "version": "2.0.0-alpha.1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/meta": {
+      "get": {
+        "operationId": "meta_v1_meta_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Meta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Meta",
+        "tags": [
+          "meta"
+        ]
+      }
+    }
+  }
+}

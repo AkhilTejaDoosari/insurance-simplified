@@ -28,3 +28,14 @@ SBCs/
 real-fixtures/
 .debug-journal.md
 
+
+# Python (engine/)
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+docs/v2/demo/pdfs/
+docs/v2/demo/bundle.json
