@@ -32,6 +32,14 @@ from app.recovery.budget import (
     worst_case_usd,
 )
 from app.recovery.cache import Cache
+from app.recovery.clauses import (
+    ClauseCandidate,
+    ClauseFact,
+    ClauseVerdict,
+    candidates_from_layout,
+    candidates_from_tables,
+    clause_facts,
+)
 from app.recovery.context import layout_text, page_subset_pdf, tables_hint, with_context
 from app.recovery.coverage import CoverageReport, ItemState, coverage
 from app.recovery.engines import DocumentReader, PageReader, TextModel, VisualModel
@@ -70,6 +78,8 @@ class RecoveryResult:
     verified_by_stage: dict[str, int] = field(default_factory=dict)
     reconciled: Reconciled | None = None
     coverage: CoverageReport | None = None  # P0-02: parser-independent completeness
+    clauses: list[ClauseFact] = field(default_factory=list)  # P0-01: verified prose
+    clause_verdicts: list[ClauseVerdict] = field(default_factory=list)
 
 
 class RecoveryPipeline:
@@ -155,6 +165,31 @@ class RecoveryPipeline:
             )
         )
         return doc
+
+    # ---------------------------------------------------------------- prose
+
+    @staticmethod
+    def _clauses(
+        docs: dict[str, Document],
+        layouts: list[PageLayout],
+        rec: Reconciled,
+        extra: list[ClauseCandidate],
+    ) -> tuple[list[ClauseFact], list[ClauseVerdict]]:
+        """P0-01: reader cells and text-layer Q&A cells proposed as clauses, verified by
+        the prose rules. A clause that repeats a verified table fact is not added twice."""
+        cands: list[ClauseCandidate] = []
+        for name, doc in docs.items():
+            cands += candidates_from_tables(name, [t for p in doc.pages for t in p.tables])
+        for layout in layouts:
+            cands += candidates_from_layout(layout)
+        facts, verdicts = clause_facts([*cands, *extra], layouts)
+        table = {(f.page, norm(f.label), norm(f.value)) for f in rec.facts}
+        facts = [
+            c
+            for c in facts
+            if (c.page, norm(c.evidence.anchor), norm(c.evidence.text)) not in table
+        ]
+        return facts, verdicts
 
     # ---------------------------------------------------------------- models
 
@@ -427,6 +462,7 @@ class RecoveryPipeline:
         layouts = read_layouts(pdf)
         docs: dict[str, Document] = {}
         extra: list[Candidate] = []
+        extra_clauses: list[ClauseCandidate] = []  # model clause proposals
         verified_by_stage: dict[str, int] = {}
 
         def settle(stage: str) -> tuple[Reconciled, dict[int, PageGaps]]:
@@ -482,12 +518,21 @@ class RecoveryPipeline:
                 )
                 rec, gaps = settle("visual")
 
+        clauses, clause_verdicts = self._clauses(docs, layouts, rec, extra_clauses)
         return RecoveryResult(
             document_sha256=sha,
             facts=link(rec.facts, layouts, rec.verdicts),
             conflicts=rec.conflicts,
             unresolved=_unresolved(rec, gaps),
-            coverage=coverage(layouts, rec.facts, rec.verdicts, rec.conflicts),
+            coverage=coverage(
+                layouts,
+                rec.facts,
+                rec.verdicts,
+                rec.conflicts,
+                extra_verified=[(c.page, b) for c in clauses for b in c.evidence.text_boxes],
+            ),
+            clauses=clauses,
+            clause_verdicts=clause_verdicts,
             ledger=ledger,
             verified_by_stage=verified_by_stage,
             reconciled=rec,

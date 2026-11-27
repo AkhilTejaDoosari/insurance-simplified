@@ -67,6 +67,10 @@ class PageLayout:
     words: list[Word]
     h_rules: list[Rule] = field(default_factory=list)
     v_rules: list[Rule] = field(default_factory=list)
+    # Dark filled bands (x0, top, x1, bottom): white header text on a coloured bar. Not
+    # cell borders - table verification never reads them (R8 was rejected); the prose
+    # path uses them only to tell a header line from the clause text in the same cell.
+    bands: list[tuple[float, float, float, float]] = field(default_factory=list)
 
     @property
     def ruled(self) -> bool:
@@ -105,6 +109,37 @@ def _is_underline(y: float, a: float, b: float, words: list[Word]) -> bool:
     return bool(above) and (
         min(w.box.x0 for w in above) - 3 <= a and b <= max(w.box.x1 for w in above) + 3
     )
+
+
+DARK = 0.55  # fill luminance below this reads as a solid band, not a page tint
+
+
+def _is_dark(color: Any) -> bool:
+    """Luminance of a pdfplumber fill colour (gray, RGB or CMYK); unknown -> not dark."""
+    try:
+        c = [float(x) for x in color] if isinstance(color, (list, tuple)) else [float(color)]
+    except (TypeError, ValueError):
+        return False
+    if len(c) == 1:
+        lum = c[0]
+    elif len(c) == 3:
+        lum = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+    elif len(c) == 4:
+        r, g, b = ((1 - c[i]) * (1 - c[3]) for i in range(3))
+        lum = 0.299 * r + 0.587 * g + 0.114 * b
+    else:
+        return False
+    return lum < DARK
+
+
+def _bands(page: Any) -> list[tuple[float, float, float, float]]:
+    out = []
+    for r in page.rects:
+        x0, x1, top, bottom = (float(r[k]) for k in ("x0", "x1", "top", "bottom"))
+        if r.get("fill") and _is_dark(r.get("non_stroking_color")):
+            if x1 - x0 >= MIN_RULE and bottom - top > THIN:
+                out.append((x0, top, x1, bottom))
+    return out
 
 
 def _rules(page: Any, words: list[Word]) -> tuple[list[Rule], list[Rule]]:
@@ -168,5 +203,7 @@ def read_layouts(pdf: bytes) -> list[PageLayout]:
             ]
             words = [w for w in words if w.key]
             h, v = _rules(page, words)
-            layouts.append(PageLayout(number, float(page.width), float(page.height), words, h, v))
+            layouts.append(
+                PageLayout(number, float(page.width), float(page.height), words, h, v, _bands(page))
+            )
     return layouts

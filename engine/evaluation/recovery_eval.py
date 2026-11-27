@@ -89,6 +89,25 @@ def _completeness(key: Key, vf: VerifiedFact) -> str:
     return "attached_unmatched_text" if attached else "silent"
 
 
+def _score_clauses(
+    results: dict[str, RecoveryResult], by_doc: dict[str, list[Key]]
+) -> tuple[Counter[str], set[Key]]:
+    outcome: Counter[str] = Counter()
+    hit: set[Key] = set()
+    for doc, doc_keys in by_doc.items():
+        res = next(r for sha, r in results.items() if sha.startswith(doc))
+        for c in res.clauses:
+            e = c.evidence
+            pk = [k for k in doc_keys if k.page == e.pages[0]]
+            verdict, key = judge(pk, e.anchor, (), (e.column,), e.text)
+            if verdict == "wrong_column" and not e.column:
+                verdict = "column_unproven"  # claims no column: not a wrong claim
+            outcome[verdict] += 1
+            if verdict == "correct" and key is not None:
+                hit.add(key)
+    return outcome, hit
+
+
 def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, object]:
     by_doc: dict[str, list[Key]] = defaultdict(list)
     for k in keys:
@@ -127,7 +146,9 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
                         restricted_wrong += 1
                 for source in f.proposed_by:
                     by_source[source.split(":")[0]] += 1
+    clause_outcome, clause_hit = _score_clauses(results, by_doc)
     false_verified = outcome["wrong_value"] + outcome["wrong_column"]
+    clause_false = clause_outcome["wrong_value"] + clause_outcome["wrong_column"]
     pages: Counter[str] = Counter()
     seconds: dict[str, float] = defaultdict(float)
     statuses: Counter[str] = Counter()
@@ -151,6 +172,16 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
         if outcome["correct"] + false_verified
         else None,
         "verified_unkeyed": outcome["unkeyed"],
+        # P0-01 prose clauses, judged by the same frozen matcher (header = proven column)
+        "clause_facts": sum(len(r.clauses) for r in results.values()),
+        "clause_correct": clause_outcome["correct"],
+        "clause_false_verified": clause_false,
+        "clause_unkeyed": clause_outcome["unkeyed"],
+        "clause_column_unproven": sum(
+            not c.evidence.column for r in results.values() for c in r.clauses
+        ),
+        "correct_keys_with_clauses": len(hit | clause_hit),
+        "false_verified_with_clauses": false_verified + clause_false,
         "keys_with_restrictions": sum(bool(k.restrictions.strip()) for k in keys),
         "correct_keys_with_restriction": keyed_with_restriction,
         "restrictions_attached_correct_keys": restricted_ok,

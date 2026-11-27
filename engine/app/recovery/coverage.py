@@ -111,16 +111,21 @@ def coverage(
     facts: Iterable[Fact],
     verdicts: Iterable[Verdict] = (),
     conflicts: Iterable[tuple[Fact, Fact]] = (),
+    extra_verified: Iterable[tuple[int, tuple[float, float, float, float]]] = (),
 ) -> CoverageReport:
+    """``extra_verified``: (page, box) of other verified evidence, e.g. prose clauses."""
     facts = list(facts)
     verdicts = list(verdicts)
+    extra = list(extra_verified)
     conflict_boxes = [(f.page, f.value_box) for pair in conflicts for f in pair]
     items: list[CoverageItem] = []
     for layout in layouts:
         if not layout.words:
             items.append(CoverageItem(layout.number, ItemState.UNRESOLVED, "", ("no_text_layer",)))
             continue
-        page_facts = [f.value_box for f in facts if f.page == layout.number]
+        page_facts = [f.value_box for f in facts if f.page == layout.number] + [
+            b for p, b in extra if p == layout.number
+        ]
         refused: list[tuple[Box, tuple[str, ...]]] = []
         for v in verdicts:
             if v.candidate.page != layout.number or v.status is Status.VERIFIED:
