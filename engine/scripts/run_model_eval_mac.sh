@@ -149,13 +149,14 @@ need() {  # $1 stage ceiling in USD
 
 # ------------------------------------------------------------------- 6. stages
 STAGES=""
+JOBS="${EVAL_JOBS:-4}"  # documents at once; model calls mostly wait on the provider
 run() {  # name, ceiling USD, extra args
   local name=$1 ceiling=$2; shift 2
   say "Stage $name"
   need "$ceiling"
   local t0; t0=$(date +%s)
   uv run -q python -m evaluation.recovery_eval --keys "$KEYS" --pdfs "$CORPUS_DIR" \
-    --readers "$READERS_DIR" --stages primary,docling --max-cost-usd "$MAX_COST" \
+    --readers "$READERS_DIR" --stages primary,docling --max-cost-usd "$MAX_COST" --jobs "$JOBS" \
     --out "$OUT_DIR/$name.json" "$@" 2>&1 > /dev/null | tee "$OUT_DIR/$name.log"
   echo $(( $(date +%s) - t0 )) > "$OUT_DIR/$name.wall"
   STAGES="$STAGES $name"
@@ -174,10 +175,10 @@ if [ "$LOCAL_ONLY" = 1 ]; then
   echo; echo "local-only check passed: baseline reproduced, nothing sent to any provider."; exit 0
 fi
 echo
-echo "Model stages print one line per call. A Nemotron call can take 1-3 minutes on the free"
-echo "tier (up to 3 attempts, 180 s each). Ctrl-C is safe: finished replies stay in the model"
-echo "cache and the next run reuses them. An interrupted Claude call stays counted at its"
-echo "reserved worst case in the \$25 ledger."
+echo "Model stages print one line per call, $JOBS documents at a time (EVAL_JOBS to change)."
+echo "A Nemotron call can take 1-3 minutes on the free tier (up to 3 attempts, 180 s each)."
+echo "Ctrl-C is safe: finished replies stay in the model cache and the next run reuses them."
+echo "An interrupted Claude call stays counted at its reserved worst case in the \$25 ledger."
 run text   1  --text --route-missed
 run visual 12 --text --route-missed --visual
 run judged 10 --text --route-missed --visual --judge anthropic --alt-judge nvidia

@@ -18,8 +18,11 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 from collections import Counter, defaultdict
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from app.parsing.base import sha256
@@ -298,6 +301,12 @@ def _parser() -> argparse.ArgumentParser:
         help="also send pages with printed amounts no reader proposed to the text model",
     )
     ap.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="documents processed at once (model stages wait on the provider; default 1)",
+    )
+    ap.add_argument(
         "--judge",
         choices=("none", "anthropic", "nvidia"),
         default="none",
@@ -402,13 +411,29 @@ def _spend_ledger(
 
 
 def _run_docs(
-    pipeline: RecoveryPipeline, docs: list[str], args: argparse.Namespace
+    pipeline: RecoveryPipeline,
+    docs: list[str],
+    args: argparse.Namespace,
+    progress: Callable[[str], None] | None,
 ) -> dict[str, RecoveryResult]:
-    results: dict[str, RecoveryResult] = {}
-    for i, doc in enumerate(docs, 1):
+    """Documents are independent, so ``--jobs`` runs several at once (model stages spend
+    most of their time waiting on the provider). Shared state is concurrency-safe: the
+    rate limiter is locked, cache writes are atomic and the spend ledger is flock'ed per
+    open file. Results are returned in document order whatever the finishing order."""
+    started = time.monotonic()
+    done = 0
+    lock = threading.Lock()
+
+    def say(message: str) -> None:
+        with lock:
+            print(message, file=sys.stderr, flush=True)
+
+    def one(doc: str) -> tuple[str, RecoveryResult]:
+        nonlocal done
         pdf = next(args.pdfs.glob(f"{doc}*.pdf"))
         t_doc = time.monotonic()
-        print(f"  [{i}/{len(docs)}] {doc}", file=sys.stderr, flush=True)
+        tag = doc[:28]
+        say(f"  start {tag}")
         auth = None
         if args.granted_by:  # validation corpus: published plan documents only
             auth = CloudAuthorization(
@@ -417,14 +442,26 @@ def _run_docs(
                 frozenset({"nvidia", "anthropic"}),
                 args.granted_by,
             )
-        results[pdf.stem] = pipeline.run(pdf.read_bytes(), auth)
-        print(
-            f"  [{i}/{len(docs)}] {doc}: {len(results[pdf.stem].facts)} verified"
-            f" in {time.monotonic() - t_doc:.0f}s",
-            file=sys.stderr,
-            flush=True,
+        sink = None
+        if progress is not None:
+            sink = lambda m: progress(f"{tag}  {m}")  # noqa: E731
+        result = pipeline.run(pdf.read_bytes(), auth, progress=sink)
+        with lock:
+            done += 1
+            n = done
+        say(
+            f"  [{n}/{len(docs)}] {tag}: {len(result.facts)} verified in"
+            f" {time.monotonic() - t_doc:.0f}s (run {time.monotonic() - started:.0f}s)"
         )
-    return results
+        return pdf.stem, result
+
+    jobs = max(1, min(args.jobs, len(docs)))
+    if jobs == 1:
+        pairs = [one(d) for d in docs]
+    else:
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            pairs = list(pool.map(one, docs))  # map keeps document order
+    return dict(pairs)
 
 
 def _main(argv: list[str]) -> int:
@@ -466,9 +503,13 @@ def _main(argv: list[str]) -> int:
     max_cost = _cost_cap(args.max_cost_usd)
     spend = _spend_ledger(ap, args, max_cost)
     t_run = time.monotonic()
+    print_lock = threading.Lock()
 
     def progress(message: str) -> None:  # stage, provider, page numbers, status - no text
-        print(f"    {time.monotonic() - t_run:6.0f}s  {message}", file=sys.stderr, flush=True)
+        with print_lock:
+            print(f"    {time.monotonic() - t_run:6.0f}s  {message}", file=sys.stderr, flush=True)
+
+    model_stages = args.text or args.visual or args.judge != "none"
 
     pipeline = RecoveryPipeline(
         engines,
@@ -476,12 +517,11 @@ def _main(argv: list[str]) -> int:
         cache=Cache.from_env(),
         policy=CloudPolicy.from_env(),
         spend=spend,
-        progress=progress if (args.text or args.visual or args.judge != "none") else None,
     )
 
     keys = load_keys(args.keys)
     docs = sorted({k.doc for k in keys})
-    results = _run_docs(pipeline, docs, args)
+    results = _run_docs(pipeline, docs, args, progress if model_stages else None)
     report = score(results, keys)
     report["contract_facts_by_state"] = _contract_states(results, args.pdfs)
     report["stages"] = sorted(

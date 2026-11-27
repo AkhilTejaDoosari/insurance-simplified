@@ -18,6 +18,20 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-27 (e) — first real model run, interrupted; runner made faster
+
+Owner's first run on the Mac: setup, probes (NVIDIA and Claude through KodeKey, PDF input
+accepted) and the local stage passed (395/454, 0 false verified, $0). The Nemotron text stage
+ran one document at a time with no terminal output, about 12 min per document (5/17 after an
+hour), and was stopped for travel. Finished replies are in the model cache; nothing charged.
+
+**Added:** per-call progress lines (stage, provider, page numbers, status, seconds, tokens,
+cost; never document text), shown in the terminal and the stage log; `--jobs` (script
+default `EVAL_JOBS=4`) to run documents concurrently, since model stages wait on the
+provider. **Verified here:** `--jobs 1` and `--jobs 4` give identical reports on the 17 SBCs
+(395/0) apart from timings; the spend ledger never exceeds its cap under 8 concurrent
+reservers. pytest 186 passed, 1 skipped. **Not yet measured:** any model stage result.
+
 ## Session 2026-11-27 (d) — model and judge measurement, prepared
 
 Owner approved the push (branch only) and real model + judge measurements on the

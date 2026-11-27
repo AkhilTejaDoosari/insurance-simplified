@@ -677,9 +677,17 @@ class RecoveryPipeline:
 
     # ---------------------------------------------------------------- run
 
-    def run(self, pdf: bytes, authorization: CloudAuthorization | None = None) -> RecoveryResult:
+    def run(
+        self,
+        pdf: bytes,
+        authorization: CloudAuthorization | None = None,
+        *,
+        progress: Callable[[str], None] | None = None,
+    ) -> RecoveryResult:
+        """``progress`` overrides the pipeline-wide sink for this document (per-document
+        labels when documents run concurrently). The pipeline holds no per-run state."""
         sha = sha256(pdf)
-        ledger = Ledger(notify=self.progress)
+        ledger = Ledger(notify=progress or self.progress)
         layouts = read_layouts(pdf)
         docs: dict[str, Document] = {}
         extra: list[Candidate] = []

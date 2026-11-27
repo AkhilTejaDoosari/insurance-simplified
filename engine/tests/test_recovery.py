@@ -732,3 +732,43 @@ def test_progress_names_each_model_call_without_document_text() -> None:
     assert not any(line.startswith(("primary", "docling", "pdfplumber")) for line in lines)
     joined = "\n".join(lines)
     assert "$45" not in joined and "Specialist" not in joined  # page numbers, never content
+
+
+def test_spend_ledger_holds_the_cap_under_concurrent_reservations(tmp_path: Any) -> None:
+    import threading  # noqa: PLC0415
+
+    spend = SpendLedger(tmp_path / "spend.jsonl", cap_usd=1.0)
+    granted: list[str] = []
+    refused: list[str] = []
+    lock = threading.Lock()
+
+    def worker() -> None:
+        for _ in range(10):
+            try:
+                rid = spend.reserve(0.03, "t")
+            except BudgetExceededError:
+                with lock:
+                    refused.append("x")
+            else:
+                with lock:
+                    granted.append(rid)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(granted) == 33  # floor(1.0 / 0.03): never one more, whatever the interleaving
+    assert len(refused) == 80 - 33
+    assert spend.committed_usd() <= 1.0
+
+
+def test_progress_can_be_given_per_document() -> None:
+    pdf = _pdf()
+    shared: list[str] = []
+    mine: list[str] = []
+    text = FakeText(_proposal(*GOOD_SPECIALIST))
+    RecoveryPipeline(
+        Engines(_gappy_primary(), text_model=text), policy=OPEN, progress=shared.append
+    ).run(pdf, _auth(pdf), progress=mine.append)
+    assert mine and not shared
