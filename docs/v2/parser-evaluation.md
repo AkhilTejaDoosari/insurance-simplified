@@ -80,7 +80,7 @@ The SBC check is a **structural proxy**, not the answer-key score: it asks wheth
 |---|---|---|---|
 | pdfplumber | MIT | Python | 37/37 parsed; SBC check 49/102 |
 | **OpenDataLoader PDF** (basic mode) | Apache-2.0 | Java | 37/37 parsed in 28 s; SBC check **64/102**; explicit row/column spans, header flags and a bounding box per element |
-| pdfplumber + OpenDataLoader (either binds) | — | — | **72/102** — the two fail on different tables (pdfplumber: question/answer tables; OpenDataLoader: the cost chart) |
+| pdfplumber + OpenDataLoader (either binds) | — | — | **72/102 potential (oracle union)** — counts a field if *either* reader bound it; no engine chose between them |
 | PyMuPDF | AGPL-3.0 | Python | excluded (license; 7 native crashes) |
 | Docling (IBM; TableFormer, accurate mode, no OCR) | MIT | layout + table models | 37/37 in the private repo's CI, ~60 s/document on a 4-vCPU runner (max 189 s); SBC check 70/102 before the fixes below |
 | MinerU | moved from AGPL to its own Apache-based license (3.1) | larger models, GPU preferred | next candidate after Docling |
@@ -105,15 +105,15 @@ Looking at the 30 checks no reader passed showed that most were not reading fail
   value is printed on the wrapped line merges into the line above when that line has no
   value.
 
-SBC structural check, 17 validation SBCs × 6 fields = 102:
+SBC structural check, 17 validation SBCs × 6 fields = 102. **Rows with "+" are oracle unions: potential coverage if something could always pick the right reader, not an achieved result.**
 
 | Readers | Old check | Check fixed | Rules 4b + 5 only | Both |
 |---|---|---|---|---|
 | pdfplumber | 49 | 58 | 52 | 61 |
 | OpenDataLoader | 64 | 85 | 67 | 88 |
 | Docling | 70 | 88 | 73 | **91** |
-| pdfplumber + OpenDataLoader | 72 | 93 | 75 | **96** |
-| Docling + OpenDataLoader | 72 | 93 | 75 | 96 |
+| pdfplumber + OpenDataLoader (oracle union) | 72 | 93 | 75 | 96 (potential) |
+| Docling + OpenDataLoader (oracle union) | 72 | 93 | 75 | 96 (potential) |
 
 The six that remain are the check's vocabulary, by inspection: three plans never use the
 word "generic" for their drug tier, and one multi-level plan titles its answer columns by
@@ -129,3 +129,103 @@ External readers emit no page text in the importer, so their cells get citations
 after their text is located in pdfplumber's page text — the evidence contract is
 unchanged. This is a structural check on 6 SBC fields; the decision is final only after
 the answer keys (all 37 documents, every value) are scored.
+
+## Round 3 — answer keys and source-grounded reconciliation (2026-11-27)
+
+### What "96/102" was
+An **oracle union**: a field counted if any reader bound it. It is potential coverage, not
+achieved accuracy. Achieved accuracy needs something that chooses between readers without
+the key — the reconciler below — scored against answer keys.
+
+### Ledger (validation split = development data; every number below was tuned on it)
+
+| Step | Kind | What changed | Result |
+|---|---|---|---|
+| L0 | baseline | engine 5a98154, SBC check v1 | pdfplumber 49 / ODL 64 / Docling 70 of 102 |
+| L1 | evaluation | check v2: all pages, plan-named network columns, hyphenated label | 56 / 85 / 88 |
+| L2 | engine | rule 5 (continued tables inherit header) | +3 each, either check |
+| L3 | engine | rule 4b (value on the wrapped label line) | +2 pdfplumber, check v2 only |
+| L4 | evaluation | answer keys v1.0 (448 SBC cells) replace the check as the benchmark; check frozen at v2 as a smoke test | see below |
+| L5 | evaluation | keys v1.1: 6 compound nested-answer keys → 12 atomic; 1 transcription error fixed (a digit misread on a 72-dpi page image; re-read at 200 dpi) | 454 keys |
+| L6 | evaluation | scorer v1.1: label prefix must cover ≥ 60 % ("Facility fee" ≠ "Facility fee (e.g., hospital room)") | — |
+| R0–R8 | engine | reconciler iterations (below) | — |
+
+The one key correction was found while investigating a system/key disagreement. Reviewing
+keys only where the system disagrees biases the benchmark toward the system; the owner's
+independent review of every row is what makes the keys ground truth.
+
+Reconciler iterations, scored on the keys in force at the time (SBC critical cells):
+
+| Iteration | Change | Correct keys | False verified | Precision |
+|---|---|---|---|---|
+| R0 | first version: canonical value = whole printed cell | 287 / 448 | 110 | 0.723 |
+| R1 | value = a reader's text grounded word for word; partial cells not verified; only the innermost header element confirms a column | 386 / 454 | 86 | 0.818 |
+| R2 | fact header = the full printed header cell; spanning test on the ruled strip | 386 | 24 | 0.950 |
+| R3 | one fact per printed cell; readers must agree on its row and column | 377 | 10 | 0.974 |
+| R4 | continued tables: a first-row "header" that does not repeat the previous page's header is data; a cell that continues onto the next page is not verified alone | 377 | 4 | 0.990 |
+| R5 | continuation rule compares with the column's top cell on the previous page | 374 | 3 | 0.992 |
+| R6 | a header element must be ≥ 60 % of its printed cell (a word inside a data cell is not a header) | **348** | **0** | **1.000** |
+
+R6 traded 26 correct keys for the last 3 false verified facts. Zero false verified **on the
+development set** says the rules fit these 17 documents; it is not a held-out result.
+
+### Results at R6 (validation SBCs, 454 critical cells, keys v1.1 DRAFT)
+
+| Metric | Value |
+|---|---|
+| Potential combined coverage (oracle union of 3 readers) | 437 / 454 (96.3 %) |
+| Best single reader, raw (OpenDataLoader) | 421 correct, 2 wrong value, 8 wrong column |
+| Docling raw / pdfplumber raw | 394 (2 / 37 wrong) · 220 (16 / 163 wrong) |
+| **Actual reconciled coverage = critical-field recall** | **348 / 454 (76.7 %)** |
+| **Verified fact precision (keyed scope)** | **348 / 348 (100 %)** |
+| False verified claims | 0 (wrong value 0, wrong column 0) |
+| Verified facts outside the keyed scope (precision unmeasured) | 1,157 |
+| Citation accuracy (page) | 100 % of correct facts; region-level: value box in the PDF's own text layer |
+| Unresolved / rejected candidates | 3,268 / 1,202 of 7,821 (all kept with reasons) |
+| Conflicts kept (none presented as verified) | 29 |
+| Missing material restrictions | 141 keys carry a restriction; 0 attached — governing-clause linking is not built yet |
+| Processing cost / latency | $0 (no model calls); reconcile 54 s for 17 SBCs on the workspace CPU, after reading (ODL 28 s for 37 PDFs; Docling ~60 s/PDF on a 2-core runner) |
+
+Reconciler (isolated, `engine/app/reconcile/`, not called by any route): a candidate is
+verified only when the PDF's own text layer and vector rules show the value printed in the
+labelled row band and under a header cell that names one column; parser agreement never
+counts. Frozen files for the held-out run: `answer-keys/sbc_cells.tsv` (private) sha256
+`d2bf7c33…f133a0`; `engine/evaluation/score_keys.py` sha256 `f338608f…cce4f37c`.
+
+### The six SBC-check failures, with evidence
+| Failure | Class | Evidence |
+|---|---|---|
+| generic drugs ×3 (Highmark SBCs) | evaluation | word "generic" absent from all three readers' text and from the rendered page; rows are "Tier 1…4". The keys now record the first tier as printed. |
+| b4bd2d27 out-of-pocket | evaluation | values bound under the question's group label in all readers; check read only the row label |
+| b4bd2d27 deductible | engine (shared grid rule) | nested sub-header row swallowed the question; values present, association lost |
+| b4bd2d27 generic drugs | evaluation | drug table has supply-channel columns, no network column |
+The check also missed two parser defects (pdfplumber lost the Network / Out-of-Network
+header row on Highmark SBCs; Docling put "Not covered" under Limitations). Both are
+rejected by the reconciler.
+
+### Candidates not yet scored
+* **MinerU 4.2.3** (MinerU Open Source License = Apache-2.0 + attribution for online
+  services + separate licence above 100 M MAU / $20 M monthly revenue; telemetry on by
+  default — `MINERU_TELEMETRY_DISABLED=1` is required and enforced by the runner). The
+  standard tier runs MinerU2.5-Pro through llama.cpp on CPU; MinerU recommends ≥ 12 cores.
+  Probe on the 2-core / 7 GB private runner: see the next update.
+* **PaddleOCR-VL 1.6** (Apache-2.0; 0.9B VLM; vendor: CPU possible, not recommended).
+  CPU probe failed on all 3 documents within seconds; cause pending (runner output).
+* Blocker for both: private-repo runners have 2 cores, no GPU; this workspace cannot
+  download models. Options without buying anything: the owner's Mac (MinerU MLX backend,
+  PaddleOCR-VL via MLX-VLM / llama.cpp) running a one-shot script; Colab free GPU with the
+  PDFs uploaded by the owner. A GPU runner or hosted API would cost money (not approved).
+
+### OpenDataLoader runtime (Java) — facts for the engine service
+opendataloader-pdf 2.5.24 (Apache-2.0), one 24 MB CLI jar inside the wheel, needs Java
+(tested: OpenJDK 21). Bundled dependencies are MIT/Apache/BSD/ISC plus weak-copyleft
+MPL-2.0, EPL-2.0 and CDDL-1.1 (notices to keep; no GPL). Peak memory 555 MB for the
+largest validation PDF (13 pages, 5.7 s, JVM start included). Each call starts a JVM, so it
+runs one document per call inside the existing parser sandbox (time + memory limits); a
+corrupt PDF raises a clean error. No network service is added. Not wired in yet.
+
+### Next (owner decisions)
+1. Review the key sheet (private repo, `answer-keys/validation-keys-v1.1.xlsx`).
+2. Student and travel keys (20 documents, clause facts) — not drafted yet.
+3. Held-out run: freeze engine commit + scorer + key schema, open blind A once, draft its
+   keys without engine output, owner verifies, score once.
