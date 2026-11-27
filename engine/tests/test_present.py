@@ -67,3 +67,12 @@ def test_anything_unconfirmed_is_couldnt_confirm_with_its_page() -> None:
     fact = next(f for f in result.facts if f.fact.label == "Specialist visit")
     (c,) = _contract(fact, pdf, result.document_sha256)
     assert c.state is FactState.COULDNT_CONFIRM and c.check_page == 1 and c.value is None
+
+
+def test_couldnt_confirm_carries_the_printed_words_but_no_value() -> None:
+    result, pdf = _facts(None, [("Specialist visit", NET, "$45 copay/visit")])
+    fact = next(f for f in result.facts if f.fact.label == "Specialist visit")
+    (c,) = _contract(fact, pdf, result.document_sha256)
+    assert c.state is FactState.COULDNT_CONFIRM and c.value is None  # nothing interpreted
+    span = c.evidence[0].value_span
+    assert page_text(read_layouts(pdf)[0])[span.start : span.end] == "$45 copay/visit"

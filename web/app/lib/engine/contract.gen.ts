@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Extract */
+        post: operations["extract_v1_extract_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meta": {
         parameters: {
             query?: never;
@@ -259,6 +276,34 @@ export interface components {
             row_label_span: components["schemas"]["TextSpan"] | null;
             value_span: components["schemas"]["TextSpan"];
         };
+        /** Extraction */
+        Extraction: {
+            /** Document Sha256 */
+            document_sha256: string;
+            /**
+             * Facts
+             * @description Verified facts (both keys) and couldn't-confirm facts with their page.
+             */
+            facts: components["schemas"]["Fact"][];
+            /**
+             * Model Calls
+             * @description Cloud model calls made (none here).
+             * @default 0
+             */
+            model_calls: number;
+            /** Open Items */
+            open_items?: components["schemas"]["OpenItem"][];
+            /** Pages */
+            pages: number;
+            parser: components["schemas"]["ParserInfo"];
+            /**
+             * Printed
+             * @description Fact id -> the exact printed words (and column) of its evidence (quotes).
+             */
+            printed?: {
+                [key: string]: components["schemas"]["Printed"];
+            };
+        };
         /** Fact */
         Fact: {
             /**
@@ -471,6 +516,28 @@ export interface components {
          * @enum {string}
          */
         NetworkTier: "in_network" | "out_of_network" | "any" | "unspecified";
+        /**
+         * OpenItem
+         * @description A printed line the engine could not settle: the user is sent to that page.
+         */
+        OpenItem: {
+            /**
+             * Line
+             * @description The printed line, as on the page.
+             * @default
+             */
+            line: string;
+            /**
+             * Page
+             * @description 1-based PDF page number.
+             */
+            page: number;
+            /**
+             * State
+             * @description not_extracted | unresolved | conflicting | rejected
+             */
+            state: string;
+        };
         /** Page */
         Page: {
             /** Blocks */
@@ -548,6 +615,19 @@ export interface components {
              * @description Document order. Levels are never ranked by name.
              */
             order: number;
+        };
+        /**
+         * Printed
+         * @description The exact printed words a fact's evidence span covers, and its printed column.
+         */
+        Printed: {
+            /**
+             * Column Header
+             * @default
+             */
+            column_header: string;
+            /** Text */
+            text: string;
         };
         /** Provenance */
         Provenance: {
@@ -765,6 +845,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Health"];
+                };
+            };
+        };
+    };
+    extract_v1_extract_post: {
+        parameters: {
+            query: {
+                /** @description The caller's plan id for these facts. */
+                plan_id: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Extraction"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

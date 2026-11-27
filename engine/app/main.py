@@ -12,7 +12,7 @@ from fastapi.openapi.utils import get_openapi
 from pydantic.json_schema import models_json_schema
 
 from app import __version__
-from app.api import health
+from app.api import extract, health
 from app.core.config import Settings
 from app.core.logging import configure_logging, trace_id_var
 from app.schemas import CONTRACT_VERSION
@@ -20,6 +20,7 @@ from app.schemas.chat import ChatAnswer
 from app.schemas.comparison import Comparison
 from app.schemas.contacts import Contact
 from app.schemas.document import Document
+from app.schemas.extraction import Extraction
 from app.schemas.facts import Fact
 from app.schemas.jobs import Job
 from app.schemas.plans import PlanFamily
@@ -37,6 +38,7 @@ CONTRACT_MODELS: tuple[type[Any], ...] = (
     ChatAnswer,
     Contact,
     Job,
+    Extraction,
 )
 
 _TRACE_ID = re.compile(r"^[A-Za-z0-9-]{8,64}$")
@@ -53,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.include_router(health.router)
+    app.include_router(extract.router)
 
     @app.middleware("http")
     async def trace(

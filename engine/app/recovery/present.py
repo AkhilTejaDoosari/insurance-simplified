@@ -84,6 +84,11 @@ def _ident(*parts: object) -> str:
     return "f-" + hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest()[:24]
 
 
+def column_of(fact: VerifiedFact | ClauseFact) -> str:
+    """The printed column header a fact sits under ("" when none was proven)."""
+    return fact.fact.header if isinstance(fact, VerifiedFact) else (fact.evidence.column or "")
+
+
 def to_contract(
     fact: VerifiedFact | ClauseFact,
     readings: list[Interpretation],
@@ -128,23 +133,31 @@ def to_contract(
         judge_check=judge,
         created_at=now,
     )
-    if not fact.presentable_as_verified or span is None or not readings:
+    evidence = (
+        None
+        if span is None
+        else Evidence(
+            document_sha256=document_sha256,
+            page=page,
+            value_span=span,
+            bbox=BBox(x0=box[0], y0=box[1], x1=box[2], y1=box[3]),
+        )
+    )
+    if not fact.presentable_as_verified or evidence is None or not readings:
+        # Not verified: no value (nothing is interpreted), but the printed words and their
+        # place on the page travel with it, so the user can read the original there.
         return [
             Fact(
-                id=_ident(document_sha256, page, label, "couldnt"),
+                # one id per printed cell: the same row's columns are different facts
+                id=_ident(document_sha256, page, label, "couldnt", column_of(fact), box),
                 plan_id=plan_id,
                 benefit_label=label,
                 state=FactState.COULDNT_CONFIRM,
+                evidence=[] if evidence is None else [evidence],
                 provenance=provenance,
                 check_page=page,
             )
         ]
-    evidence = Evidence(
-        document_sha256=document_sha256,
-        page=page,
-        value_span=span,
-        bbox=BBox(x0=box[0], y0=box[1], x1=box[2], y1=box[3]),
-    )
     out = []
     for r in readings:
         negated_cover = r.kind is ValueKind.COVERED and r.negated
@@ -164,4 +177,4 @@ def to_contract(
     return out
 
 
-__all__ = ["page_text", "span_of", "to_contract"]
+__all__ = ["column_of", "page_text", "span_of", "to_contract"]

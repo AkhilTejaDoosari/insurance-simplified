@@ -18,6 +18,29 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-27 (f) — WP5 started: the app calls the engine
+
+Owner: Nemotron free tier measured unusable (in ~2 h: 15 calls, 12 timeouts at 547 s,
+1 output cut off, 2 ok); "make it exist first"; go-ahead for WP5.
+
+**Done:** engine `POST /v1/extract` (service token; PDF body ≤ 25 MB; OpenDataLoader +
+pdfplumber in the sandbox; no cloud model; nothing stored) returns contract facts plus
+the exact printed words and column of each, and open items ("check page N").
+Couldn't-confirm facts now carry their evidence span (no value: nothing interpreted);
+each printed cell has its own fact id (columns had collided). Web adapter
+`app/lib/engine/client.ts`, used by `/api/extract` when `ENGINE_URL` and
+`ENGINE_SERVICE_TOKEN` are set; only two-key facts map to SUPPORTED, everything else
+to NEEDS VERIFICATION (`not_covered` too, pending an owner decision); the existing
+verification/seal/render gates still run on the result.
+
+**Verified:** engine pytest 198 passed / 1 skipped, ruff, mypy; contract regenerated;
+web 1,466 passed / 22 skipped (DB suites SKIPPED: no database here), tsc, build. Real
+SBCs through the HTTP route: 6 pages in 7 s, 97/97 facts with exact quotes; 64/64 on a
+second. **Not done:** jobs table + worker, PDF bytes from durable storage (extract
+reads the local copy, so it works in one local process, not across serverless
+instances), browser e2e, the judge run (until then every fact shows "needs
+verification" with its printed quote and page).
+
 ## Session 2026-11-27 (e) — first real model run, interrupted; runner made faster
 
 Owner's first run on the Mac: setup, probes (NVIDIA and Claude through KodeKey, PDF input

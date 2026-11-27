@@ -8,7 +8,13 @@
 // Session ID alone is insufficient for authorization.
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSession, registerEvidence, updateSessionContext } from "@/app/lib/session";
+import {
+  getSession,
+  readDocumentFile,
+  registerEvidence,
+  updateSessionContext,
+} from "@/app/lib/session";
+import { extractViaEngine, isEngineConfigured } from "@/app/lib/engine/client";
 import { loadSession } from "@/app/lib/session-store";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
 import type { ComparisonTable } from "@/app/lib/extraction/types";
@@ -88,17 +94,24 @@ export async function POST(request: NextRequest) {
     return errorResponse("NOT_FOUND", 404, { requestId, message: "Unknown session" });
   }
 
+  // WP5: the Python engine, when configured, unless the caller pins another path.
+  const useEngine =
+    body.engine !== "llm" && body.engine !== "fallback" && isEngineConfigured();
   const useLlm =
     body.engine === "llm" || (body.engine !== "fallback" && isLlmConfigured());
 
   try {
-    const raw = useLlm
-      ? await timeAsync("extract.extractViaLlm", () =>
-          extractViaLlm(session.documents, session.userContext)
+    const raw = useEngine
+      ? await timeAsync("extract.extractViaEngine", () =>
+          extractViaEngine(session.documents, (id) => readDocumentFile(session.sessionId, id))
         )
-      : timeSync("extract.extractFallback", () =>
-          extractFallback(session.documents, session.userContext)
-        );
+      : useLlm
+        ? await timeAsync("extract.extractViaLlm", () =>
+            extractViaLlm(session.documents, session.userContext)
+          )
+        : timeSync("extract.extractFallback", () =>
+            extractFallback(session.documents, session.userContext)
+          );
     const table = validateTable(raw);
     // Server/session boundary (shared with the evaluation harness): plan
     // source verification, citation canonicalization, table-anchor

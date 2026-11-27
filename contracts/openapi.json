@@ -532,6 +532,61 @@
         "title": "Evidence",
         "type": "object"
       },
+      "Extraction": {
+        "additionalProperties": false,
+        "properties": {
+          "document_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Document Sha256",
+            "type": "string"
+          },
+          "facts": {
+            "description": "Verified facts (both keys) and couldn't-confirm facts with their page.",
+            "items": {
+              "$ref": "#/components/schemas/Fact"
+            },
+            "title": "Facts",
+            "type": "array"
+          },
+          "model_calls": {
+            "default": 0,
+            "description": "Cloud model calls made (none here).",
+            "title": "Model Calls",
+            "type": "integer"
+          },
+          "open_items": {
+            "items": {
+              "$ref": "#/components/schemas/OpenItem"
+            },
+            "title": "Open Items",
+            "type": "array"
+          },
+          "pages": {
+            "minimum": 1,
+            "title": "Pages",
+            "type": "integer"
+          },
+          "parser": {
+            "$ref": "#/components/schemas/ParserInfo"
+          },
+          "printed": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Printed"
+            },
+            "description": "Fact id -> the exact printed words (and column) of its evidence (quotes).",
+            "title": "Printed",
+            "type": "object"
+          }
+        },
+        "required": [
+          "document_sha256",
+          "pages",
+          "parser",
+          "facts"
+        ],
+        "title": "Extraction",
+        "type": "object"
+      },
       "Fact": {
         "additionalProperties": false,
         "properties": {
@@ -1069,6 +1124,35 @@
         "title": "NetworkTier",
         "type": "string"
       },
+      "OpenItem": {
+        "additionalProperties": false,
+        "description": "A printed line the engine could not settle: the user is sent to that page.",
+        "properties": {
+          "line": {
+            "default": "",
+            "description": "The printed line, as on the page.",
+            "title": "Line",
+            "type": "string"
+          },
+          "page": {
+            "description": "1-based PDF page number.",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "state": {
+            "description": "not_extracted | unresolved | conflicting | rejected",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "page",
+          "state"
+        ],
+        "title": "OpenItem",
+        "type": "object"
+      },
       "Page": {
         "additionalProperties": false,
         "properties": {
@@ -1252,6 +1336,27 @@
           "evidence"
         ],
         "title": "PlanLevel",
+        "type": "object"
+      },
+      "Printed": {
+        "additionalProperties": false,
+        "description": "The exact printed words a fact's evidence span covers, and its printed column.",
+        "properties": {
+          "column_header": {
+            "default": "",
+            "title": "Column Header",
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "Printed",
         "type": "object"
       },
       "Provenance": {
@@ -1745,6 +1850,66 @@
         "summary": "Ready",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/extract": {
+      "post": {
+        "operationId": "extract_v1_extract_post",
+        "parameters": [
+          {
+            "description": "The caller's plan id for these facts.",
+            "in": "query",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "description": "The caller's plan id for these facts.",
+              "title": "Plan Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Extraction"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Extract",
+        "tags": [
+          "extraction"
         ]
       }
     },
