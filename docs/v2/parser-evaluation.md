@@ -73,3 +73,18 @@ The SBC check is a **structural proxy**, not the answer-key score: it asks wheth
 **Engine consequence (done):** readers always run in a separate process (`app/parsing/sandbox.py`) with time, memory and page limits; crashes, hangs and oversize files become typed failures (`crashed`, `timed_out`, `too_many_pages`, `reader_error`).
 
 **Known gaps (next):** out-of-pocket rows and cost-chart rows where the reader merges two table rows into one cell, or splits the chart across pages; student and travel brochures have no shared template, so they are scored only by answer keys.
+
+## Open-source landscape (researched 2026-11-26, 21:45) and OpenDataLoader result
+
+| Reader | License | Needs | Status on our validation set |
+|---|---|---|---|
+| pdfplumber | MIT | Python | 37/37 parsed; SBC check 49/102 |
+| **OpenDataLoader PDF** (basic mode) | Apache-2.0 | Java | 37/37 parsed in 28 s; SBC check **64/102**; explicit row/column spans, header flags and a bounding box per element |
+| pdfplumber + OpenDataLoader (either binds) | — | — | **72/102** — the two fail on different tables (pdfplumber: question/answer tables; OpenDataLoader: the cost chart) |
+| PyMuPDF | AGPL-3.0 | Python | excluded (license; 7 native crashes) |
+| Docling (IBM; TableFormer) | MIT | layout + table models | running in the private corpus repo's CI (models can't be downloaded from this workspace) |
+| MinerU | moved from AGPL to its own Apache-based license (3.1) | larger models, GPU preferred | next candidate after Docling |
+| Marker | GPL-3.0 | models | excluded by rule 1 (copyleft) unless the owner approves |
+| OpenDataLoader hybrid mode, PaddleOCR-VL, olmOCR | Apache-2.0 / model licenses | a model server or GPU | later, if the CPU readers leave gaps the answer keys show matter |
+
+Converters for readers that run outside the engine: `engine/evaluation/import_external.py` (Docling JSON, OpenDataLoader JSON → document model, same grid rules).
