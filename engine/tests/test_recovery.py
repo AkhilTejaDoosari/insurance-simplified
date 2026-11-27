@@ -718,3 +718,17 @@ def test_model_clause_proposals_go_through_the_prose_verifier() -> None:
     assert result.clauses == []
     refused = [v for v in result.clause_verdicts if v.candidate.source.startswith("text:")]
     assert refused and all("row_has_several_value_cells" in v.reasons for v in refused)
+
+
+def test_progress_names_each_model_call_without_document_text() -> None:
+    pdf = _pdf()
+    lines: list[str] = []
+    text = FakeText(_proposal(*GOOD_SPECIALIST))
+    RecoveryPipeline(
+        Engines(_gappy_primary(), text_model=text), policy=OPEN, progress=lines.append
+    ).run(pdf, _auth(pdf))
+    assert any(line.startswith("text nvidia p") and line.endswith(": calling") for line in lines)
+    assert any(line.startswith("text nvidia p") and ": ok " in line for line in lines)
+    assert not any(line.startswith(("primary", "docling", "pdfplumber")) for line in lines)
+    joined = "\n".join(lines)
+    assert "$45" not in joined and "Specialist" not in joined  # page numbers, never content

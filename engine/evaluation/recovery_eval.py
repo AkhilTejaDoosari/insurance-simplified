@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -400,6 +401,32 @@ def _spend_ledger(
     return SpendLedger(args.spend_ledger, args.eval_budget_usd)
 
 
+def _run_docs(
+    pipeline: RecoveryPipeline, docs: list[str], args: argparse.Namespace
+) -> dict[str, RecoveryResult]:
+    results: dict[str, RecoveryResult] = {}
+    for i, doc in enumerate(docs, 1):
+        pdf = next(args.pdfs.glob(f"{doc}*.pdf"))
+        t_doc = time.monotonic()
+        print(f"  [{i}/{len(docs)}] {doc}", file=sys.stderr, flush=True)
+        auth = None
+        if args.granted_by:  # validation corpus: published plan documents only
+            auth = CloudAuthorization(
+                pdf.stem,
+                DocumentClass.PUBLIC_CORPUS,
+                frozenset({"nvidia", "anthropic"}),
+                args.granted_by,
+            )
+        results[pdf.stem] = pipeline.run(pdf.read_bytes(), auth)
+        print(
+            f"  [{i}/{len(docs)}] {doc}: {len(results[pdf.stem].facts)} verified"
+            f" in {time.monotonic() - t_doc:.0f}s",
+            file=sys.stderr,
+            flush=True,
+        )
+    return results
+
+
 def _main(argv: list[str]) -> int:
     ap = _parser()
     args = ap.parse_args(argv)
@@ -438,29 +465,23 @@ def _main(argv: list[str]) -> int:
     _set_judge(ap, args.alt_judge, engines, alt=True)
     max_cost = _cost_cap(args.max_cost_usd)
     spend = _spend_ledger(ap, args, max_cost)
+    t_run = time.monotonic()
+
+    def progress(message: str) -> None:  # stage, provider, page numbers, status - no text
+        print(f"    {time.monotonic() - t_run:6.0f}s  {message}", file=sys.stderr, flush=True)
+
     pipeline = RecoveryPipeline(
         engines,
         limits=RunLimits(max_cost_usd=max_cost, route_missed_amounts=args.route_missed),
         cache=Cache.from_env(),
         policy=CloudPolicy.from_env(),
         spend=spend,
+        progress=progress if (args.text or args.visual or args.judge != "none") else None,
     )
 
     keys = load_keys(args.keys)
     docs = sorted({k.doc for k in keys})
-    results: dict[str, RecoveryResult] = {}
-    for doc in docs:
-        pdf = next(args.pdfs.glob(f"{doc}*.pdf"))
-        auth = None
-        if args.granted_by:  # validation corpus: published plan documents only
-            auth = CloudAuthorization(
-                pdf.stem,
-                DocumentClass.PUBLIC_CORPUS,
-                frozenset({"nvidia", "anthropic"}),
-                args.granted_by,
-            )
-        results[pdf.stem] = pipeline.run(pdf.read_bytes(), auth)
-        print(f"  {doc}: {len(results[pdf.stem].facts)} verified", file=sys.stderr)
+    results = _run_docs(pipeline, docs, args)
     report = score(results, keys)
     report["contract_facts_by_state"] = _contract_states(results, args.pdfs)
     report["stages"] = sorted(

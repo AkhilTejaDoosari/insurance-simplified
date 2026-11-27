@@ -3,6 +3,7 @@
 import io
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 
@@ -60,16 +61,36 @@ class LedgerEntry:
     bytes_disclosed: int = 0  # bytes of document content sent off the engine
 
 
+READER_STAGES = frozenset({"primary", "docling", "pdfplumber"})
+
+
+def progress_line(e: LedgerEntry) -> str:
+    pages = f" p{','.join(map(str, e.pages))}" if e.pages else ""
+    cost = "" if e.cost_usd is None else f" ${e.cost_usd:.4f}"
+    tokens = f" {e.input_tokens}/{e.output_tokens} tok" if e.input_tokens or e.output_tokens else ""
+    detail = f" ({e.detail})" if e.detail else ""
+    return f"{e.stage} {e.engine}{pages}: {e.status}{detail} {e.seconds:.0f}s{tokens}{cost}"
+
+
 @dataclass
 class Ledger:
     started: float = field(default_factory=time.monotonic)
     entries: list[LedgerEntry] = field(default_factory=list)
+    # Optional progress sink: one line per model call (stage, provider, page numbers,
+    # status, seconds, tokens, cost). Never document content.
+    notify: Callable[[str], None] | None = field(default=None, repr=False, compare=False)
 
     def elapsed(self) -> float:
         return time.monotonic() - self.started
 
+    def note(self, message: str) -> None:
+        if self.notify is not None:
+            self.notify(message)
+
     def add(self, entry: LedgerEntry) -> None:
         self.entries.append(entry)
+        if self.notify is not None and entry.stage not in READER_STAGES:
+            self.notify(progress_line(entry))
 
     def calls(self, stage: str) -> int:
         return sum(

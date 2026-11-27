@@ -9,6 +9,7 @@ on with what is already verified (fail-closed).
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -116,8 +117,10 @@ class RecoveryPipeline:
         cache: Cache | None = None,
         policy: CloudPolicy | None = None,
         spend: SpendLedger | None = None,
+        progress: Callable[[str], None] | None = None,
     ) -> None:
         self.engines = engines
+        self.progress = progress  # optional per-call progress lines (evaluation only)
         self.spend = spend  # cumulative evaluation budget (P0-05); None in production
         self.limits = limits or RunLimits()
         self.cache = cache or Cache(None)
@@ -346,6 +349,7 @@ class RecoveryPipeline:
             ledger.add(LedgerEntry("judge", provider, judge.model, (), 0.0, "skipped", refusal))
             return None
         t = ledger.elapsed()
+        ledger.note(f"judge {provider}: calling")
         try:
             reply = judge.complete_json(
                 JUDGE_SYSTEM, request, "judge", JUDGE_SCHEMA, self.limits.judge_max_tokens
@@ -459,6 +463,7 @@ class RecoveryPipeline:
             ledger.add(LedgerEntry(stage, provider, model, tuple(targets), 0.0, "skipped", refusal))
             return []
         t = ledger.elapsed()
+        ledger.note(f"{stage} {provider} p{','.join(map(str, targets))}: calling")
         try:
             reply = call()
         except Exception as exc:
@@ -674,7 +679,7 @@ class RecoveryPipeline:
 
     def run(self, pdf: bytes, authorization: CloudAuthorization | None = None) -> RecoveryResult:
         sha = sha256(pdf)
-        ledger = Ledger()
+        ledger = Ledger(notify=self.progress)
         layouts = read_layouts(pdf)
         docs: dict[str, Document] = {}
         extra: list[Candidate] = []

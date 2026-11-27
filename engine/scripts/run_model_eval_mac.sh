@@ -156,7 +156,7 @@ run() {  # name, ceiling USD, extra args
   local t0; t0=$(date +%s)
   uv run -q python -m evaluation.recovery_eval --keys "$KEYS" --pdfs "$CORPUS_DIR" \
     --readers "$READERS_DIR" --stages primary,docling --max-cost-usd "$MAX_COST" \
-    --out "$OUT_DIR/$name.json" "$@" > /dev/null 2> "$OUT_DIR/$name.log"
+    --out "$OUT_DIR/$name.json" "$@" 2>&1 > /dev/null | tee "$OUT_DIR/$name.log"
   echo $(( $(date +%s) - t0 )) > "$OUT_DIR/$name.wall"
   STAGES="$STAGES $name"
   # shellcheck disable=SC2086
@@ -173,6 +173,11 @@ PY
 if [ "$LOCAL_ONLY" = 1 ]; then
   echo; echo "local-only check passed: baseline reproduced, nothing sent to any provider."; exit 0
 fi
+echo
+echo "Model stages print one line per call. A Nemotron call can take 1-3 minutes on the free"
+echo "tier (up to 3 attempts, 180 s each). Ctrl-C is safe: finished replies stay in the model"
+echo "cache and the next run reuses them. An interrupted Claude call stays counted at its"
+echo "reserved worst case in the \$25 ledger."
 run text   1  --text --route-missed
 run visual 12 --text --route-missed --visual
 run judged 10 --text --route-missed --visual --judge anthropic --alt-judge nvidia
