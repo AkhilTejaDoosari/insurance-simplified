@@ -1,0 +1,289 @@
+{
+  "name": "corpus-v2",
+  "seed": 20261126,
+  "documents": [
+    {
+      "sha256": "18ca29eef345630eea990cefee2260a6cf288384bc291c52c99f834aa4a2f0fd",
+      "type": "sbc",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "21e895a366b4eff4fcc04bfbd4591917782098664833a5d1b41004ad73920e5c",
+      "type": "sbc",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "470b755ad36152091148c233c543d5796c0d6818f12c5d37d75a92ddacf71919",
+      "type": "sbc",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "71120d6c1beae162d1386f6bdb18f194c42bb1f72e2ff6a69b5e817b3857db59",
+      "type": "sbc",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "779487d632567df4ff8a4e6aaecd83332a4a195636174b745c45efae3051ad8c",
+      "type": "sbc",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "9bc0371f8c7bd7f5f5b551cedf815fbdd21b0f049f5da56d9bb935518ef05aff",
+      "type": "sbc",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "baa1b410e3c7b14fea14dd641a84338dee8df23c315149c98b0441175dc95e94",
+      "type": "sbc",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "f8dc2f0cdcd952e4e385ddc18bf83faaa06afb5fbb5cd36a04f6e64543b27f38",
+      "type": "sbc",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "212162416f5944483c424ddfa5b6f682cfc317e77153d4b72db6d749800b7ca6",
+      "type": "sbc",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "4ec842750b1676824200c13dc1fbc6d27ab21b5e7e9e4bc05cadd2719205ba9b",
+      "type": "sbc",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "e2b7f75c46095b4b072be59b051b640710cc8737d7b84bffcdce9b234d83deab",
+      "type": "sbc",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "fada2e67f1c0602b2fb7f8153791c7cd1fe51b828227bd568a0daa0a826b05d7",
+      "type": "sbc",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "fe9c09414659c5c9aed61d117b604fe244e74296f79139a5689ef9ef74fb5ad4",
+      "type": "sbc",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "89c61550e5ad06062a2926f776102644b4cace05906f7c99667b7f994f05feb9",
+      "type": "sbc",
+      "split": "validation",
+      "multi_level": false
+    },
+    {
+      "sha256": "14afe329caf1c425430365b440b86bbb6e905d9b4c84c27a279cb8c70a426625",
+      "type": "student",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "4f437c026903e27a83d5a6597a942d2a4cabe5257149ef0a3563000bc374ebc7",
+      "type": "student",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "94267ebfb464b7ec3befc41004de0055ea793110e2c63a3b0461a106af221825",
+      "type": "student",
+      "split": "blind-a",
+      "multi_level": true
+    },
+    {
+      "sha256": "98109a0a82f4caaba25e19cd44d9a57e4aedb6cfcfa0d034de8721f7e2c56f50",
+      "type": "student",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "aa881ec1646c31efd3449fac0be00c725791eec824bae5d75edf1e63e8296aa3",
+      "type": "student",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "e4a351970d21d29ce5606c9b3c81f9ce68663882f51f9af28fb6bf07471ad80c",
+      "type": "student",
+      "split": "blind-a",
+      "multi_level": true
+    },
+    {
+      "sha256": "0d71b788960bf9b28f9cf559dedc26ac57a12714a128ffb065ceac6d9adbf896",
+      "type": "student",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "2f9756d06bf68cb1705e4e04dc8928288026c204d0f56cb65a1fb33e82206ed5",
+      "type": "student",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "94126d9d1dbe62f74f9cbfaa6ca5e869d45380084cdaf5f17058cf896538b5ad",
+      "type": "student",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "a8f8a6a6c473500c3f6f715d30e0302765b8e3865ec8bfafac3e75474f66fdd5",
+      "type": "student",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "ea0958434e6119dab2cebe781bc9bf31c3e89705608ab5c30ac75aedde422dc8",
+      "type": "student",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "4f00704070d286d51eb6836a67c0d2852f124aae154e2d6a5e0059080b009add",
+      "type": "student",
+      "split": "validation",
+      "multi_level": false
+    },
+    {
+      "sha256": "671b5330cb2df8596480f5498bdc4ac6acf5cea292a8e9717f8dface2d764f26",
+      "type": "student",
+      "split": "validation",
+      "multi_level": false
+    },
+    {
+      "sha256": "716cb4088867cbabe9153ed8a54895afb441987ed453eea5e641b51584f31ef6",
+      "type": "student",
+      "split": "validation",
+      "multi_level": false
+    },
+    {
+      "sha256": "ff4122209cf687089755f1716f787916b6fa0c82e8dd8ceea722967fead110bf",
+      "type": "student",
+      "split": "validation",
+      "multi_level": true
+    },
+    {
+      "sha256": "177b10a92b2c7589cf0f4949e1c54a3a0248f23e8d01284dc4c00b886f8ab91e",
+      "type": "travel",
+      "split": "blind-a",
+      "multi_level": true
+    },
+    {
+      "sha256": "17b8c0d6495761997b784b0529de5ce24aa1ea893730838ca0eac9fd313fe4a7",
+      "type": "travel",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "62351a47b0ce26163a2f4b1b25ed0fa6beea25b1aa92354e74e37fb5bfcde145",
+      "type": "travel",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "6d05bad6a319a446a3ccb65cbd137e5a1980df4d86862c85bf49980ef46957c8",
+      "type": "travel",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "724432eb304af1ca8c98342e40d8e27a80f17c8c189522758b70052ac21ff0fd",
+      "type": "travel",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "9f035158b04b67c4879dcea60e6031837af9b2f12e34d4568a39ef625c9f560d",
+      "type": "travel",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "aa615d47bd00c20e8b3cb8286c4e9e69c7cb4336a07fe3760a613e4686202863",
+      "type": "travel",
+      "split": "blind-a",
+      "multi_level": true
+    },
+    {
+      "sha256": "d23e7775ecccf2a1e00f2f7cc9781165eb81bfc23e073bd8960ca3652226cf4f",
+      "type": "travel",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "d64924c9f091c75955de4c91a587468dbff52ddab23a40c30ec9225b67e060a9",
+      "type": "travel",
+      "split": "blind-a",
+      "multi_level": false
+    },
+    {
+      "sha256": "34245b060d21f9f361bc8b8a15530be74ec12bcf1a9cf18775c4c516fee0c638",
+      "type": "travel",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "38e5251854d246a3e9ba8db603749c3180b5067251c836c38c78d533526cf48e",
+      "type": "travel",
+      "split": "blind-b",
+      "multi_level": false
+    },
+    {
+      "sha256": "4e696b07d1a60774f0e000f7d5aae0fa7518f686d405f865a9d1bb75794afe59",
+      "type": "travel",
+      "split": "blind-b",
+      "multi_level": true
+    },
+    {
+      "sha256": "097b07ee73f63e3297950ececf043e3039e44f05ced94c6f9c8deba7fe2ae440",
+      "type": "travel",
+      "split": "validation",
+      "multi_level": true
+    },
+    {
+      "sha256": "ada8c863d2b89d38b299380be83b0465cb64b68055d2695d66c18c6cdb273272",
+      "type": "travel",
+      "split": "validation",
+      "multi_level": false
+    },
+    {
+      "sha256": "ae3d037bd8a4841065a128b568f0c4c3a4750c35053cd7d2ef1641f619ddb9ca",
+      "type": "travel",
+      "split": "validation",
+      "multi_level": false
+    },
+    {
+      "sha256": "b3bde8bb1f00d72ac8d49ed61036f5f0f7a3850abe827c19655f5cebd8ec968c",
+      "type": "travel",
+      "split": "validation",
+      "multi_level": false
+    },
+    {
+      "sha256": "d65cd34bc7accf20a5b77ca708a0cbb7cc363cb4d1088ace699316964b701296",
+      "type": "travel",
+      "split": "validation",
+      "multi_level": false
+    },
+    {
+      "sha256": "f649df9602390a632f6e33bdd694dd3ee9081c6fb3b870f7f821d1f9f195de84",
+      "type": "travel",
+      "split": "validation",
+      "multi_level": false
+    }
+  ],
+  "created": "2026-11-27"
+}
