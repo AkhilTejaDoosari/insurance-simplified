@@ -9,7 +9,11 @@ COPY app ./app
 RUN uv sync --frozen --no-dev
 
 FROM python:3.12-slim
-RUN useradd --system --uid 10001 engine
+# OpenDataLoader PDF (primary reader) is a Java CLI: a headless JRE, nothing else.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends default-jre-headless \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd --system --uid 10001 engine
 WORKDIR /engine
 COPY --from=build /engine /engine
 ENV PATH="/engine/.venv/bin:$PATH" PYTHONUNBUFFERED=1 ENGINE_ENV=production

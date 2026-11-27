@@ -59,6 +59,10 @@ def _reader(name: str) -> Any:
         from app.parsing.pdfplumber_reader import PdfplumberReader  # noqa: PLC0415
 
         return PdfplumberReader()
+    if name == "opendataloader":
+        from app.parsing.opendataloader import OpenDataLoaderReader  # noqa: PLC0415
+
+        return OpenDataLoaderReader()
     if name == "pymupdf":  # evaluation only
         from app.parsing.pymupdf_reader import PymupdfReader  # noqa: PLC0415
 
@@ -69,10 +73,17 @@ def _reader(name: str) -> Any:
     raise ValueError(f"unknown reader {name!r}")
 
 
+# The JVM reserves far more address space than it uses (measured peak RSS 555 MB on the
+# largest validation PDF), so a 2 GiB address-space cap stops it from starting.
+READER_LIMITS: dict[str, Limits] = {
+    "opendataloader": Limits(seconds=180.0, memory_bytes=4 * 1024**3),
+}
+
+
 def parse_isolated(
     pdf: bytes, reader_name: str = "pdfplumber", limits: Limits | None = None
 ) -> ParseResult:
-    limits = limits or Limits()
+    limits = limits or READER_LIMITS.get(reader_name, Limits())
     ctx = mp.get_context("spawn")  # fresh interpreter: no shared state with the engine
     parent, child = ctx.Pipe(duplex=False)
     proc = ctx.Process(target=_child, args=(reader_name, pdf, limits, child), daemon=True)

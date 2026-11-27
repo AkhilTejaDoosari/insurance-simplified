@@ -231,7 +231,7 @@ corrupt PDF raises a clean error. No network service is added. Not wired in yet.
 3. Held-out run: freeze engine commit + scorer + key schema, open blind A once, draft its
    keys without engine output, owner verifies, score once.
 
-## Round 4 — verifier deficiencies (2026-11-27, in progress)
+## Round 4a — verifier deficiencies (2026-11-27, in progress)
 Progress record: `docs/v2/implementation-progress.md`. Baseline R6: 348/454, 0 false
 verified; 89 missed keys were read correctly by some reader (verifier gap), 17 by none.
 
@@ -241,3 +241,21 @@ verified; 89 missed keys were read correctly by some reader (verifier gap), 17 b
 
 Run with `engine/scripts/measure_reconciler.sh` (prints aggregates only; per-key files stay
 private). Missed keys are classed by `engine/evaluation/attribute_misses.py`.
+
+## Round 4b — progressive multi-engine recovery (2026-11-27)
+
+Owner direction: OpenDataLoader primary, Docling conditional (through OpenDataLoader's hybrid
+backend), pdfplumber only where it adds measurable value, Nemotron (text) and Claude (visual)
+as proposers, the source-grounded verifier as the only judge. Design and operations:
+`docs/v2/recovery-engine.md`.
+
+| Configuration (same keys v1.1 DRAFT, scorer, verifier) | Correct | False verified | Docling pages |
+|---|---|---|---|
+| R6: three readers, every page | 348 / 454 | 0 | 149 / 149 |
+| OpenDataLoader only (also run live: identical) | 344 | 0 | 0 |
+| OpenDataLoader → Docling on gap pages | **348** | **0** | 77 / 149 |
+| + pdfplumber tables on gap pages | 348 | 0 | 77 |
+
+pdfplumber's table finder adds no keyed coverage, so it is off by default; pdfplumber remains
+the verifier's independent text and coordinate source. Model stages are not yet measured on
+real pages (owner run: `engine/scripts/run_recovery_eval.sh`). Development-set numbers.

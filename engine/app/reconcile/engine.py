@@ -6,7 +6,7 @@ claims stay visible instead of being silently dropped.
 """
 
 import itertools
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from app.reconcile.layout import PageLayout, norm, read_layouts
@@ -108,18 +108,36 @@ def _facts(verdicts: list[Verdict]) -> tuple[list[Fact], list[tuple[Fact, Fact]]
     return [f for f in facts if id(f) not in conflicted], conflicts
 
 
-def reconcile(pdf: bytes, documents: Mapping[str, Document]) -> Reconciled:
-    by_page: dict[int, PageLayout] = {p.number: p for p in read_layouts(pdf)}
+def reconcile(
+    pdf: bytes,
+    documents: Mapping[str, Document],
+    *,
+    candidates: Sequence[Candidate] = (),
+    layouts: Sequence[PageLayout] | None = None,
+) -> Reconciled:
+    """Verify every reader's table cells, plus any extra ``candidates`` (for example
+    proposals from a language model), against the PDF's own text layer and rules.
+
+    Where a candidate came from never changes how it is checked: a model proposal is
+    verified by exactly the same rules as a parser cell. ``layouts`` lets a caller that
+    reconciles the same PDF several times read its geometry once."""
+    by_page: dict[int, PageLayout] = {
+        p.number: p for p in (layouts if layouts is not None else read_layouts(pdf))
+    }
     verdicts: list[Verdict] = []
+    pending: list[Candidate] = list(candidates)
     for reader, doc in documents.items():
         for page in doc.pages:
-            layout = by_page.get(page.number)
-            if layout is None or not page.tables:
-                continue
-            verdicts.extend(
-                verify(cand, layout, by_page.get(page.number - 1), by_page.get(page.number + 1))
-                for cand in candidates_from(reader, page.tables)
-            )
+            if page.number in by_page and page.tables:
+                pending.extend(candidates_from(reader, page.tables))
+    for cand in pending:
+        layout = by_page.get(cand.page)
+        if layout is None:
+            verdicts.append(Verdict(cand, Status.REJECTED, ("page_not_in_document",)))
+            continue
+        verdicts.append(
+            verify(cand, layout, by_page.get(cand.page - 1), by_page.get(cand.page + 1))
+        )
     facts, conflicts = _facts(verdicts)
     return Reconciled(facts=facts, verdicts=verdicts, conflicts=conflicts)
 

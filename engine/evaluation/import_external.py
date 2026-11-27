@@ -11,11 +11,11 @@ compared on what it found, not on post-processing differences.
 
 import json
 import sys
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from app.parsing.grid import TableAssembler
+from app.parsing.opendataloader import document_from_odl, odl_grid
 from app.schemas.common import Market
 from app.schemas.document import Document, Page, ParserInfo, Table
 
@@ -71,54 +71,12 @@ def from_docling(doc: dict[str, Any], sha: str) -> Document:
 
 
 # --- OpenDataLoader (JSON output) -----------------------------------------------------
-
-
-def _texts(node: Any) -> Iterator[str]:
-    if isinstance(node, dict):
-        if isinstance(node.get("content"), str):
-            yield node["content"]
-        for key in ("kids", "rows", "cells", "list items"):
-            yield from _texts(node.get(key) or [])
-    elif isinstance(node, list):
-        for item in node:
-            yield from _texts(item)
-
-
-def _odl_tables(node: Any) -> Iterator[dict[str, Any]]:
-    if isinstance(node, dict):
-        if node.get("type") == "table":
-            yield node
-            return
-        yield from _odl_tables(node.get("kids") or [])
-    elif isinstance(node, list):
-        for item in node:
-            yield from _odl_tables(item)
-
-
-def odl_grid(table: dict[str, Any]) -> list[list[Cell]]:
-    rows, cols = table["number of rows"], table["number of columns"]
-    grid: list[list[Cell]] = [[""] * cols for _ in range(rows)]
-    for row in table["rows"]:
-        for cell in row["cells"]:
-            r, c = cell["row number"] - 1, cell["column number"] - 1
-            grid[r][c] = " ".join(_texts(cell.get("kids") or []))
-            for dr in range(cell.get("row span", 1)):
-                for dc in range(cell.get("column span", 1)):
-                    if (dr or dc) and r + dr < rows and c + dc < cols:
-                        grid[r + dr][c + dc] = None
-    return grid
+# The converter lives in the engine (app/parsing/opendataloader.py): the engine runs
+# OpenDataLoader itself now; this importer keeps reading JSON produced elsewhere.
 
 
 def from_opendataloader(doc: dict[str, Any], sha: str) -> Document:
-    tables: dict[int, list[Table]] = {}
-    assembler = TableAssembler()
-    found = sorted(_odl_tables(doc.get("kids") or []), key=lambda t: int(t["page number"]))
-    for i, table in enumerate(found):
-        page = int(table["page number"])
-        built = assembler.add(odl_grid(table), page, f"p{page}t{i}", "")
-        if built:
-            tables.setdefault(page, []).append(built)
-    return _document(sha, "opendataloader", "json", tables, int(doc["number of pages"]))
+    return document_from_odl(doc, sha)
 
 
 def main(argv: list[str]) -> int:
@@ -138,3 +96,6 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+
+
+__all__ = ["docling_grid", "from_docling", "from_opendataloader", "odl_grid"]
