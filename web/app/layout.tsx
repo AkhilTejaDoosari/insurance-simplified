@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import HeaderBrandLink from "@/app/components/HeaderBrandLink";
-import ThemeToggle from "@/app/components/ThemeToggle";
 
 export const metadata: Metadata = {
   title: "Insurance Simplified",
@@ -24,7 +23,6 @@ export default function RootLayout({
             <HeaderBrandLink />
             <div className="topright">
               <span className="pill">Document-first. Evidence-led.</span>
-              <ThemeToggle />
             </div>
           </div>
         </header>

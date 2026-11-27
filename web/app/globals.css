@@ -1,7 +1,7 @@
 /* Shared functional styles. Locked V5 composition and tokens follow below. */
 
 :root {
-  color-scheme: light;
+  color-scheme: only light;
   --bg: #f7f8fa;
   --surface: #ffffff;
   --surface-tint: #eff4ff;
@@ -34,32 +34,7 @@
     "Instrument Sans", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #111318;
-    --surface: #1d2028;
-    --surface-tint: #222f4d;
-    --row-stripe: #292d36;
-    --brand-red: #ed4658;
-    --ink: #f7f8fa;
-    --muted: #aab2c0;
-    --line: #373d48;
-    --line-strong: #596272;
-    --action: #98afff;
-    --action-ink: #111318;
-    --focus: #98afff;
-    --ok-ink: #79d7bb;
-    --ok-ink-rgb: 121 215 187;
-    --ok-bg: #19372f;
-    --bad-ink: #ff9ca6;
-    --bad-bg: #4a242c;
-    --none-ink: #cbd3e0;
-    --none-bg: #343a45;
-    --warn-ink: #f3bb61;
-    --warn-bg: #45321d;
-  }
-}
+
 
 * {
   box-sizing: border-box;
@@ -165,12 +140,7 @@ a {
   object-fit: contain;
   margin: 0 auto;
 }
-@media (prefers-color-scheme: dark) {
-  .welcome__brand img {
-    width: 72px;
-    height: 82px;
-  }
-}
+
 .site-header__tagline {
   color: var(--muted);
 }
@@ -1104,7 +1074,7 @@ select {
    offline reference; all policy content is rendered by the existing app. */
 :root,
 :root[data-theme="light"] {
-  color-scheme: light;
+  color-scheme: only light;
   --bg: #f5f6f7;
   --surface: #ffffff;
   --ink: #18212b;
@@ -1135,62 +1105,8 @@ select {
   --warn-ink: #84500c;
   --warn-bg: #fcefcf;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --bg: #111922;
-    --surface: #1a2631;
-    --ink: #f2f5f7;
-    --muted: #a7b2bb;
-    --line: #33414d;
-    --line-strong: #596d7e;
-    --action: #70b4f0;
-    --action-ink: #111922;
-    --surface-tint: #173850;
-    --row-stripe: #111922;
-    --brand-red: #f46b77;
-    --green: #64cb9c;
-    --green-tint: #193a34;
-    --red-tint: #432631;
-    --shadow: none;
-    --focus: #70b4f0;
-    --ok-ink: #79d7bb;
-    --ok-bg: #19372f;
-    --bad-ink: #ff9ca6;
-    --bad-bg: #4a242c;
-    --none-ink: #cbd3e0;
-    --none-bg: #343a45;
-    --warn-ink: #f3bb61;
-    --warn-bg: #45321d;
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #111922;
-  --surface: #1a2631;
-  --ink: #f2f5f7;
-  --muted: #a7b2bb;
-  --line: #33414d;
-  --line-strong: #596d7e;
-  --action: #70b4f0;
-  --action-ink: #111922;
-  --surface-tint: #173850;
-  --row-stripe: #111922;
-  --brand-red: #f46b77;
-  --green: #64cb9c;
-  --green-tint: #193a34;
-  --red-tint: #432631;
-  --shadow: none;
-  --focus: #70b4f0;
-  --ok-ink: #79d7bb;
-  --ok-bg: #19372f;
-  --bad-ink: #ff9ca6;
-  --bad-bg: #4a242c;
-  --none-ink: #cbd3e0;
-  --none-bg: #343a45;
-  --warn-ink: #f3bb61;
-  --warn-bg: #45321d;
-}
+
+
 html {
   line-height: 1.55;
   scroll-padding-top: 24px;
@@ -2246,14 +2162,8 @@ button {
     padding: 10px;
   }
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .halo {
-    opacity: 0.13;
-  }
-}
-:root[data-theme="dark"] .halo {
-  opacity: 0.13;
-}
+
+
 /* Approved dual-experience Page 2. All additions are results-scoped. */
 .reviewShell .reviewModeBar {
   display: flex;
@@ -2542,4 +2452,56 @@ button {
     transition: none !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* V2 locked palette (docs/v2/design.md, D-038): light only, logo red + blue, green, amber.
+   Last in the file so it wins over the older token blocks above. */
+:root,
+:root[data-theme] {
+  color-scheme: only light;
+  --bg: #f3f6fb; /* mist */
+  --surface: #ffffff; /* paper */
+  --surface-tint: #e9effd; /* cobalt soft */
+  --row-stripe: #f3f6fb;
+  --ink: #14213d;
+  --muted: #4a5672; /* ink2 */
+  --line: #dfe5ef; /* rule */
+  --line-strong: #bcc7d8; /* rule2 */
+  --action: #315edb; /* cobalt */
+  --action-ink: #ffffff;
+  --focus: #315edb;
+  --brand-red: #cf3043; /* signal */
+  --green: #1f7a5c; /* leaf */
+  --green-tint: #e2f4ec;
+  --red-tint: #fde9eb;
+  --ok-ink: #1f7a5c; /* Verified */
+  --ok-ink-rgb: 31 122 92;
+  --ok-bg: #e2f4ec;
+  /* Not covered text: logo red #CF3043 on its soft tint is 4.34:1, below AA, so text
+     uses a darker red of the same hue (5.53:1). Owner to confirm (design.md). */
+  --bad-ink: #b42536;
+  --bad-bg: #fde9eb;
+  --warn-ink: #8a5300; /* Couldn't confirm */
+  --warn-bg: #fff1d9;
+  --none-ink: #56637a; /* Not mentioned (slate) */
+  --none-bg: #edf1f6;
+  --marker: #d3e1ff; /* evidence highlight, with a 2px cobalt underline */
+}
+/* The header carries a 3px red / blue / green stripe from the logo. */
+.site-header {
+  position: relative;
+}
+.site-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    #cf3043 0 33.33%,
+    #315edb 33.33% 66.66%,
+    #1f7a5c 66.66% 100%
+  );
 }

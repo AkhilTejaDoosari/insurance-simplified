@@ -136,10 +136,7 @@ test("UX-24 keyboard-only journey reaches tier, details, and original PDF eviden
   await expect(
     page.getByRole("link", { name: "Insurance Simplified home" }),
   ).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(
-    page.getByRole("button", { name: "Toggle color theme" }),
-  ).toBeFocused();
+  // V2 is light only (D-038, docs/v2/design.md): no theme toggle in the tab order.
   await page.keyboard.press("Tab");
   const chooseDocuments = page.getByRole("button", {
     name: "I have my documents",

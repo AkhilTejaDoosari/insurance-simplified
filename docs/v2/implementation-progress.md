@@ -41,6 +41,16 @@ reads the local copy, so it works in one local process, not across serverless
 instances), browser e2e, the judge run (until then every fact shows "needs
 verification" with its printed quote and page).
 
+**Then — WP11 step 1 (owner: "start the UI"):** the locked palette as the app's tokens,
+light only (`color-scheme: only light`; dark-mode CSS and the theme toggle removed), the
+red/blue/green header stripe, the cobalt-underlined marker in the PDF viewer. Finding:
+the locked pair signal #CF3043 on #FDE9EB is 4.34:1, below the AA the same doc requires;
+"not covered" text uses #B42536 (5.53:1) pending owner confirmation. Two e2e tests that
+required a dark page now assert the light-only rule (D-038). e2e on the two touched
+specs: 2 passed, 4 failed — the same 4 fail on the commit before (pre-existing: mocked
+upload/compare flows). Web unit 1,466 passed / 22 skipped, tsc, build. Screenshots
+(desktop, phone) sent to the owner. Fonts and the results layout not started.
+
 ## Session 2026-11-27 (e) — first real model run, interrupted; runner made faster
 
 Owner's first run on the Mac: setup, probes (NVIDIA and Claude through KodeKey, PDF input

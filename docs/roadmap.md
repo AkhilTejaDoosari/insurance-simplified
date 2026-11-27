@@ -32,7 +32,7 @@ Sections 1–4 below are the pre-V2 record and are no longer the plan.
 | 8 | Two-key verification, search before "not mentioned", basis rule | Not started |
 | 9 | Grouping and ranking, comparison facts, match score, contacts | Not started |
 | 10 | Chat router (six routes) + answer checking | Not started |
-| 11 | Web cut-over to the locked design (`docs/v2/design.md`, demo in `docs/v2/demo/`) | Not started |
+| 11 | Web cut-over to the locked design (`docs/v2/design.md`, demo in `docs/v2/demo/`) | Partial — palette tokens, light only (dark mode and theme toggle removed), logo stripe, evidence marker; fonts and the results-screen layout not started; "not covered" text uses #B42536 (AA) pending owner confirmation |
 | 12 | Operations and safety; Vercel + engine host via Terraform | Not started |
 | 13 | V2-preview: live link + validation scorecard | Not started |
 | 14 | Blind run → V2.0 | Not started |

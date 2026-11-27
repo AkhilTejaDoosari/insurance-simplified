@@ -196,7 +196,9 @@ export default function PdfEvidenceViewer({
               top: r.y,
               width: r.width,
               height: r.height,
-              backgroundColor: "rgba(255, 213, 74, 0.45)",
+              // V2 marker (design.md): #D3E1FF, translucent over the page, cobalt underline
+              backgroundColor: "rgba(211, 225, 255, 0.6)",
+              borderBottom: "2px solid #315edb",
               pointerEvents: "none",
             }}
           />

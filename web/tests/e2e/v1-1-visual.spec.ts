@@ -2,7 +2,9 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
-test("brand and appearance follow the system in light and dark", async ({
+// V2 is light only (D-038, docs/v2/design.md): the page keeps the light theme when
+// the system is in dark mode. Before V2 this test required a dark page.
+test("brand and appearance stay light when the system is in dark mode", async ({
   page,
 }, testInfo) => {
   await page.emulateMedia({ colorScheme: "light" });
@@ -26,14 +28,8 @@ test("brand and appearance follow the system in light and dark", async ({
     path: testInfo.outputPath("m1-light.png"),
     fullPage: true,
   });
+  expect(light).toBe("rgb(243, 246, 251)"); // mist
   await page.emulateMedia({ colorScheme: "dark" });
-  await expect
-    .poll(() =>
-      page
-        .locator("html")
-        .evaluate((el) => getComputedStyle(el).backgroundColor),
-    )
-    .not.toBe(light);
   await expect
     .poll(() =>
       page
@@ -44,7 +40,7 @@ test("brand and appearance follow the system in light and dark", async ({
   const background = await page
     .locator("html")
     .evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(background).toBe("rgb(17, 25, 34)");
+  expect(background).toBe(light);
   const iconCornerAlpha = await page
     .locator(".site-header img")
     .evaluate(async (element) => {
