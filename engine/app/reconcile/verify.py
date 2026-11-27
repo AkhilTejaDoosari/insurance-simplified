@@ -317,6 +317,20 @@ def _rest_of_cell(val: Occurrence, lab: Occurrence, head: Occurrence, same_page:
     return norm(" ".join(w.text for w in words))
 
 
+def _leads_header_cell(layout: PageLayout, head: Occurrence, element: str) -> bool:
+    """R7: a short header element still names the column when it is the opening text of
+    a ruled header cell - a reader that keeps only the first line of "Network Provider
+    (You will pay the least)". The cell must hold no amount and be the topmost cell of
+    its column strip, so a word inside a data cell (what R6 guards against) never
+    qualifies."""
+    if not (layout.ruled and head.bounded):
+        return False
+    cell = column_header(head)
+    if has_value(cell) or not norm(cell).startswith(norm(element)):
+        return False
+    return norm(_strip_header(layout, head.box.cx, head.box.top + 1)) == norm(cell)
+
+
 def _match_header(
     candidate: Candidate,
     layout: PageLayout,
@@ -335,7 +349,9 @@ def _match_header(
     reasons: list[str] = []
     for page_layout in (p for p in (layout, previous) if p is not None):
         for head in locate(page_layout, element):
-            if len(norm(element)) < 0.6 * len(norm(head.cell_text)):
+            if len(norm(element)) < 0.6 * len(norm(head.cell_text)) and not _leads_header_cell(
+                page_layout, head, element
+            ):
                 reasons.append("header_is_part_of_a_longer_cell")
                 continue
             if not _identifies_column(page_layout, head):

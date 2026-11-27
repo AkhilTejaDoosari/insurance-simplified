@@ -230,3 +230,14 @@ corrupt PDF raises a clean error. No network service is added. Not wired in yet.
 2. Student and travel keys (20 documents, clause facts) — not drafted yet.
 3. Held-out run: freeze engine commit + scorer + key schema, open blind A once, draft its
    keys without engine output, owner verifies, score once.
+
+## Round 4 — verifier deficiencies (2026-11-27, in progress)
+Progress record: `docs/v2/implementation-progress.md`. Baseline R6: 348/454, 0 false
+verified; 89 missed keys were read correctly by some reader (verifier gap), 17 by none.
+
+| Iteration | Change | Correct keys | False verified | Precision |
+|---|---|---|---|---|
+| R7 | a short header element is accepted when it opens a ruled, amount-free cell that is the topmost cell of its column (first line of a two-line header) | not scored yet | not scored yet | — |
+
+Run with `engine/scripts/measure_reconciler.sh` (prints aggregates only; per-key files stay
+private). Missed keys are classed by `engine/evaluation/attribute_misses.py`.
