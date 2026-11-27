@@ -11,7 +11,7 @@ describe("container listener contract", () => {
     const exposed = Number(dockerfile.match(/^EXPOSE\s+(\d+)$/m)?.[1]);
     expect(exposed).toBe(listener);
 
-    const compose = readFileSync("docker-compose.yml", "utf8");
+    const compose = readFileSync("../docker-compose.yml", "utf8") // repo root: web + engine;
     const published = compose.match(/"127\.0\.0\.1:(\d+):(\d+)"/);
     expect(published).not.toBeNull();
     expect(Number(published?.[1])).toBe(listener);
