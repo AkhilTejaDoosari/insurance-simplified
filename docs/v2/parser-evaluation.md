@@ -203,18 +203,19 @@ The check also missed two parser defects (pdfplumber lost the Network / Out-of-N
 header row on Highmark SBCs; Docling put "Not covered" under Limitations). Both are
 rejected by the reconciler.
 
-### Candidates not yet scored
-* **MinerU 4.2.3** (MinerU Open Source License = Apache-2.0 + attribution for online
-  services + separate licence above 100 M MAU / $20 M monthly revenue; telemetry on by
-  default — `MINERU_TELEMETRY_DISABLED=1` is required and enforced by the runner). The
-  standard tier runs MinerU2.5-Pro through llama.cpp on CPU; MinerU recommends ≥ 12 cores.
-  Probe on the 2-core / 7 GB private runner: see the next update.
-* **PaddleOCR-VL 1.6** (Apache-2.0; 0.9B VLM; vendor: CPU possible, not recommended).
-  CPU probe failed on all 3 documents within seconds; cause pending (runner output).
-* Blocker for both: private-repo runners have 2 cores, no GPU; this workspace cannot
-  download models. Options without buying anything: the owner's Mac (MinerU MLX backend,
-  PaddleOCR-VL via MLX-VLM / llama.cpp) running a one-shot script; Colab free GPU with the
-  PDFs uploaded by the owner. A GPU runner or hosted API would cost money (not approved).
+### Candidates not yet scored — CPU probes (private repo runs 45935593204, 45944444795)
+Host: GitHub-hosted private-repo runner, 2 cores, 7.7 GB RAM, no GPU.
+
+| Candidate | License | Probe | Measured |
+|---|---|---|---|
+| MinerU 4.2.3, standard tier (MinerU2.5-Pro via llama.cpp) | MinerU Open Source License (Apache-2.0 + online-service attribution + separate licence above 100 M MAU / $20 M monthly revenue); telemetry on by default, forced off | 3 documents (4, 6, 14 pages), 25-min limit each | 1 finished: 318 s/page; 2 hit the limit (≥ 107 and ≥ 250 s/page); peak RSS 3.7 GB. Output is well-formed (headings, footnotes, table + caption). ≈ 30 h for the 366 validation pages on this host — impractical; quality not yet scored (the finished document has no keys yet). |
+| PaddleOCR-VL 1.6 (paddleocr 3.7.0, paddlepaddle 3.2.1 CPU) | Apache-2.0 | 1st: 3 documents; 2nd: 1 document with protobuf pinned | 1st: install conflict (protobuf gencode 7.36.1 vs runtime 6.33.4) — failed before inference. 2nd: conflict fixed; the runner shut down 47 s into model loading (exit 143), consistent with memory exhaustion on 7.7 GB (not proven). No pages parsed. |
+
+Neither candidate is rejected: the blocker is hardware, not accuracy or licence. Options
+that cost nothing: (a) a one-shot script on the owner's Mac (MinerU's MLX backend;
+PaddleOCR-VL through MLX-VLM or llama.cpp) over the 37 validation PDFs only, output pushed
+to a private branch and scored here; (b) Colab's free GPU with the validation PDFs uploaded
+by the owner. A paid GPU runner or hosted API is not approved.
 
 ### OpenDataLoader runtime (Java) — facts for the engine service
 opendataloader-pdf 2.5.24 (Apache-2.0), one 24 MB CLI jar inside the wheel, needs Java
