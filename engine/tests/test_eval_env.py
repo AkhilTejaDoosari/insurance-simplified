@@ -134,3 +134,51 @@ def test_a_key_without_its_endpoint_is_never_assumed_to_be_nvidia(tmp_path: Path
     assert "LLM_API_KEY" not in env
     assert any("no LLM_BASE_URL" in n for n in notes)
     assert any(m.startswith("NVIDIA_API_KEY") for m in missing)
+
+
+OWNER_LAYOUT = """# Existing application LLM
+LLM_BASE_URL=https://api.ai.kodekloud.example/v1
+LLM_API_KEY=kk-SECRET
+LLM_MODEL=claude-sonnet-5-5
+
+# LLM: NVIDIA Nemotron
+LLM_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_API_KEY=
+LLM_MODEL=nvidia/nemotron-3-ultra-550b-a55b
+"""
+
+
+def test_a_file_that_sets_the_endpoint_twice_is_never_paired(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / ".env.local").write_text(
+        OWNER_LAYOUT
+        + "ENGINE_CLOUD_RETENTION_REVIEWED=nvidia,anthropic,kodekey\nENGINE_EVAL_GRANTED_BY=O\n"
+    )
+    env, _notes, missing, _ = resolve(*collect(tmp_path))
+    assert "LLM_API_KEY" not in env and "ENGINE_ANTHROPIC_API_KEY" not in env
+    assert any(m.startswith("NVIDIA_API_KEY") for m in missing)
+    assert any("KODEKEY_API_KEY" in m for m in missing)
+    assert main(["--repo", str(tmp_path), "--emit", str(tmp_path / "e.env")]) == 1
+    out = capsys.readouterr().out
+    assert "LLM_BASE_URL is set 2 times in .env.local" in out
+    assert "NVIDIA_API_KEY is empty in .env.local" in out
+    assert "SECRET" not in out
+
+
+def test_explicit_names_resolve_the_owner_layout(tmp_path: Path) -> None:
+    (tmp_path / ".env.local").write_text(
+        OWNER_LAYOUT.replace("NVIDIA_API_KEY=", "NVIDIA_API_KEY=nvapi-1")
+        + "KODEKEY_BASE_URL=https://api.ai.kodekloud.example/v1\nKODEKEY_API_KEY=kk-2\n"
+        "ENGINE_CLOUD_RETENTION_REVIEWED=nvidia,anthropic,kodekey\nENGINE_EVAL_GRANTED_BY=O\n"
+    )
+    env, _notes, missing, _ = resolve(*collect(tmp_path))
+    assert missing == []
+    assert (env["LLM_API_KEY"], env["LLM_BASE_URL"]) == (
+        "nvapi-1",
+        "https://integrate.api.nvidia.com/v1",
+    )
+    assert (env["ENGINE_ANTHROPIC_API_KEY"], env["ENGINE_ANTHROPIC_BASE_URL"]) == (
+        "kk-2",
+        "https://api.ai.kodekloud.example/v1",
+    )

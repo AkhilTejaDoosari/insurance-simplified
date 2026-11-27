@@ -78,11 +78,49 @@ def _parse(path: Path) -> dict[str, str]:
     return out
 
 
-def _kodekey_in_files(repo: Path) -> tuple[str, str, str] | None:
-    """(base, key, file) of an LLM_BASE_URL/LLM_API_KEY pair that points at KodeKey."""
+def _names(path: Path) -> list[tuple[str, bool]]:
+    """(name, has a value) for every whitelisted assignment, duplicates included."""
+    out = []
+    for raw in path.read_text(errors="replace").splitlines():
+        line = raw.strip().removeprefix("export ")
+        if line and not line.startswith("#") and "=" in line:
+            name, value = line.split("=", 1)
+            if name.strip() in NAMES:
+                out.append((name.strip(), bool(value.strip().strip("\"'"))))
+    return out
+
+
+def diagnose(repo: Path) -> list[str]:
+    """Names set twice in one file, and names present but empty - names only."""
+    notes = []
     for rel in FILES:
         path = repo / rel
-        if path.is_file():
+        if not path.is_file():
+            continue
+        seen = _names(path)
+        counts: dict[str, int] = {}
+        for name, _ in seen:
+            counts[name] = counts.get(name, 0) + 1
+        notes += [f"{name} is set {n} times in {rel}" for name, n in counts.items() if n > 1]
+        filled = {name for name, has in seen if has}
+        notes += [
+            f"{name} is empty in {rel}" for name, has in seen if not has and name not in filled
+        ]
+    return list(dict.fromkeys(notes))
+
+
+def _ambiguous(path: Path) -> bool:
+    names = [n for n, _ in _names(path)]
+    return names.count("LLM_BASE_URL") > 1 or names.count("LLM_API_KEY") > 1
+
+
+def _kodekey_in_files(repo: Path) -> tuple[str, str, str] | None:
+    """(base, key, file) of an LLM_BASE_URL/LLM_API_KEY pair that points at KodeKey.
+    A file that sets either name twice is never paired: which key belongs to which
+    endpoint would be a guess, and a wrong guess sends a key to the wrong company."""
+    for rel in FILES:
+        path = repo / rel
+        if path.is_file() and not _ambiguous(path):
             pair = _parse(path)
             base = pair.get("LLM_BASE_URL", "")
             if base and any(h in _host(base) for h in GATEWAY_HOSTS) and pair.get("LLM_API_KEY"):
@@ -104,7 +142,10 @@ def collect(repo: Path) -> tuple[dict[str, str], dict[str, str]]:
     for rel in FILES:
         path = repo / rel
         if path.is_file():
+            ambiguous = _ambiguous(path)
             for name, value in _parse(path).items():
+                if ambiguous and name in ("LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"):
+                    continue  # never pair a key with an endpoint by guesswork
                 if name not in values and not (name.startswith("KODEKEY_") and found):
                     values[name], source[name] = value, rel
     return values, source
@@ -251,6 +292,7 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv)
     values, source = collect(args.repo)
     env, notes, missing, origin = resolve(values, source)
+    notes = diagnose(args.repo) + notes
     print("configuration found (names and sources only):")
     for name in sorted(env):
         shown = (
