@@ -65,3 +65,64 @@ def test_output_names_sources_but_never_values(
     assert main(["--repo", str(repo), "--emit", str(emit)]) == 0
     assert "SECRET" not in capsys.readouterr().out
     assert oct(emit.stat().st_mode & 0o777) == "0o600"
+
+
+def test_kodekey_from_the_web_app_settings_is_used_for_claude(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        "LLM_BASE_URL=https://api.kodekey.example/v1\nLLM_API_KEY=kk-1\nLLM_MODEL=x\n",
+        "NVIDIA_API_KEY=nv\nENGINE_EVAL_GRANTED_BY=Owner\n"
+        "ENGINE_CLOUD_RETENTION_REVIEWED=nvidia,anthropic\n",
+    )
+    env, notes, missing, origin = resolve(*collect(repo))
+    assert env["ENGINE_ANTHROPIC_API_KEY"] == "kk-1"
+    assert env["ENGINE_ANTHROPIC_BASE_URL"] == "https://api.kodekey.example/v1"
+    assert "web/.env.local" in origin["ENGINE_ANTHROPIC_API_KEY"]
+    assert env["LLM_API_KEY"] == "nv"  # Nemotron still goes to NVIDIA
+    # the gateway must be on the retention record
+    assert any("kodekey" in m for m in missing)
+    assert any("through KodeKey" in n for n in notes)
+
+
+def test_kodekey_with_its_record_and_model(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        "",
+        "NVIDIA_API_KEY=nv\nKODEKEY_API_KEY=kk\nKODEKEY_BASE_URL=https://kodekey.example\n"
+        "KODEKEY_CLAUDE_MODEL=anthropic/claude-opus-5.5\nENGINE_EVAL_GRANTED_BY=Owner\n"
+        "ENGINE_CLOUD_RETENTION_REVIEWED=nvidia,anthropic,kodekey\n",
+    )
+    env, _notes, missing, _ = resolve(*collect(repo))
+    assert missing == []
+    assert env["ENGINE_ANTHROPIC_MODEL"] == "anthropic/claude-opus-5.5"
+    assert (env["ENGINE_PRICE_ANTHROPIC_IN"], env["ENGINE_PRICE_ANTHROPIC_OUT"]) == ("4", "20")
+
+
+def test_gateway_probe_checks_both_request_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.providers import anthropic  # noqa: PLC0415
+
+    sent: list[dict[str, object]] = []
+
+    def fake_post(provider: str, url: str, headers: dict[str, str], body: dict, **_: object):  # type: ignore[no-untyped-def,type-arg]
+        sent.append({"url": url, "auth": headers.get("authorization", "")[:6], "body": body})
+        return {
+            "model": "claude-opus-5-5",
+            "stop_reason": "end_turn",
+            "content": [{"type": "text", "text": '{"ok": true}'}],
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+        }
+
+    monkeypatch.setattr(anthropic, "post_json", fake_post)
+    monkeypatch.setattr(
+        anthropic, "get_json", lambda *a, **k: {"data": [{"id": "claude-opus-5-5"}]}
+    )
+    client = anthropic.AnthropicClient(
+        anthropic.AnthropicConfig(
+            api_key="kk-SECRET", base_url=anthropic._base("https://kk.example/v1")
+        )
+    )
+    out = client.probe()
+    assert out["gateway"] is True and out["model_available"] is True and out["pdf_input"] is True
+    assert [s["url"] for s in sent] == ["https://kk.example/v1/messages"] * 2
+    assert sent[0]["auth"] == "Bearer"
+    assert "SECRET" not in repr(out)

@@ -36,6 +36,8 @@ def main() -> int:
     if an:
         r = report["anthropic"]
         ok &= isinstance(r, dict) and r.get("model_available") is True
+        if isinstance(r, dict) and r.get("gateway"):  # the visual stage sends PDFs
+            ok &= r.get("pdf_input") is True
     return 0 if ok else 1
 
 

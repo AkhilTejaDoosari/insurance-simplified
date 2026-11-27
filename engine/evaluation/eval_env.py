@@ -33,7 +33,7 @@ from app.providers.nvidia import DEFAULT_MODEL as NEMOTRON_MODEL
 
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1"
 NVIDIA_HOST = "integrate.api.nvidia.com"
-CLAUDE_PRICES = {"claude-opus-5-5": ("4", "20")}  # USD per million tokens, list price
+CLAUDE_PRICES = {"opus-5-5": ("4", "20")}  # USD per million tokens, list price
 NAMES = (
     "LLM_BASE_URL",
     "LLM_API_KEY",
@@ -52,7 +52,12 @@ NAMES = (
     "ENGINE_PRICE_ANTHROPIC_OUT",
     "ENGINE_CLOUD_RETENTION_REVIEWED",
     "ENGINE_EVAL_GRANTED_BY",
+    "KODEKEY_API_KEY",
+    "KODEKEY_BASE_URL",
+    "KODEKEY_CLAUDE_MODEL",
+    "EVAL_CLAUDE_VIA",
 )
+GATEWAY_HOSTS = ("kodekey", "kodekloud")
 FILES = (".env", ".env.local", "engine/.env", "engine/.env.local", "web/.env", "web/.env.local")
 
 
@@ -73,10 +78,26 @@ def _parse(path: Path) -> dict[str, str]:
     return out
 
 
+def _kodekey_in_files(repo: Path) -> tuple[str, str, str] | None:
+    """(base, key, file) of an LLM_BASE_URL/LLM_API_KEY pair that points at KodeKey."""
+    for rel in FILES:
+        path = repo / rel
+        if path.is_file():
+            pair = _parse(path)
+            base = pair.get("LLM_BASE_URL", "")
+            if base and any(h in _host(base) for h in GATEWAY_HOSTS) and pair.get("LLM_API_KEY"):
+                return base, pair["LLM_API_KEY"], rel
+    return None
+
+
 def collect(repo: Path) -> tuple[dict[str, str], dict[str, str]]:
     """(values, source per name); the process environment wins over files."""
     values: dict[str, str] = {}
     source: dict[str, str] = {}
+    found = _kodekey_in_files(repo)
+    if found and not os.environ.get("KODEKEY_API_KEY"):
+        values["KODEKEY_BASE_URL"], values["KODEKEY_API_KEY"], rel = found
+        source["KODEKEY_BASE_URL"] = source["KODEKEY_API_KEY"] = f"{rel} (LLM_* -> KodeKey)"
     for name in NAMES:
         if os.environ.get(name):
             values[name], source[name] = os.environ[name], "environment"
@@ -84,7 +105,7 @@ def collect(repo: Path) -> tuple[dict[str, str], dict[str, str]]:
         path = repo / rel
         if path.is_file():
             for name, value in _parse(path).items():
-                if name not in values:
+                if name not in values and not (name.startswith("KODEKEY_") and found):
                     values[name], source[name] = value, rel
     return values, source
 
@@ -132,42 +153,69 @@ def _nemotron(values: dict[str, str], source: dict[str, str], out: Found) -> Non
         env["NEMOTRON_STRUCTURED"] = values["NEMOTRON_STRUCTURED"]
 
 
+def _claude_price(model: str) -> tuple[str, str] | None:
+    key = model.lower().replace(".", "-").split("/")[-1]
+    return next((v for k, v in CLAUDE_PRICES.items() if k in key), None)
+
+
 def _claude(values: dict[str, str], source: dict[str, str], out: Found) -> None:
     env, origin, notes, missing = out
-    which = next(
+    direct = next(
         (n for n in ("ENGINE_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY") if values.get(n)), ""
     )
-    if which:
-        env["ENGINE_ANTHROPIC_API_KEY"] = values[which]
-        origin["ENGINE_ANTHROPIC_API_KEY"] = f"{which} ({source[which]})"
-    else:
-        missing.append("ENGINE_ANTHROPIC_API_KEY (Anthropic API key)")
+    kodekey = bool(values.get("KODEKEY_API_KEY") and values.get("KODEKEY_BASE_URL"))
+    via_kodekey = kodekey and (not direct or values.get("EVAL_CLAUDE_VIA", "") == "kodekey")
     model = values.get("ENGINE_ANTHROPIC_MODEL") or CLAUDE_MODEL
+    if via_kodekey:
+        env["ENGINE_ANTHROPIC_API_KEY"] = values["KODEKEY_API_KEY"]
+        env["ENGINE_ANTHROPIC_BASE_URL"] = values["KODEKEY_BASE_URL"]
+        origin["ENGINE_ANTHROPIC_API_KEY"] = f"KODEKEY_API_KEY ({source['KODEKEY_API_KEY']})"
+        origin["ENGINE_ANTHROPIC_BASE_URL"] = f"KODEKEY_BASE_URL ({source['KODEKEY_BASE_URL']})"
+        model = values.get("KODEKEY_CLAUDE_MODEL") or model
+        notes.append(
+            f"Claude through KodeKey ({_host(values['KODEKEY_BASE_URL'])}): documents pass "
+            "through KodeKloud, so the retention record must include kodekey"
+        )
+    elif direct:
+        env["ENGINE_ANTHROPIC_API_KEY"] = values[direct]
+        origin["ENGINE_ANTHROPIC_API_KEY"] = f"{direct} ({source[direct]})"
+        if values.get("ENGINE_ANTHROPIC_BASE_URL"):
+            env["ENGINE_ANTHROPIC_BASE_URL"] = values["ENGINE_ANTHROPIC_BASE_URL"]
+    else:
+        missing.append(
+            "ENGINE_ANTHROPIC_API_KEY (Anthropic API key) or KODEKEY_API_KEY + KODEKEY_BASE_URL"
+        )
+    if _claude_price(model) is None and not values.get("ENGINE_PRICE_ANTHROPIC_IN"):
+        notes.append(f"Claude model {model} is not Opus 5.5: the agreed model is {CLAUDE_MODEL}")
     env["ENGINE_ANTHROPIC_MODEL"] = model
-    if values.get("ENGINE_ANTHROPIC_BASE_URL"):
-        env["ENGINE_ANTHROPIC_BASE_URL"] = values["ENGINE_ANTHROPIC_BASE_URL"]
     env["ENGINE_PRICE_NVIDIA_IN"] = values.get("ENGINE_PRICE_NVIDIA_IN", "0")
     env["ENGINE_PRICE_NVIDIA_OUT"] = values.get("ENGINE_PRICE_NVIDIA_OUT", "0")
     a_in, a_out = values.get("ENGINE_PRICE_ANTHROPIC_IN"), values.get("ENGINE_PRICE_ANTHROPIC_OUT")
-    if not (a_in and a_out) and model in CLAUDE_PRICES:
-        a_in, a_out = CLAUDE_PRICES[model]
-        notes.append(f"Claude price: {model} list price ${a_in} / ${a_out} per million tokens")
+    if not (a_in and a_out) and (price := _claude_price(model)):
+        a_in, a_out = price
+        notes.append(
+            f"Claude priced at Opus 5.5 list ${a_in} / ${a_out} per million tokens "
+            "(the ledger counts this even when a gateway bills differently)"
+        )
     if a_in and a_out:
         env["ENGINE_PRICE_ANTHROPIC_IN"], env["ENGINE_PRICE_ANTHROPIC_OUT"] = a_in, a_out
     else:
         missing.append(f"ENGINE_PRICE_ANTHROPIC_IN / _OUT (USD per million tokens for {model})")
+    if via_kodekey:
+        env["EVAL_CLAUDE_GATEWAY"] = "kodekey"
 
 
 def _declarations(values: dict[str, str], out: Found) -> None:
     env, _origin, _notes, missing = out
     raw = values.get("ENGINE_CLOUD_RETENTION_REVIEWED", "")
     reviewed = {p.strip() for p in raw.split(",") if p.strip()}
-    if {"nvidia", "anthropic"} <= reviewed:
+    needed = {"nvidia", "anthropic"} | ({"kodekey"} if env.get("EVAL_CLAUDE_GATEWAY") else set())
+    if needed <= reviewed:
         env["ENGINE_CLOUD_RETENTION_REVIEWED"] = ",".join(sorted(reviewed))
     else:
         missing.append(
-            "ENGINE_CLOUD_RETENTION_REVIEWED=nvidia,anthropic (your record that both "
-            "providers' retention/training terms were reviewed)"
+            f"ENGINE_CLOUD_RETENTION_REVIEWED={','.join(sorted(needed))} (your record that "
+            "these providers' retention/training terms were reviewed)"
         )
     if values.get("ENGINE_EVAL_GRANTED_BY"):
         env["ENGINE_EVAL_GRANTED_BY"] = values["ENGINE_EVAL_GRANTED_BY"]

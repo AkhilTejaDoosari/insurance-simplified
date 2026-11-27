@@ -141,6 +141,10 @@ until the judge runs. Progress record: `implementation-progress.md`.
    tokens or secrets, then scores `local → +Nemotron → +Claude visual → +judge` with the
    $25 cumulative ledger, stopping on any false verified fact. Acceptance: correct keys
    up, **false verified stays 0**, including among facts presentable to users.
+   Claude may run through the KodeKey gateway (Anthropic Messages format required; the
+   probe checks JSON-schema output and PDF input). Documents then pass through
+   KodeKloud, so the retention record must name `kodekey`; the model stays Opus 5.5 and
+   the ledger still counts Opus 5.5 list prices.
 2. **Approvals needed before any real customer document is sent to a cloud model**
    (`ENGINE_CLOUD_CUSTOMER_DOCUMENTS=approved` is the switch; the policy refuses until then):
    * provider retention/training terms reviewed and recorded per provider (Anthropic API

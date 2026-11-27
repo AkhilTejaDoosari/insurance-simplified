@@ -9,6 +9,7 @@ another tool's Anthropic configuration by accident.
 """
 
 import base64
+import dataclasses
 import json
 import os
 import time
@@ -40,9 +41,7 @@ class AnthropicConfig:
         return cls(
             api_key=key,
             model=os.environ.get("ENGINE_ANTHROPIC_MODEL") or DEFAULT_MODEL,
-            base_url=(
-                os.environ.get("ENGINE_ANTHROPIC_BASE_URL") or "https://api.anthropic.com"
-            ).rstrip("/"),
+            base_url=_base(os.environ.get("ENGINE_ANTHROPIC_BASE_URL") or ANTHROPIC_URL),
         )
 
 
@@ -55,19 +54,71 @@ class AnthropicClient:
     def model(self) -> str:
         return self.config.model
 
-    def probe(self) -> dict[str, Any]:
-        """Key and model check through the Models API: no tokens, no document content.
-        Reports the host and status only - never the key."""
-        host = self.config.base_url.split("//", 1)[-1].split("/", 1)[0]
-        out: dict[str, Any] = {"model": self.config.model, "base_url_host": host}
+    @property
+    def gateway(self) -> bool:
+        """True when calls go through a gateway (e.g. KodeKey), not Anthropic directly."""
+        return _host_of(self.config.base_url) != _host_of(ANTHROPIC_URL)
+
+    def _headers(self) -> dict[str, str]:
         headers = {"x-api-key": self.config.api_key, "anthropic-version": API_VERSION}
+        if self.gateway:  # gateways commonly authenticate with a bearer token
+            headers["authorization"] = f"Bearer {self.config.api_key}"
+        return headers
+
+    def probe(self) -> dict[str, Any]:
+        """Key, model and format check. Reports hosts and statuses only - never the key.
+
+        Anthropic directly: the Models API (no tokens). Through a gateway: the model list
+        if it has one, a one-line JSON-schema request, and a blank one-page PDF - the
+        engine's two request shapes - for well under a cent and no document content."""
+        out: dict[str, Any] = {
+            "model": self.config.model,
+            "base_url_host": _host_of(self.config.base_url),
+            "gateway": self.gateway,
+        }
+        if not self.gateway:
+            try:
+                data = get_json(
+                    PROVIDER,
+                    f"{self.config.base_url}/v1/models/{self.config.model}",
+                    self._headers(),
+                    30,
+                )
+                out["model_available"] = (
+                    isinstance(data, dict) and data.get("id") == self.config.model
+                )
+            except ProviderError as exc:
+                out["model_available"] = f"error:{exc.status}"  # 401 key, 404 model
+            return out
         try:
-            data = get_json(
-                PROVIDER, f"{self.config.base_url}/v1/models/{self.config.model}", headers, 30
-            )
-            out["model_available"] = isinstance(data, dict) and data.get("id") == self.config.model
+            listing = get_json(PROVIDER, f"{self.config.base_url}/v1/models", self._headers(), 30)
+            ids = {m.get("id") for m in listing.get("data", []) if isinstance(m, dict)}
+            out["model_listed"] = self.config.model in ids if ids else "no_listing"
         except ProviderError as exc:
-            out["model_available"] = f"error:{exc.status}"  # 401 key, 404 model
+            out["model_listed"] = f"error:{exc.status}"
+        schema = {
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+            "required": ["ok"],
+            "additionalProperties": False,
+        }
+        probe = AnthropicClient(_with(self.config, max_attempts=1))
+        try:
+            reply = probe.complete_json(
+                "Reply with JSON only.", 'Return {"ok": true}.', "p", schema, 64
+            )
+            out["model_available"] = reply.data == {"ok": True}
+            out["served_model"] = reply.model
+        except ProviderError as exc:
+            out["model_available"] = f"error:{exc.status}:{exc.reason}"
+            return out
+        try:
+            reply = probe.read_pdf_pages(
+                _blank_pdf(), "Reply with JSON only.", 'Return {"ok": true}.', schema, 64
+            )
+            out["pdf_input"] = reply.data == {"ok": True}
+        except ProviderError as exc:
+            out["pdf_input"] = f"error:{exc.status}:{exc.reason}"
         return out
 
     def complete_json(
@@ -106,7 +157,7 @@ class AnthropicClient:
             "messages": [{"role": "user", "content": content}],
             "output_config": {"format": {"type": "json_schema", "schema": schema}},
         }
-        headers = {"x-api-key": self.config.api_key, "anthropic-version": API_VERSION}
+        headers = self._headers()
         started = time.perf_counter()
         failed: list[int] = []
         res = post_json(
@@ -173,3 +224,32 @@ class AnthropicClient:
             time.perf_counter() - started,
             tuple(failed),
         )
+
+
+ANTHROPIC_URL = "https://api.anthropic.com"
+
+
+def _host_of(url: str) -> str:
+    return url.split("//", 1)[-1].split("/", 1)[0].lower()
+
+
+def _base(url: str) -> str:
+    """The engine appends /v1/...: accept a gateway URL given with or without /v1."""
+    url = url.rstrip("/")
+    return url[: -len("/v1")] if url.endswith("/v1") else url
+
+
+def _with(config: "AnthropicConfig", **changes: Any) -> "AnthropicConfig":
+    return dataclasses.replace(config, **changes)
+
+
+def _blank_pdf() -> bytes:
+    import io  # noqa: PLC0415
+
+    import pypdfium2 as pdfium  # noqa: PLC0415
+
+    doc = pdfium.PdfDocument.new()
+    doc.new_page(612, 792)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
