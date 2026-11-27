@@ -19,11 +19,26 @@ _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 class ProviderError(RuntimeError):
     """A provider call failed. ``status`` is the HTTP status (0: no response)."""
 
-    def __init__(self, provider: str, status: int, reason: str) -> None:
+    def __init__(
+        self,
+        provider: str,
+        status: int,
+        reason: str,
+        *,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        failed_attempts: tuple[int, ...] = (),
+    ) -> None:
         super().__init__(f"{provider}: {reason} (status {status})")
         self.provider = provider
         self.status = status
         self.reason = reason
+        # Budget accounting (P0-05): tokens a provider reported before the call was
+        # rejected here (billed even though no usable output came back), and the HTTP
+        # status of every failed attempt (0 = no response: it may still have been billed).
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.failed_attempts = failed_attempts
 
 
 def require_secure(url: str, provider: str) -> None:
@@ -62,10 +77,15 @@ def post_json(
     max_attempts: int = 3,
     base_delay_s: float = 1.5,
     limiter: RateLimiter | None = None,
+    failed_attempts: list[int] | None = None,
 ) -> dict[str, Any]:
+    """``failed_attempts`` (optional, out): the status of every attempt that failed, in
+    order, whether or not a later attempt succeeded - the caller charges them to the
+    budget. The raised error carries the same list."""
     require_secure(url, provider)
     data = json.dumps(body).encode()
     last: ProviderError | None = None
+    failures = failed_attempts if failed_attempts is not None else []
     for attempt in range(1, max_attempts + 1):
         if limiter:
             limiter.wait()
@@ -79,18 +99,22 @@ def post_json(
                     raise ProviderError(provider, res.status, "response_not_an_object")
                 return parsed
         except urllib.error.HTTPError as exc:
-            last = ProviderError(provider, exc.code, "http_error")
+            failures.append(exc.code)
+            last = ProviderError(provider, exc.code, "http_error", failed_attempts=tuple(failures))
             if exc.code not in RETRYABLE or attempt == max_attempts:
                 raise last from None
             retry_after = exc.headers.get("retry-after") if exc.headers else None
             delay = _retry_after(retry_after) or base_delay_s * 2 ** (attempt - 1)
         except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
-            last = ProviderError(provider, 0, type(exc).__name__)
+            failures.append(0)
+            last = ProviderError(provider, 0, type(exc).__name__, failed_attempts=tuple(failures))
             if attempt == max_attempts:
                 raise last from None
             delay = base_delay_s * 2 ** (attempt - 1)
         except json.JSONDecodeError:
-            raise ProviderError(provider, 200, "response_not_json") from None
+            raise ProviderError(
+                provider, 200, "response_not_json", failed_attempts=(*failures, 200)
+            ) from None
         time.sleep(delay)
     raise last or ProviderError(provider, 0, "no_attempt")  # pragma: no cover
 

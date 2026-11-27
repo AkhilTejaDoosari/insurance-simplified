@@ -1,5 +1,6 @@
 """Execution limits and the cost ledger for one document's recovery run."""
 
+import io
 import os
 import time
 from dataclasses import dataclass, field
@@ -90,3 +91,125 @@ def token_cost(price: Price | None, input_tokens: int, output_tokens: int) -> fl
     if price is None:
         return None
     return (input_tokens * price.input_per_mtok + output_tokens * price.output_per_mtok) / 1e6
+
+
+# ------------------------------------------------------------------ P0-05 budget control
+#
+# A model call is admitted only after its worst-case cost is reserved, against the
+# document's cap (RunLimits.max_cost_usd) and, in evaluation runs, against a cumulative
+# spending ledger shared by every run (SpendLedger). Estimates are deliberately high:
+# input at 2.5 characters per token (English text is ~4), 8,000 tokens for every PDF page
+# sent to a visual model (page image plus its text layer), and the full max_tokens of
+# output. A call whose price is unknown cannot be reserved and is not made.
+
+CHARS_PER_TOKEN = 2.5
+VISUAL_TOKENS_PER_PAGE = 8_000
+NOT_BILLED = frozenset({429})  # rate limited: rejected before any work was done
+
+
+def estimate_text_tokens(*parts: str) -> int:
+    return int(sum(len(p) for p in parts) / CHARS_PER_TOKEN) + 1
+
+
+def estimate_visual_tokens(pages: int, *parts: str) -> int:
+    return pages * VISUAL_TOKENS_PER_PAGE + estimate_text_tokens(*parts)
+
+
+def worst_case_usd(price: Price, input_tokens: int, max_output_tokens: int) -> float:
+    cost = token_cost(price, input_tokens, max_output_tokens)
+    assert cost is not None  # noqa: S101 - price is known here
+    return cost
+
+
+def retry_charge_usd(failed_attempts: tuple[int, ...], worst_case: float) -> float:
+    """Each failed attempt that may have been processed is charged at the worst case: a
+    timeout (0) or a 5xx can be billed even though nothing usable came back."""
+    return sum(worst_case for status in failed_attempts if status not in NOT_BILLED)
+
+
+class BudgetExceededError(RuntimeError):
+    pass
+
+
+class SpendLedger:
+    """Cumulative evaluation spending, shared by every run that names the same file.
+
+    Append-only JSON lines under an exclusive file lock. A reservation counts as spent
+    until it is settled, so a run that crashes mid-call leaves its worst case on the
+    books (conservative). ``cap_usd`` is the approved evaluation budget."""
+
+    def __init__(self, path: "os.PathLike[str] | str", cap_usd: float) -> None:
+        from pathlib import Path  # noqa: PLC0415
+
+        if cap_usd <= 0:
+            raise ValueError("cap_usd must be positive")
+        self.path = Path(path)
+        self.cap_usd = cap_usd
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.touch(exist_ok=True)
+
+    def _locked(self) -> "_Lock":
+        return _Lock(self.path)
+
+    @staticmethod
+    def _committed(lines: list[str]) -> float:
+        import json  # noqa: PLC0415
+
+        reserved: dict[str, float] = {}
+        settled: dict[str, float] = {}
+        for line in lines:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            (reserved if row["kind"] == "reserve" else settled)[row["id"]] = float(row["usd"])
+        return sum(settled.get(k, v) for k, v in reserved.items()) + sum(
+            v for k, v in settled.items() if k not in reserved
+        )
+
+    def committed_usd(self) -> float:
+        with self._locked() as f:
+            return round(self._committed(f.read().splitlines()), 6)
+
+    def reserve(self, usd: float, label: str) -> str:
+        """Reserve ``usd`` or raise BudgetExceededError; returns the reservation id."""
+        import json  # noqa: PLC0415
+        import uuid  # noqa: PLC0415
+
+        with self._locked() as f:
+            committed = self._committed(f.read().splitlines())
+            if committed + usd > self.cap_usd:
+                raise BudgetExceededError(
+                    f"evaluation budget: {committed:.4f} committed + {usd:.4f} > {self.cap_usd}"
+                )
+            rid = uuid.uuid4().hex
+            f.write(json.dumps({"kind": "reserve", "id": rid, "usd": usd, "label": label}) + "\n")
+            return rid
+
+    def settle(self, rid: str, usd: float) -> None:
+        """Replace a reservation by what the call actually cost (may exceed it)."""
+        import json  # noqa: PLC0415
+
+        with self._locked() as f:
+            f.read()
+            f.write(json.dumps({"kind": "settle", "id": rid, "usd": usd}) + "\n")
+
+
+class _Lock:
+    def __init__(self, path: "os.PathLike[str]") -> None:
+        self.path = path
+
+    def __enter__(self) -> "io.TextIOWrapper":
+        import fcntl  # noqa: PLC0415
+
+        self.f = open(self.path, "a+", encoding="utf-8")
+        fcntl.flock(self.f, fcntl.LOCK_EX)
+        self.f.seek(0)
+        return self.f
+
+    def __exit__(self, *_: object) -> None:
+        import fcntl  # noqa: PLC0415
+
+        self.f.flush()
+        os.fsync(self.f.fileno())
+        fcntl.flock(self.f, fcntl.LOCK_UN)
+        self.f.close()

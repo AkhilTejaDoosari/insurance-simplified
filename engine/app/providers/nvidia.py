@@ -75,6 +75,7 @@ class NvidiaClient:
             "max_tokens": max_tokens,
         }
         started = time.perf_counter()
+        failed: list[int] = []
         res = post_json(
             PROVIDER,
             f"{self.config.base_url}/chat/completions",
@@ -83,24 +84,49 @@ class NvidiaClient:
             timeout_s=self.config.timeout_s,
             max_attempts=self.config.max_attempts,
             limiter=self._limiter,
+            failed_attempts=failed,
         )
+        usage = res.get("usage") or {}
+        tokens_in = int(usage.get("prompt_tokens") or 0)
+        tokens_out = int(usage.get("completion_tokens") or 0)
         choice = (res.get("choices") or [{}])[0]
         if choice.get("finish_reason") == "length":
-            raise ProviderError(PROVIDER, 200, "incomplete_generation")
+            raise ProviderError(
+                PROVIDER,
+                200,
+                "incomplete_generation",
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+                failed_attempts=tuple(failed),
+            )
         content = (choice.get("message") or {}).get("content")
         if not isinstance(content, str) or not content.strip():
-            raise ProviderError(PROVIDER, 200, "empty_content")
+            raise ProviderError(
+                PROVIDER,
+                200,
+                "empty_content",
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+                failed_attempts=tuple(failed),
+            )
         try:
             data = json.loads(json_text(content))
         except json.JSONDecodeError:
-            raise ProviderError(PROVIDER, 200, "malformed_json") from None
-        usage = res.get("usage") or {}
+            raise ProviderError(
+                PROVIDER,
+                200,
+                "malformed_json",
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+                failed_attempts=tuple(failed),
+            ) from None
         return ModelReply(
             PROVIDER,
             str(res.get("model") or self.config.model),
             data,
-            Usage(int(usage.get("prompt_tokens") or 0), int(usage.get("completion_tokens") or 0)),
+            Usage(tokens_in, tokens_out),
             time.perf_counter() - started,
+            tuple(failed),
         )
 
     def probe(self) -> dict[str, Any]:

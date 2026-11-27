@@ -82,6 +82,7 @@ class AnthropicClient:
         }
         headers = {"x-api-key": self.config.api_key, "anthropic-version": API_VERSION}
         started = time.perf_counter()
+        failed: list[int] = []
         res = post_json(
             PROVIDER,
             f"{self.config.base_url}/v1/messages",
@@ -90,27 +91,59 @@ class AnthropicClient:
             timeout_s=self.config.timeout_s,
             max_attempts=self.config.max_attempts,
             limiter=self._limiter,
+            failed_attempts=failed,
         )
+        usage = res.get("usage") or {}
+        tokens_in = int(usage.get("input_tokens") or 0)
+        tokens_out = int(usage.get("output_tokens") or 0)
         if res.get("stop_reason") == "max_tokens":
-            raise ProviderError(PROVIDER, 200, "incomplete_generation")
+            raise ProviderError(
+                PROVIDER,
+                200,
+                "incomplete_generation",
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+                failed_attempts=tuple(failed),
+            )
         if res.get("stop_reason") == "refusal":
-            raise ProviderError(PROVIDER, 200, "refusal")
+            raise ProviderError(
+                PROVIDER,
+                200,
+                "refusal",
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+                failed_attempts=tuple(failed),
+            )
         texts = [
             b.get("text", "")
             for b in res.get("content") or []
             if isinstance(b, dict) and b.get("type") == "text"
         ]
         if not texts:
-            raise ProviderError(PROVIDER, 200, "empty_content")
+            raise ProviderError(
+                PROVIDER,
+                200,
+                "empty_content",
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+                failed_attempts=tuple(failed),
+            )
         try:
             data = json.loads(json_text("".join(texts)))
         except json.JSONDecodeError:
-            raise ProviderError(PROVIDER, 200, "malformed_json") from None
-        usage = res.get("usage") or {}
+            raise ProviderError(
+                PROVIDER,
+                200,
+                "malformed_json",
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+                failed_attempts=tuple(failed),
+            ) from None
         return ModelReply(
             PROVIDER,
             str(res.get("model") or self.config.model),
             data,
-            Usage(int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)),
+            Usage(tokens_in, tokens_out),
             time.perf_counter() - started,
+            tuple(failed),
         )

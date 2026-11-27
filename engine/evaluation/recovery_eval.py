@@ -24,7 +24,7 @@ from pathlib import Path
 from app.parsing.base import sha256
 from app.providers.anthropic import AnthropicClient, AnthropicConfig
 from app.providers.nvidia import NvidiaClient, NvidiaConfig
-from app.recovery.budget import RunLimits
+from app.recovery.budget import RunLimits, SpendLedger
 from app.recovery.cache import Cache
 from app.recovery.engines import (
     DoclingViaOpenDataLoader,
@@ -169,10 +169,45 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument(
         "--max-cost-usd",
         default="0.05",
-        help="per-document model cost cap (D-036 gate: 0.05); 'none' to measure uncapped",
+        help="per-document model cost cap (D-036 gate: 0.05); 'none' only without model stages",
+    )
+    ap.add_argument(
+        "--eval-budget-usd",
+        type=float,
+        default=float(os.environ.get("ENGINE_EVAL_BUDGET_USD", "25")),
+        help="cumulative evaluation spending cap across runs (approved: $25)",
+    )
+    ap.add_argument(
+        "--spend-ledger",
+        type=Path,
+        default=os.environ.get("ENGINE_EVAL_SPEND_LEDGER") or None,
+        help="append-only spending ledger shared by every evaluation run (required for models)",
     )
     ap.add_argument("--out", type=Path)
     return ap
+
+
+def _cost_cap(value: str) -> float | None:
+    if value.strip().lower() == "none":
+        return None
+    cap = float(value)
+    if cap <= 0:
+        raise SystemExit("--max-cost-usd must be positive")
+    return cap
+
+
+def _spend_ledger(
+    ap: argparse.ArgumentParser, args: argparse.Namespace, max_cost: float | None
+) -> SpendLedger | None:
+    """P0-05: model stages run only under both a per-document cap and the cumulative
+    evaluation budget. No uncapped paid experiments."""
+    if not (args.text or args.visual):
+        return None
+    if max_cost is None:
+        ap.error("--max-cost-usd none is refused when a model stage is on")
+    if args.spend_ledger is None:
+        ap.error("model stages need --spend-ledger (or ENGINE_EVAL_SPEND_LEDGER)")
+    return SpendLedger(args.spend_ledger, args.eval_budget_usd)
 
 
 def _main(argv: list[str]) -> int:
@@ -209,8 +244,14 @@ def _main(argv: list[str]) -> int:
         if an is None:
             ap.error("--visual needs ENGINE_ANTHROPIC_API_KEY")
         engines.visual_model = AnthropicClient(an)
+    max_cost = _cost_cap(args.max_cost_usd)
+    spend = _spend_ledger(ap, args, max_cost)
     pipeline = RecoveryPipeline(
-        engines, limits=RunLimits(), cache=Cache.from_env(), policy=CloudPolicy.from_env()
+        engines,
+        limits=RunLimits(max_cost_usd=max_cost),
+        cache=Cache.from_env(),
+        policy=CloudPolicy.from_env(),
+        spend=spend,
     )
 
     keys = load_keys(args.keys)
@@ -232,6 +273,10 @@ def _main(argv: list[str]) -> int:
     report["stages"] = sorted(
         stages | ({"text"} if args.text else set()) | ({"visual"} if args.visual else set())
     )
+    report["max_cost_usd_per_document"] = max_cost
+    if spend is not None:
+        report["evaluation_budget_usd"] = spend.cap_usd
+        report["evaluation_committed_usd"] = spend.committed_usd()
     print(json.dumps(report, indent=1))
     if args.out:
         args.out.write_text(json.dumps(report, indent=1))

@@ -13,6 +13,12 @@ cd "$(dirname "$0")/.."
 : "${CORPUS_DIR:?set CORPUS_DIR to the private corpus checkout}"
 : "${OUT_DIR:?set OUT_DIR to a folder outside git}"
 mkdir -p "$OUT_DIR"
+# P0-05: every paid call is reserved against this cumulative ledger before it is made.
+export ENGINE_EVAL_SPEND_LEDGER="${ENGINE_EVAL_SPEND_LEDGER:-$OUT_DIR/spend.jsonl}"
+export ENGINE_EVAL_BUDGET_USD="${ENGINE_EVAL_BUDGET_USD:-25}"
+# Per-document cap for these runs (D-036 product gate is 0.05; raising it here is an
+# evaluation choice the owner records, never "none").
+MAX_COST="${MAX_COST_USD_PER_DOC:-0.05}"
 export ENGINE_CACHE_DIR="${ENGINE_CACHE_DIR:-$OUT_DIR/cache}"
 KEYS="$CORPUS_DIR/answer-keys/sbc_cells.tsv"
 uv sync -q --group hybrid
@@ -30,12 +36,18 @@ uv run python -m evaluation.probe_providers | tee "$OUT_DIR/probe.json"
 run() {  # name, extra args
   local name=$1; shift
   uv run python -m evaluation.recovery_eval --keys "$KEYS" --pdfs "$CORPUS_DIR" \
-    --start-hybrid --stages primary,docling --out "$OUT_DIR/$name.json" "$@" >/dev/null
+    --start-hybrid --stages primary,docling --max-cost-usd "$MAX_COST" \
+    --out "$OUT_DIR/$name.json" "$@" >/dev/null
   echo "$name: $(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['correct_keys'],'correct /',d['false_verified'],'false verified / $',d['model_cost_usd'])" "$OUT_DIR/$name.json")"
 }
 run local
 run text --text
 run visual --visual
 run text_visual --text --visual
-# What recovery is worth without the D-036 cost gate (shows the gate's price in coverage)
-run text_visual_uncapped --text --visual --max-cost-usd none
+# No uncapped run (P0-05). To see what the D-036 gate costs in coverage, rerun with a
+# higher MAX_COST_USD_PER_DOC; the cumulative ledger still caps the total.
+echo "evaluation spend so far: $(python3 -c "import json,sys
+r,s={},{}
+for l in open(sys.argv[1]):
+    d=json.loads(l); (r if d['kind']=='reserve' else s)[d['id']]=d['usd']
+print(round(sum(s.get(k,v) for k,v in r.items()),4))" "$ENGINE_EVAL_SPEND_LEDGER") of \$$ENGINE_EVAL_BUDGET_USD"

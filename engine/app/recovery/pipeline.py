@@ -8,15 +8,29 @@ on with what is already verified (fail-closed).
 """
 
 import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.parsing.base import sha256
+from app.providers.http import ProviderError
 from app.reconcile.engine import Fact, Reconciled, reconcile
 from app.reconcile.layout import PageLayout, norm, read_layouts
 from app.reconcile.verify import Candidate, Status
 from app.recovery import proposals
-from app.recovery.budget import Ledger, LedgerEntry, RunLimits, price_from_env, token_cost
+from app.recovery.budget import (
+    BudgetExceededError,
+    Ledger,
+    LedgerEntry,
+    RunLimits,
+    SpendLedger,
+    estimate_text_tokens,
+    estimate_visual_tokens,
+    price_from_env,
+    retry_charge_usd,
+    token_cost,
+    worst_case_usd,
+)
 from app.recovery.cache import Cache
 from app.recovery.context import layout_text, page_subset_pdf, tables_hint, with_context
 from app.recovery.engines import DocumentReader, PageReader, TextModel, VisualModel
@@ -64,8 +78,10 @@ class RecoveryPipeline:
         limits: RunLimits | None = None,
         cache: Cache | None = None,
         policy: CloudPolicy | None = None,
+        spend: SpendLedger | None = None,
     ) -> None:
         self.engines = engines
+        self.spend = spend  # cumulative evaluation budget (P0-05); None in production
         self.limits = limits or RunLimits()
         self.cache = cache or Cache(None)
         self.policy = policy or CloudPolicy()
@@ -144,9 +160,18 @@ class RecoveryPipeline:
         self, provider: str, stage: str, sha: str, auth: CloudAuthorization | None, ledger: Ledger
     ) -> bool:
         refusal = self.policy.refusal(provider, sha, auth)
-        if refusal is None and self.limits.max_cost_usd is not None:
-            if price_from_env(provider) is None:
-                refusal = "price_not_configured_under_cost_cap"
+        capped = self.limits.max_cost_usd is not None or self.spend is not None
+        price = price_from_env(provider)
+        if refusal is None and capped and price is None:
+            refusal = "price_not_configured_under_cost_cap"
+        if (
+            refusal is None
+            and not capped
+            and (price is None or price.input_per_mtok + price.output_per_mtok > 0)
+        ):
+            # P0-05: never an uncapped call that may cost money. Only a provider with a
+            # configured price of zero (a free development tier) may run without a cap.
+            refusal = "uncapped_paid_call_refused"
         if refusal:
             ledger.add(LedgerEntry(stage, provider, "-", (), 0.0, "refused", refusal))
         return refusal is None
@@ -163,6 +188,9 @@ class RecoveryPipeline:
         call: Any,
         ledger: Ledger,
         disclosed: int,
+        estimate_in: int,
+        max_out: int,
+        max_attempts: int,
     ) -> list[Candidate]:
         key = Cache.key(
             sha,
@@ -178,10 +206,28 @@ class RecoveryPipeline:
             ledger.add(LedgerEntry(stage, provider, model, tuple(targets), 0.0, "cached"))
             parsed = proposals.parse(hit)
             return proposals.to_candidates(source, parsed, set(targets)) if parsed else []
+        price = price_from_env(provider)
+        worst = worst_case_usd(price, estimate_in, max_out) if price is not None else None
+        reserved = None if worst is None else worst * max(1, max_attempts)
+        refusal, rid = self._reserve(reserved, ledger, f"{sha[:12]}:{stage}:{targets}")
+        if refusal:
+            ledger.add(LedgerEntry(stage, provider, model, tuple(targets), 0.0, "skipped", refusal))
+            return []
         t = ledger.elapsed()
         try:
             reply = call()
         except Exception as exc:
+            charged: float | None
+            if worst is None:
+                charged = None
+            elif isinstance(exc, ProviderError):
+                charged = (token_cost(price, exc.input_tokens, exc.output_tokens) or 0.0) + (
+                    retry_charge_usd(exc.failed_attempts, worst)
+                )
+            else:  # unknown failure: assume the worst case was billed
+                charged = worst
+            if rid is not None and self.spend is not None and charged is not None:
+                self.spend.settle(rid, charged)
             ledger.add(
                 LedgerEntry(
                     stage,
@@ -191,13 +237,18 @@ class RecoveryPipeline:
                     ledger.elapsed() - t,
                     "failed",
                     getattr(exc, "reason", type(exc).__name__),
+                    getattr(exc, "input_tokens", 0),
+                    getattr(exc, "output_tokens", 0),
+                    charged,
                     bytes_disclosed=disclosed,
                 )
             )
             return []
-        cost = token_cost(
-            price_from_env(provider), reply.usage.input_tokens, reply.usage.output_tokens
-        )
+        cost = token_cost(price, reply.usage.input_tokens, reply.usage.output_tokens)
+        if cost is not None and worst is not None:
+            cost += retry_charge_usd(reply.failed_attempts, worst)
+        if rid is not None and self.spend is not None and cost is not None:
+            self.spend.settle(rid, cost)
         parsed = proposals.parse(reply.data)
         ledger.add(
             LedgerEntry(
@@ -218,6 +269,21 @@ class RecoveryPipeline:
             return []  # off-schema output is rejected whole, never repaired
         self.cache.put(key, parsed.model_dump(mode="json"))
         return proposals.to_candidates(source, parsed, set(targets))
+
+    def _reserve(self, usd: float | None, ledger: Ledger, label: str) -> tuple[str, str | None]:
+        """P0-05: admit a call only if its worst case fits the document cap and the
+        cumulative evaluation budget. Returns (refusal reason or "", reservation id)."""
+        if usd is None:  # no price and no cap: _allowed already decided this is free
+            return "", None
+        cap = self.limits.max_cost_usd
+        if cap is not None and (ledger.cost_usd() or 0.0) + usd > cap:
+            return "document_cost_cap_reservation", None
+        if self.spend is None:
+            return "", None
+        try:
+            return "", self.spend.reserve(usd, label)
+        except BudgetExceededError:
+            return "evaluation_budget_reservation", None
 
     def _text_stage(
         self,
@@ -270,6 +336,11 @@ class RecoveryPipeline:
                 call=call,
                 ledger=ledger,
                 disclosed=len(request.encode()),
+                estimate_in=estimate_text_tokens(
+                    proposals.TEXT_SYSTEM, request, json.dumps(proposals.SCHEMA)
+                ),
+                max_out=self.limits.text_max_tokens,
+                max_attempts=_attempts(model),
             )
         return out
 
@@ -328,6 +399,14 @@ class RecoveryPipeline:
                 call=call,
                 ledger=ledger,
                 disclosed=len(subset),
+                estimate_in=estimate_visual_tokens(
+                    len(page_map),
+                    proposals.VISUAL_SYSTEM,
+                    instruction,
+                    json.dumps(proposals.SCHEMA),
+                ),
+                max_out=self.limits.visual_max_tokens,
+                max_attempts=_attempts(model),
             )
         return out
 
@@ -428,3 +507,9 @@ def _unresolved(rec: Reconciled, gaps: dict[int, PageGaps]) -> list[Unresolved]:
     for a, b in rec.conflicts:
         out.append(Unresolved(a.page, a.label, "conflicting", (a.value, b.value)))
     return out
+
+
+def _attempts(model: Any) -> int:
+    """How many billable attempts one call may make (provider retry budget)."""
+    config = getattr(model, "config", None)
+    return int(getattr(config, "max_attempts", 1) or 1)

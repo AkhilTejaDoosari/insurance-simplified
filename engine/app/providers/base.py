@@ -21,6 +21,7 @@ class ModelReply:
     data: Any
     usage: Usage
     seconds: float
+    failed_attempts: tuple[int, ...] = ()  # statuses of attempts retried before success
 
 
 def json_text(content: str) -> str:

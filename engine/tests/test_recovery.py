@@ -4,6 +4,7 @@ Synthetic PDFs and fake engines only: no real documents, no network, no paid cal
 """
 
 import io
+import urllib.error
 from typing import Any
 
 import pypdfium2 as pdfium
@@ -11,13 +12,13 @@ import pytest
 
 from app.parsing.base import sha256
 from app.parsing.opendataloader import page_ranges
-from app.providers import anthropic, nvidia
+from app.providers import anthropic, http, nvidia
 from app.providers.base import ModelReply, Usage, json_text
 from app.providers.http import ProviderError, require_secure
 from app.reconcile.engine import Fact, reconcile
 from app.reconcile.layout import read_layouts
 from app.recovery import proposals
-from app.recovery.budget import RunLimits
+from app.recovery.budget import BudgetExceededError, RunLimits, SpendLedger
 from app.recovery.cache import Cache
 from app.recovery.context import layout_text, page_subset_pdf
 from app.recovery.gaps import GapKind, find_gaps
@@ -446,12 +447,142 @@ def test_cost_cap_needs_a_known_price(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
 
 
+class OverusingText(FakeText):
+    """Reports far more input tokens (2M) than the pre-call estimate."""
+
+    def complete_json(self, system: str, user: str, *a: Any) -> ModelReply:
+        r = super().complete_json(system, user, *a)
+        return ModelReply(r.provider, r.model, r.data, Usage(2_000_000, 20), r.seconds)
+
+
 def test_cost_cap_stops_further_calls(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ENGINE_PRICE_NVIDIA_IN", "1000000")  # $1 per input token
+    # P0-05: the reservation admits the first call (its estimate is tiny at this price);
+    # the provider then reports 2M input tokens ($0.10), so the cap stops every later call.
+    monkeypatch.setenv("ENGINE_PRICE_NVIDIA_IN", "0.05")
     pdf = _pdf()
-    text = FakeText(_proposal("Nothing", NET, "$0"))  # leaves the gap open
+    text = OverusingText(_proposal("Nothing", NET, "$0"))  # leaves the gap open
     visual = FakeVisual(_proposal("Nothing", NET, "$0"))
     RecoveryPipeline(
         Engines(_gappy_primary(), text_model=text, visual_model=visual), policy=OPEN
     ).run(pdf, _auth(pdf))
     assert len(text.requests) == 1 and visual.pdfs == []
+
+
+# ------------------------------------------------------------- P0-05 budget controls
+
+
+def test_reservation_refuses_a_call_whose_worst_case_exceeds_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENGINE_PRICE_NVIDIA_OUT", "10")  # 16k output tokens -> $0.16 > $0.05
+    pdf = _pdf()
+    text = FakeText(_proposal(*GOOD_SPECIALIST))
+    result = RecoveryPipeline(Engines(_gappy_primary(), text_model=text), policy=OPEN).run(
+        pdf, _auth(pdf)
+    )
+    assert text.requests == []
+    assert "document_cost_cap_reservation" in [e.detail for e in result.ledger.entries]
+
+
+def test_uncapped_paid_calls_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENGINE_PRICE_NVIDIA_IN", "1")
+    pdf = _pdf()
+    text = FakeText(_proposal(*GOOD_SPECIALIST))
+    result = RecoveryPipeline(
+        Engines(_gappy_primary(), text_model=text),
+        limits=RunLimits(max_cost_usd=None),
+        policy=OPEN,
+    ).run(pdf, _auth(pdf))
+    assert text.requests == []
+    assert "uncapped_paid_call_refused" in [e.detail for e in result.ledger.entries]
+
+
+def test_free_tier_may_run_without_a_cap() -> None:
+    pdf = _pdf()  # fixture prices are 0
+    text = FakeText(_proposal(*GOOD_SPECIALIST))
+    RecoveryPipeline(
+        Engines(_gappy_primary(), text_model=text),
+        limits=RunLimits(max_cost_usd=None),
+        policy=OPEN,
+    ).run(pdf, _auth(pdf))
+    assert len(text.requests) == 1
+
+
+def test_cumulative_budget_is_shared_across_runs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    monkeypatch.setenv("ENGINE_PRICE_NVIDIA_IN", "0.005")
+    monkeypatch.setenv("ENGINE_PRICE_NVIDIA_OUT", "1")  # worst case ~ $0.016 per call
+    spend = SpendLedger(tmp_path / "spend.jsonl", cap_usd=0.02)
+    pdf = _pdf()
+    first = OverusingText(_proposal(*GOOD_SPECIALIST))  # actually costs ~$0.01
+    second = FakeText(_proposal(*GOOD_SPECIALIST))
+    for model in (first, second):
+        RecoveryPipeline(
+            Engines(_gappy_primary(), text_model=model),
+            limits=RunLimits(max_cost_usd=1.0),
+            policy=OPEN,
+            spend=spend,
+        ).run(pdf, _auth(pdf))
+    assert len(first.requests) == 1
+    assert second.requests == []  # $0.01 committed + $0.016 worst case > $0.02
+    assert spend.committed_usd() == pytest.approx(0.01 + 20 / 1e6)
+
+
+def test_an_unsettled_reservation_stays_spent(tmp_path: Any) -> None:
+    spend = SpendLedger(tmp_path / "spend.jsonl", cap_usd=1.0)
+    spend.reserve(0.7, "crashed run")  # never settled
+    assert spend.committed_usd() == pytest.approx(0.7)
+    with pytest.raises(BudgetExceededError):
+        spend.reserve(0.4, "next")
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        # three timeouts: each may have been billed -> 3 x worst case
+        (ProviderError("nvidia", 0, "TimeoutError", failed_attempts=(0, 0, 0)), 3 * 0.016),
+        # rate limited three times: never processed -> nothing
+        (ProviderError("nvidia", 429, "http_error", failed_attempts=(429, 429, 429)), 0.0),
+        # a billed response rejected here (cut off): its reported tokens are charged
+        (ProviderError("nvidia", 200, "incomplete_generation", output_tokens=16_000), 0.016),
+    ],
+)
+def test_failed_calls_and_retries_are_charged(
+    monkeypatch: pytest.MonkeyPatch, error: Exception, expected: float
+) -> None:
+    monkeypatch.setenv("ENGINE_PRICE_NVIDIA_OUT", "1")
+    pdf = _pdf()
+    result = RecoveryPipeline(
+        Engines(_gappy_primary(), text_model=FakeText(error=error)),
+        limits=RunLimits(max_cost_usd=1.0),
+        policy=OPEN,
+    ).run(pdf, _auth(pdf))
+    cost = result.ledger.cost_usd()
+    assert cost is not None
+    assert cost == pytest.approx(expected, rel=0.01, abs=1e-4)
+
+
+def test_http_layer_reports_every_failed_attempt(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"n": 0}
+
+    class _Res(io.BytesIO):
+        status = 200
+
+        def __enter__(self) -> "_Res":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+    def fake_urlopen(req: Any, timeout: float) -> _Res:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise urllib.error.HTTPError("https://x", 503, "busy", {}, None)  # type: ignore[arg-type]
+        return _Res(b'{"ok": true}')
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+    failed: list[int] = []
+    out = http.post_json("p", "https://x", {}, {}, timeout_s=1, failed_attempts=failed)
+    assert out == {"ok": True} and failed == [503, 503]
