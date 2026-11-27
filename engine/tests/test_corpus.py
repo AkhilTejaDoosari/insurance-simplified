@@ -9,11 +9,14 @@ import pytest
 from evaluation.corpus import (
     Candidate,
     assign_splits,
+    describe,
     existing_assignments,
     fetch_all,
     http_get,
     load_candidates,
+    overlapping_groups,
     public_manifest,
+    resolve_overlaps,
     shortfalls,
     write_outputs,
 )
@@ -77,6 +80,14 @@ def test_non_pdf_and_failures_are_reported_not_fatal() -> None:
     assert failures == ["sbc/boom: OSError", "sbc/html: not a PDF"]
 
 
+def test_errors_are_described_without_the_url() -> None:
+    import urllib.error  # noqa: PLC0415
+
+    err = urllib.error.HTTPError("https://secret.test/x.pdf", 403, "Forbidden", None, None)  # type: ignore[arg-type]
+    assert describe(err) == "HTTP 403"
+    assert "secret" not in describe(urllib.error.URLError("timed out"))
+
+
 def test_duplicates_collapse_by_hash() -> None:
     same = [cand("sbc", "a", 0), Candidate("sbc", "a", False, False, cand("sbc", "a", 0).url)]
     docs, _ = fetch_all(same, fake_get)
@@ -123,11 +134,32 @@ def test_existing_assignments_are_permanent() -> None:
     assert second[validation_doc] == "validation" and second[blind_doc] == "blind-a"
 
 
-def test_a_family_split_across_batches_is_rejected() -> None:
-    docs, _ = fetch_all([cand("sbc", "a", 0), cand("sbc", "a", 1)], fake_get)
+def test_overlapping_layout_groups_are_reported_and_resolved_toward_validation(
+    tmp_path: Path,
+) -> None:
+    docs, _ = fetch_all([cand("sbc", "a", i) for i in range(3)], fake_get)
     shas = [d.sha256 for d in docs]
-    with pytest.raises(ValueError, match="split across"):
-        assign_splits(docs, existing={shas[0]: "validation", shas[1]: "blind-a"})
+    existing = {shas[0]: "validation", shas[1]: "blind-a"}
+    split_of = assign_splits(docs, existing=existing)
+    assert split_of[shas[0]] == "validation" and split_of[shas[1]] == "blind-a"
+    assert split_of[shas[2]] == "validation"  # new member of a mixed group: safe side
+    assert overlapping_groups(docs, split_of) == ["a"]
+    write_outputs(docs, split_of, tmp_path, tmp_path / "private")
+    fixed = resolve_overlaps(docs, split_of, tmp_path)
+    assert set(fixed.values()) == {"validation"}
+    assert overlapping_groups(docs, fixed) == []
+    assert existing_assignments(tmp_path) == dict.fromkeys(shas, "validation")
+
+
+def test_template_column_groups_across_family_names(tmp_path: Path) -> None:
+    csv_file = tmp_path / "c.csv"
+    csv_file.write_text(
+        "type,family,multi_level,dev_family,url,template\n"
+        "student,x-one,0,0,https://x.test/1.pdf,shared\n"
+        "student,x-two,0,0,https://x.test/2.pdf,shared\n"
+        "student,y,0,0,https://x.test/3.pdf,\n"
+    )
+    assert [c.family for c in load_candidates(csv_file)] == ["shared", "shared", "y"]
 
 
 def test_rerun_reuses_files_on_disk_and_keeps_their_splits(tmp_path: Path) -> None:

@@ -21,8 +21,10 @@ import hashlib
 import json
 import os
 import random
+import ssl
 import stat
 import sys
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -43,6 +45,8 @@ PUBLIC_MANIFEST = REPO_ROOT / "evaluation" / "manifests" / "corpus-v2.json"
 
 @dataclass(frozen=True)
 class Candidate:
+    """``family`` is the grouping key: the optional ``template`` column when set, else family."""
+
     type: str
     family: str
     multi_level: bool
@@ -64,10 +68,11 @@ def load_candidates(path: Path) -> list[Candidate]:
     for row in rows:
         if row["type"] not in TYPES:
             raise ValueError(f"unknown type {row['type']!r}")
+        group = (row.get("template") or "").strip() or row["family"].strip()
         out.append(
             Candidate(
                 type=row["type"],
-                family=row["family"].strip(),
+                family=group,
                 multi_level=row["multi_level"] == "1",
                 dev_family=row["dev_family"] == "1",
                 url=row["url"].strip(),
@@ -103,8 +108,11 @@ def _assign_type(
     fresh = []
     for family, ds in sorted(families.items()):
         known = {existing[d.sha256] for d in ds if d.sha256 in existing}
-        if len(known) > 1:
-            raise ValueError(f"family {family!r} is split across {sorted(known)}")
+        if (
+            len(known) > 1
+        ):  # an earlier run split this group: keep each file, new ones -> validation
+            split_of.update((d.sha256, existing.get(d.sha256, "validation")) for d in ds)
+            continue
         if known:
             split = known.pop()
             split_of.update((d.sha256, split) for d in ds)
@@ -121,6 +129,32 @@ def _assign_type(
         for d in ds:
             split_of.setdefault(d.sha256, "validation")
     return split_of
+
+
+def overlapping_groups(docs: list[Fetched], split_of: dict[str, str]) -> list[str]:
+    """Layout groups (any type) with files both in validation and in a blind batch, or in both
+    blind batches. Such a group lets tuning on one set leak into the other."""
+    seen: dict[str, set[str]] = {}
+    for d in docs:
+        seen.setdefault(d.candidate.family, set()).add(split_of[d.sha256])
+    return sorted(g for g, splits in seen.items() if len(splits) > 1)
+
+
+def resolve_overlaps(
+    docs: list[Fetched], split_of: dict[str, str], pdf_root: Path
+) -> dict[str, str]:
+    """Move the blind members of overlapping groups to validation (the only safe direction)."""
+    groups = set(overlapping_groups(docs, split_of))
+    out = dict(split_of)
+    for d in docs:
+        if d.candidate.family in groups and out[d.sha256] != "validation":
+            source = pdf_root / "corpus-v2" / out[d.sha256] / f"{d.sha256}.pdf"
+            target = pdf_root / "corpus-v2" / "validation" / f"{d.sha256}.pdf"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.exists() and not target.exists():
+                source.rename(target)
+            out[d.sha256] = "validation"
+    return out
 
 
 def shortfalls(docs: list[Fetched], split_of: dict[str, str]) -> list[str]:
@@ -158,16 +192,53 @@ def public_manifest(docs: list[Fetched], split_of: dict[str, str], seed: int) ->
     return {"name": "corpus-v2", "seed": seed, "documents": entries}
 
 
-def http_get(url: str) -> bytes:
+# Many university and insurer sites refuse downloads that don't look like a browser.
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+    ),
+    "Accept": "application/pdf,*/*;q=0.8",
+}
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """certifi's CA bundle: Python on macOS often can't verify certificates on its own."""
+    try:
+        import certifi  # noqa: PLC0415 - dev dependency, used only when fetching
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def http_get(url: str, attempts: int = 2) -> bytes:
     if not url.startswith("https://"):
         raise ValueError("only https URLs are fetched")
-    headers = {"User-Agent": "insurance-simplified-corpus/2"}
-    request = urllib.request.Request(url, headers=headers)  # noqa: S310 - https checked above
-    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310 - https only
-        data: bytes = response.read(MAX_BYTES + 1)
+    request = urllib.request.Request(url, headers=_BROWSER_HEADERS)  # noqa: S310 - https checked
+    context = _ssl_context()
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(request, timeout=60, context=context) as response:  # noqa: S310
+                data: bytes = response.read(MAX_BYTES + 1)
+            break
+        except urllib.error.HTTPError:
+            raise
+        except urllib.error.URLError:
+            if attempt == attempts - 1:
+                raise
     if len(data) > MAX_BYTES:
         raise ValueError("larger than 40 MB")
     return data
+
+
+def describe(exc: Exception) -> str:
+    """Error kind plus its code or reason, never the URL."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"HTTP {exc.code}"
+    if isinstance(exc, urllib.error.URLError):
+        return f"connection failed ({type(exc.reason).__name__}: {exc.reason})"[:120]
+    return type(exc).__name__
 
 
 def fetch_all(
@@ -179,7 +250,7 @@ def fetch_all(
         try:
             data = get(c.url)
         except Exception as exc:
-            failures.append(f"{c.type}/{c.family}: {type(exc).__name__}")
+            failures.append(f"{c.type}/{c.family}: {describe(exc)}")
             continue
         if not data.startswith(b"%PDF-"):
             failures.append(f"{c.type}/{c.family}: not a PDF")
@@ -238,6 +309,11 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     fetch = sub.add_parser("fetch", help="download candidates, assign splits, seal blind batches")
     fetch.add_argument("--candidates", type=Path, required=True)
+    fetch.add_argument(
+        "--resolve-overlap",
+        action="store_true",
+        help="move blind files that share a layout group with validation into validation",
+    )
     args = parser.parse_args(argv)
 
     pdf_root = os.environ.get("REAL_PDFS_DIR")
@@ -253,6 +329,8 @@ def main(argv: list[str] | None = None) -> int:
         previous = json.loads(PUBLIC_MANIFEST.read_text())
         existing.update({e["sha256"]: e["split"] for e in previous["documents"]})
     split_of = assign_splits(docs, existing=existing)
+    if args.resolve_overlap:
+        split_of = resolve_overlaps(docs, split_of, pdfs)
     write_outputs(docs, split_of, pdfs, private)
     PUBLIC_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     manifest = public_manifest(docs, split_of, SEED)
@@ -263,6 +341,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  not fetched: {line}")
     for line in shortfalls(docs, split_of):
         print(f"  SHORTFALL: {line}")
+    overlaps = overlapping_groups(docs, split_of)
+    if overlaps:
+        print(f"  OVERLAP: {len(overlaps)} layout group(s) span validation and a blind batch;")
+        print("           rerun with --resolve-overlap to move their blind files to validation")
     return 0
 
 

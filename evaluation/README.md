@@ -21,6 +21,14 @@ REAL_PDFS_DIR=~/insurance-corpus REAL_FIXTURES_DIR=~/insurance-fixtures \
   Families that tuned the pre-V2 app stay in validation.
 - `blind-a/` and `blind-b/` are written read-only with a `SEALED.txt` note.
   Opening a blind file moves it to validation.
-- The command prints any document it couldn't fetch and any split below the
-  minimum (5 per type per split; a multi-level document in validation for
-  student and travel plans). Fix shortfalls by adding candidates, then rerun.
+- The command prints any document it couldn't fetch (with its HTTP code or
+  connection error) and any split below the minimum (5 per type per split; a
+  multi-level document in validation for student and travel plans). Fix
+  shortfalls by adding candidates, then rerun. Files already on disk and
+  splits already in the manifest never move.
+- Optional `template` column: documents with different family names that
+  share one layout get the same value, so they are grouped together. If an
+  earlier run put one layout group in both validation and a blind batch, the
+  command prints `OVERLAP` (a count, no names); rerun with
+  `--resolve-overlap` to move that group's blind files into validation —
+  the only direction that keeps the blind batches honest.
