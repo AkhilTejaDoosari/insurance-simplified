@@ -426,3 +426,114 @@ plans; history lives in `docs/archive/` and is not authoritative. Health V1
 is finished before auto, pet or home.
 **Revisit when:** a document grows past what one reader can hold, or a second
 insurance domain is approved.
+
+---
+
+# V2 decisions (2026-11-26)
+
+The owner locked a new plan on 2026-11-25/26 (planning docs in the claude.ai
+project "Insurance Simplified"; they call it "V1" because they were written
+before this repository's history was checked). It is a re-architecture after
+V1 (Sep–Oct 2026) and V1.1, so this repository names it **V2**. The entries
+below record it. On 2026-11-26 18:54 the owner delegated these calls ("all
+permissions granted, make all changes that need to be aligned to our current
+locked plan"), so they are **Accepted**. The audit behind them:
+`docs/v2/audit-2026-11-26.md`.
+
+# D-032 — V2 is two services: web (TypeScript) + engine (Python)
+
+**Status: Accepted (owner, 2026-11-26)** · supersedes the TypeScript-only
+choice (spec-kit research Decision 1), the "microservices / separate workers"
+line of D-016 and `architecture.md` §1, and D-010 for the web app.
+
+**Decision:** `web/` (Next.js, TypeScript; Vercel) owns sessions, upload,
+authorization, the original-PDF viewer and every screen. `engine/` (Python
+3.12, FastAPI, Pydantic v2; Docker) owns parsing, extraction, verification,
+comparison, scoring and chat answers. The engine's OpenAPI file
+(`contracts/openapi.json`) is the contract; web types are generated from it.
+Long work runs as a durable job in a Postgres table (no queue product, so the
+D-016 intent of "no extra infrastructure" holds). The engine host is chosen
+by the parser evaluation (V2 WP4) and provisioned with Terraform.
+**Why:** the TypeScript-only choice rested on deploy convenience, not
+measurement; the document-intelligence ecosystem (table extraction, layout
+models, evaluation tooling) is Python-first.
+**Revisit when:** a measured engine requirement can't be met by the two-service
+setup.
+
+# D-033 — Discover, don't expect
+
+**Status: Accepted (owner, 2026-11-26)** · supersedes the fixed comparable-fact
+list (FR-004, `extraction/fact-list.ts`), D-007 and D-024's grouping.
+
+**Decision:** extraction discovers every benefit a document states, in its own
+wording. A category dictionary matches the same benefit across documents and
+orders rows (importance group, weight); it never defines what a document should
+contain. Benefits land in exactly one section: in all your plans / in some /
+only in one plan. Up to 5 plans side by side; plan levels count as plans.
+**Why:** every generalization failure on unseen documents traced to the fixed
+list and line regexes (audit §4.1).
+**Revisit when:** a measured case shows the dictionary can't match a benefit
+that two documents state.
+
+# D-034 — Five answer states and two-key verification
+
+**Status: Accepted (owner, 2026-11-26)** · maps the C-1 display verdicts.
+
+**Decision:** every cell is one of Verified · Not covered · Not mentioned ·
+Couldn't confirm · Conflicting. Verified and Not covered need both keys: code
+proves the structure (span, numbers, row and column binding, basis) and a judge
+model from a different model family confirms the meaning. "Not mentioned" only
+after searching the document, and only relative to another selected document
+that states the benefit. Amounts always carry their basis. The rules are
+enforced by the engine's Pydantic models (`engine/app/schemas/facts.py`).
+D-005, D-014, D-022 and the evidence core (D-027) stay in force and become key 1.
+**Revisit when:** blind-batch results show a state is misread by users.
+
+# D-035 — Chat answers by route, including from the verified grid
+
+**Status: Accepted (owner, 2026-11-26)** · amends D-013; retires the rule in
+`app/lib/rag/answer.ts` that chat must not use extraction.
+
+**Decision:** chat routes every question: comparison (from the verified grid),
+document fact (retrieval + quote verification, as today), calculation (code,
+assumptions stated), general term (glossary, labelled general info), not
+mentioned, refuse. Every answer carries its route. Exact per-session retrieval
+(FILT-1, migration 0007) is kept for the document-fact route.
+**Why:** findings 9, 10, 15 and 17: chat refused its own suggested questions
+and every cross-plan question.
+
+# D-036 — AI spend for V2
+
+**Status: Accepted (owner, 2026-11-26)** · supersedes C-4 ($0) for V2.
+
+**Decision:** development uses Nemotron 3 Ultra first (stronger models later,
+tested on public PDFs only); the live app uses direct provider accounts with a
+daily spend cap (start $5/day) and budget alerts. Real users' documents never
+go to development-only gateways.
+**Revisit when:** the per-document cost gate (≤ $0.05) fails.
+
+# D-037 — PDF export parked
+
+**Status: Accepted (owner, 2026-11-26)**
+
+**Decision:** export is on the V2 Not-now list. `api/export` and
+`report/pdf.ts` stay in the code, unlinked from the V2 screens, until it's
+scheduled.
+
+# D-038 — V2 interface design
+
+**Status: Accepted (owner, 2026-11-26)** · supersedes the design system in
+`experience.md` for V2 screens.
+
+**Decision:** the approved HTML demo is the reference: light theme only, logo
+red and blue with green and amber for states, Bricolage Grotesque + Atkinson
+Hyperlegible, collapsible sidebar and chat drawer, a "Show" importance filter
+with a visible filter bar. Tokens: `docs/v2/design.md`.
+
+# D-039 — Version name
+
+**Status: Accepted (owner, 2026-11-26)**
+
+**Decision:** the plan above is **V2**, with checkpoints **V2-preview** (live
+link + validation scorecard) and **V2.0** (all gates on a blind batch). The
+engine package starts at `2.0.0a0`; the contract at `2.0.0-alpha.1`.

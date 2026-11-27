@@ -1,5 +1,11 @@
 # Architecture — components, boundaries, data, code map
 
+> **V2 (2026-11-26, D-032):** the target runtime is two services — `web/`
+> (this Next.js app, moved under `web/`; paths below are relative to it) and
+> `engine/` (Python document intelligence) with `contracts/openapi.json`
+> between them. The sections below describe the current web app; where they
+> say "no microservices / workers" or "Cloud Run", D-032 supersedes them.
+
 Status: Authoritative · Consolidated 2026-11-15 from `ARCHITECTURE` (locked V1),
 `DATA_MODEL`, `API`, `REPO_MAP` (now in `docs/archive/superseded/`).
 Where the archived documents described *target* routes or tables that the code

@@ -8,8 +8,37 @@ Numbering continues from the closed V1.1 milestones, so the next milestone is M4
 Status words follow `quality.md` §1 (Not started · Partial · Implemented ·
 Tested · Verified). Update this file at every milestone close.
 
-**Current milestones: M5 (complete except RET-1), M6 (tooling done; labels pending), M7 (code complete for the trust core; acceptance needs labelled splits) — on `integration/m5-m7`.** M4 closed 2026-11-19.
+**Current plan: V2 (§0).** Pre-V2 record: M5 (complete except RET-1), M6 (tooling done; labels pending), M7 (code complete for the trust core) — on `integration/m5-m7`. M4 closed 2026-11-19.
 **Priority: finish health-insurance V1 before any other insurance domain.**
+
+## 0. V2 — current plan (2026-11-26)
+
+**The owner locked V2 on 2026-11-26** (`docs/v2/scope.md`, decisions D-032…D-039).
+V2 replaces the remaining milestones of this file: **M8–M11 are superseded** by
+the V2 work packages below; M5–M7 stay as completed history and their tested
+code is ported or kept per the audit (`docs/v2/audit-2026-11-26.md` §5).
+Sections 1–4 below are the pre-V2 record and are no longer the plan.
+
+| WP | Work | Status |
+| --- | --- | --- |
+| 0 | Preserve + baseline: `backup/*` branches for Mac-only work, tag `baseline/pre-v2-2026-11-26`, baseline numbers | Partial — tag made on `integration/m5-m7`; Mac-only branches pending (owner) |
+| 1 | Consolidate: app moved to `web/` with no logic change | Tested locally on `v2/foundation` (unit 1459 → 1459 kept + 3 contract; tsc; build) |
+| 2 | Sourcing check, sealed blind batches A/B, validation answer keys | Not started — blocker: ≈45 more public PDFs |
+| 3 | Engine skeleton: FastAPI, Pydantic contract with guardrails, trace-id logs, Docker, CI (lint, types, tests, licenses, contract, secret scan) | Tested locally on `v2/foundation` (38 pytest, ruff, mypy strict; image build runs in CI) |
+| 4 | Document model + parser evaluation (decision rule written before the run) | Not started |
+| 5 | Jobs table (migration 0008), worker loop, parser sandbox; web calls the engine behind `ENGINE_URL` | Not started |
+| 6 | Classification + plan families/levels | Not started |
+| 7 | Category dictionary, discovery extraction, cross-document matching | Not started |
+| 8 | Two-key verification, search before "not mentioned", basis rule | Not started |
+| 9 | Grouping and ranking, comparison facts, match score, contacts | Not started |
+| 10 | Chat router (six routes) + answer checking | Not started |
+| 11 | Web cut-over to the locked design (`docs/v2/design.md`, demo in `docs/v2/demo/`) | Not started |
+| 12 | Operations and safety; Vercel + engine host via Terraform | Not started |
+| 13 | V2-preview: live link + validation scorecard | Not started |
+| 14 | Blind run → V2.0 | Not started |
+
+Acceptance, tests and rollback per package: audit §8. Every package keeps the
+current app working until its replacement passes.
 
 ## 1. Where things stand (verified against `15f8cc2`, 2026-11-15)
 
