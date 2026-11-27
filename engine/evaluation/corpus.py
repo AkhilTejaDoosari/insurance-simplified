@@ -189,6 +189,16 @@ def fetch_all(
     return list(fetched.values()), failures
 
 
+def existing_assignments(pdf_root: Path) -> dict[str, str]:
+    """Splits already on disk from an earlier run: the folder a PDF sits in is permanent."""
+    found: dict[str, str] = {}
+    for split in SPLITS:
+        folder = pdf_root / "corpus-v2" / split
+        if folder.is_dir():
+            found.update((f.stem, split) for f in folder.glob("*.pdf"))
+    return found
+
+
 def write_outputs(
     docs: list[Fetched], split_of: dict[str, str], pdf_root: Path, private_root: Path
 ) -> None:
@@ -196,6 +206,8 @@ def write_outputs(
         folder = pdf_root / "corpus-v2" / split_of[d.sha256]
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / f"{d.sha256}.pdf"
+        if target.exists():  # already written (read-only) by an earlier run; same bytes by name
+            continue
         target.write_bytes(d.data)
         target.chmod(stat.S_IRUSR | stat.S_IRGRP)
     for split in ("blind-a", "blind-b"):
@@ -235,12 +247,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     candidates = load_candidates(args.candidates)
     docs, failures = fetch_all(candidates)
-    existing: dict[str, str] = {}
+    pdfs, private = Path(pdf_root).expanduser(), Path(private_root).expanduser()
+    existing = existing_assignments(pdfs)
     if PUBLIC_MANIFEST.exists():
         previous = json.loads(PUBLIC_MANIFEST.read_text())
-        existing = {e["sha256"]: e["split"] for e in previous["documents"]}
+        existing.update({e["sha256"]: e["split"] for e in previous["documents"]})
     split_of = assign_splits(docs, existing=existing)
-    write_outputs(docs, split_of, Path(pdf_root).expanduser(), Path(private_root).expanduser())
+    write_outputs(docs, split_of, pdfs, private)
+    PUBLIC_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     manifest = public_manifest(docs, split_of, SEED)
     manifest["created"] = datetime.now(UTC).date().isoformat()
     PUBLIC_MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")

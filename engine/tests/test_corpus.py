@@ -9,6 +9,7 @@ import pytest
 from evaluation.corpus import (
     Candidate,
     assign_splits,
+    existing_assignments,
     fetch_all,
     http_get,
     load_candidates,
@@ -127,3 +128,15 @@ def test_a_family_split_across_batches_is_rejected() -> None:
     shas = [d.sha256 for d in docs]
     with pytest.raises(ValueError, match="split across"):
         assign_splits(docs, existing={shas[0]: "validation", shas[1]: "blind-a"})
+
+
+def test_rerun_reuses_files_on_disk_and_keeps_their_splits(tmp_path: Path) -> None:
+    docs, _ = fetch_all(corpus(), fake_get)
+    first = assign_splits(docs, 1)
+    write_outputs(docs, first, tmp_path / "pdfs", tmp_path / "private")
+    on_disk = existing_assignments(tmp_path / "pdfs")
+    assert on_disk == first
+    # A second run (different seed, files already read-only) neither fails nor moves anything.
+    second = assign_splits(docs, 2, existing=on_disk)
+    write_outputs(docs, second, tmp_path / "pdfs", tmp_path / "private")
+    assert second == first
