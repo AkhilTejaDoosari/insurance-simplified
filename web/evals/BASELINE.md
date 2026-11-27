@@ -101,7 +101,7 @@ positional tier-mapping is a prompt-level workaround in
 `app/lib/extraction/extract.ts` EXTRACTION_INSTRUCTIONS, not structure.
 R1 chunks (`app/lib/rag/chunks.ts`) preserve page token order verbatim and
 do NOT reconstruct table rows — table-aware chunking is follow-up context
-for later work (see `docs/archive/reports/RAG-GAP-ANALYSIS.md` Layer 3). No behavior changed
+for later work (see `79be9a5:docs/archive/reports/RAG-GAP-ANALYSIS.md` Layer 3). No behavior changed
 in this todo; todo 14 appends the chunk baseline below as a separate section.
 
 ## R1 chunk baseline — chunk-granularity view of the SAME ranker (todo 14)

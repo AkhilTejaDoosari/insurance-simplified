@@ -1,7 +1,7 @@
 # Operations — security, privacy, deployment, reliability, observability
 
 Status: Authoritative · Consolidated 2026-11-15 from `SECURITY`, `DEPLOYMENT`,
-`RELIABILITY` and `OBSERVABILITY` (all in `docs/archive/superseded/`; the
+`RELIABILITY` and `OBSERVABILITY` (all in git history `79be9a5:docs/archive/superseded/`; the
 SQL-level grant audit of 2026-10-22 is preserved verbatim in
 `SECURITY.md` §6.1 there and summarized in `decisions.md` D-026).
 

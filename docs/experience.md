@@ -2,7 +2,7 @@
 
 Status: Authoritative · Consolidated 2026-11-15 from `V1_1_REVIEW_PACKAGE`
 (sections D–K, Q), `USER_FLOWS`, `UI-IMPLEMENTATION-CONTRACT`, `DESIGN.md`
-and the 2026-11-15 feasibility review §4 (all in `docs/archive/`).
+and the 2026-11-15 feasibility review §4 (in git history at `79be9a5:docs/archive/`).
 Product-level requirements and their IDs live in `product.md`; this document
 defines how the surfaces behave.
 
@@ -123,9 +123,10 @@ trailing pages.
 ## 5. Design system ("Adaptive Medical Minimal")
 
 Quiet, evidence-first reading; restrained brand red, blue interactive controls;
-the original PDF page one click away. Visual source of truth for Page 2:
-`docs/design/insurance_simplified_page2_dual_experience_updated.html`
-(offline prototype — its sample data is not real). The master logo
+the original PDF page one click away. **V2 screens follow `docs/v2/design.md`
+(locked, D-038: light theme only)**; the tokens below describe the current V1 web app
+until its V2 screens replace it. The earlier Page 2 prototype is in git history at
+`79be9a5:docs/design/`. The master logo
 (`public/insurance-simplified-logo.png`) is never modified; the icon is a
 derived crop.
 

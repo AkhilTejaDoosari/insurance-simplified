@@ -422,7 +422,7 @@ with better recall.
 **Decision (proposed from the owner's 2026-11-15 cleanup instructions):** eight authoritative documents in
 `docs/` plus `AGENTS.md`/`CLAUDE.md`/`README.md`; one roadmap
 (`docs/roadmap.md`) replaces PLAN phases, V1.1 milestones, spec-kit and agent
-plans; history lives in `docs/archive/` and is not authoritative. Health V1
+plans; history lives in git (`79be9a5:docs/archive/`) and is not authoritative. Health V1
 is finished before auto, pet or home.
 **Revisit when:** a document grows past what one reader can hold, or a second
 insurance domain is approved.

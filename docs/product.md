@@ -2,7 +2,7 @@
 
 Status: Authoritative · Consolidated 2026-11-15 from `PRODUCT`, `USER_FLOWS`,
 `DOMAIN`, `ACCEPTANCE`, `PLAN` (V1 revision) and `V1_1_REVIEW_PACKAGE` (now in
-`docs/archive/superseded/`). Requirement IDs `A-0xx` and `UX-xx` are unchanged
+git history `79be9a5:docs/archive/superseded/`). Requirement IDs `A-0xx` and `UX-xx` are unchanged
 so existing tests and commits still resolve.
 
 ## 1. What the product is

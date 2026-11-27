@@ -3,7 +3,7 @@
 Status: Authoritative · Consolidated 2026-11-15 from `ACCEPTANCE` (gate run),
 `RELIABILITY` §13 (SLOs), `DEPLOYMENT` §4, `ENGINEERING_STATE` (evaluation
 contract) and the 2026-11-15 feasibility review §§11–12 (all in
-`docs/archive/`).
+git history `79be9a5:docs/archive/`).
 
 ## 1. Evidence levels
 

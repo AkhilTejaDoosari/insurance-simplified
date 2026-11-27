@@ -3,7 +3,7 @@
 // (source: "next" + line break + "Annual Coordinated Election"), and
 // validateTable then threw because the cited quote contains no word-bounded
 // "annual" token — aborting an entire federal-employee brochure. See
-// docs/archive/reports/UNSEEN_DOCUMENT_GENERALIZATION.md recommendation 1.
+// 79be9a5:docs/archive/reports/UNSEEN_DOCUMENT_GENERALIZATION.md (git history) recommendation 1.
 import { describe, expect, it } from "vitest";
 import { extractFallback } from "@/app/lib/extraction/extract";
 import { extractQualifiers } from "@/app/lib/extraction/fact-list";

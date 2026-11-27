@@ -24,7 +24,7 @@ Plan: [`docs/v2/scope.md`](docs/v2/scope.md) · status: [`docs/roadmap.md`](docs
 | Security, deployment, operations | [`docs/operations.md`](docs/operations.md) |
 | Decision log | [`docs/decisions.md`](docs/decisions.md) |
 | Agent rules | [`AGENTS.md`](AGENTS.md) (Claude Code: [`CLAUDE.md`](CLAUDE.md)) |
-| History (not authoritative) | [`docs/archive/`](docs/archive/README.md) |
+| History (not authoritative) | removed 2026-11-27; git history at `79be9a5:docs/archive/` |
 
 ```text
 web/        Next.js app: routes, components, app/lib, tests, evals, scripts

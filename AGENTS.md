@@ -31,8 +31,9 @@ and D-032…D-039 win.
 | Milestones and current status | `docs/roadmap.md` |
 | Why a rule exists (D-0xx) | `docs/decisions.md` |
 
-`docs/archive/` is history. Do not read it unless a milestone names it; never
-treat it as a rule.
+Pre-V2 history (superseded architectures, Spec Kit specs, old audits and reports) was
+removed on 2026-11-27; it stays in git history at commit `79be9a5` (`docs/archive/`).
+It is never a rule.
 
 ## Non-negotiable
 

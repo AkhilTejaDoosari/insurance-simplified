@@ -7,7 +7,7 @@
 > say "no microservices / workers" or "Cloud Run", D-032 supersedes them.
 
 Status: Authoritative · Consolidated 2026-11-15 from `ARCHITECTURE` (locked V1),
-`DATA_MODEL`, `API`, `REPO_MAP` (now in `docs/archive/superseded/`).
+`DATA_MODEL`, `API`, `REPO_MAP` (now in git history `79be9a5:docs/archive/superseded/`).
 Where the archived documents described *target* routes or tables that the code
 does not have, this document says so explicitly instead of repeating them.
 
