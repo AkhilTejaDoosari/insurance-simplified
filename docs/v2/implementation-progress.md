@@ -18,6 +18,49 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-27 (b) — independent review remediation, part 1
+
+Review (2026-11-27): architecture approved, production integration not approved; P0-01…05,
+P1-01…02 required. Branch `integration/recovery-r7` (base `afa56c5`).
+
+**Done**
+- **Consolidated** R7 patch + recovery-engine patch (only overlap: this doc's round 4).
+- **R7 measured** on rebuilt reader outputs (Docling from the private-corpus cache,
+  OpenDataLoader + pdfplumber run locally; no re-extraction of Docling). R6 reproduced:
+  348/454, 0 false verified. R7 348/0, R7b 348/0, R8 170/**36 false verified** - all
+  rejected under the pre-set rule; verifier stays R6. Details: `parser-evaluation.md` 4a.
+- **P0-05 budget**: CLI cap reaches `RunLimits`; pre-call worst-case reservation against
+  the document cap and a cumulative file-locked spend ledger ($25 default); retries and
+  post-billing rejections charged; uncapped paid calls refused; no uncapped run in
+  `run_recovery_eval.sh`.
+- **P0-04 open conditions**: `VerifiedFact.open_conditions` + `semantic_confirmed`
+  (key 2, unset); `presentable_as_verified` is false for every fact today.
+  "Why This Matters" is governing text; group-label footnote markers linked.
+- **P0-02 coverage**: every printed amount is verified / rejected / conflicting /
+  not_extracted / unresolved, independent of parsers; `not_stated` only on proven absence.
+
+**Measured** (17 validation SBCs, keys v1.1 DRAFT, local stages only, no model calls):
+
+| Metric | Value |
+|---|---|
+| Correct keyed facts / false verified (keyed) | 348 / 0 |
+| Verified facts with no key (correctness not measured) | 1,145 |
+| Restricted correct keys (92): attached+matching / flagged open / attached, not matching key text / silent | 61 / 16 / 13 / 2 (was silent 28) |
+| Facts presentable as fully verified | 0 (key 2 not built) |
+| Printed amount-lines: verified / rejected / not_extracted / conflicting / unresolved | 731 / 337 / 86 / 8 / 6 |
+| Missed keys on a flagged line | 76 / 106 (30 unflagged: mostly text answers without an amount) |
+
+"0 false verified" covers keyed facts only; the 1,145 unkeyed verified facts are not shown
+to be correct.
+
+**Checks:** ruff, ruff format, mypy strict, pytest 126 passed / 1 skipped.
+
+**Open (next session, in review order):** P0-01 prose-clause evidence path (also covers
+the 30 unflagged text answers); P0-03 visual proposals with visual provenance, kept
+review-required; then targeted Nemotron/Claude runs under the ledger; P1-01 governing
+context via existing RAG; P1-02 student/travel fixtures. Key-side review: 2 restriction
+cells are annotations ("Nested table inside the Answers cell").
+
 ## Session 2026-11-27 (a)
 
 **Done**
