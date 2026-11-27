@@ -12,8 +12,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.reconcile.verify import Candidate
+from app.recovery.clauses import ClauseCandidate
 
-PROMPT_VERSION = "recovery-v1"
+PROMPT_VERSION = "recovery-v2"  # v2: prose clauses (P0-01)
 
 
 class ProposedFact(BaseModel):
@@ -26,10 +27,19 @@ class ProposedFact(BaseModel):
     value: str = Field(min_length=1, max_length=1500)
 
 
+class ProposedClause(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page: int = Field(ge=1)
+    anchor: str = Field(min_length=1, max_length=300)  # printed question or heading
+    text: str = Field(min_length=1, max_length=3000)  # the whole answer or paragraph
+
+
 class ProposalSet(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     facts: list[ProposedFact] = Field(max_length=400)
+    clauses: list[ProposedClause] = Field(default_factory=list, max_length=200)
 
 
 SCHEMA: dict[str, Any] = {
@@ -49,9 +59,22 @@ SCHEMA: dict[str, Any] = {
                 "required": ["page", "group_label", "row_label", "column_header", "value"],
                 "additionalProperties": False,
             },
-        }
+        },
+        "clauses": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "page": {"type": "integer"},
+                    "anchor": {"type": "string"},
+                    "text": {"type": "string"},
+                },
+                "required": ["page", "anchor", "text"],
+                "additionalProperties": False,
+            },
+        },
     },
-    "required": ["facts"],
+    "required": ["facts", "clauses"],
     "additionalProperties": False,
 }
 
@@ -99,7 +122,12 @@ def text_request(
             parts.append(f"Rows on page {p} that still lack values: {rows}")
         if p in targets and hints.get(p):
             parts.append(f'<parser_hints page="{p}">\n{hints[p]}\n</parser_hints>')
-    parts.append("Return every table cell on the TARGET pages that you can read with certainty.")
+    parts.append(
+        "Return every table cell on the TARGET pages that you can read with certainty, and "
+        "in 'clauses' every prose answer or paragraph that states a rule (eligibility, "
+        "exclusion, waiting period, definition, limitation): its question or heading as "
+        "'anchor' and the whole text under it as 'text', both copied exactly as printed."
+    )
     return "\n\n".join(parts)
 
 
@@ -122,6 +150,15 @@ def parse(data: Any) -> ProposalSet | None:
         return ProposalSet.model_validate(data)
     except ValidationError:
         return None
+
+
+def to_clauses(source: str, proposals: ProposalSet, targets: set[int]) -> list[ClauseCandidate]:
+    """Model clause proposals for requested pages; verified by the prose rules only."""
+    return [
+        ClauseCandidate(source, c.page, c.anchor, c.text)
+        for c in proposals.clauses
+        if c.page in targets
+    ]
 
 
 def to_candidates(source: str, proposals: ProposalSet, targets: set[int]) -> list[Candidate]:

@@ -184,6 +184,14 @@ class RecoveryPipeline:
         )
         return doc
 
+    @staticmethod
+    def _text_targets(routable: list[int], rec: Reconciled, layouts: list[PageLayout]) -> list[int]:
+        """Gap pages, plus pages where printed amounts were proposed by nobody (P0-02
+        coverage: information every reader missed). Scanned pages are not text targets."""
+        missed = coverage(layouts, rec.facts, rec.verdicts, rec.conflicts)
+        extra = {i.page for i in missed.items if i.state is ItemState.NOT_EXTRACTED}
+        return sorted(set(routable) | extra)
+
     # ---------------------------------------------------------------- prose
 
     @staticmethod
@@ -389,6 +397,7 @@ class RecoveryPipeline:
         estimate_in: int,
         max_out: int,
         max_attempts: int,
+        clauses_out: list[ClauseCandidate] | None = None,
     ) -> list[Candidate]:
         key = Cache.key(
             sha,
@@ -403,6 +412,8 @@ class RecoveryPipeline:
         if (hit := self.cache.get(key)) is not None:
             ledger.add(LedgerEntry(stage, provider, model, tuple(targets), 0.0, "cached"))
             parsed = proposals.parse(hit)
+            if parsed and clauses_out is not None:
+                clauses_out += proposals.to_clauses(source, parsed, set(targets))
             return proposals.to_candidates(source, parsed, set(targets)) if parsed else []
         price = price_from_env(provider)
         worst = worst_case_usd(price, estimate_in, max_out) if price is not None else None
@@ -466,6 +477,8 @@ class RecoveryPipeline:
         if parsed is None:
             return []  # off-schema output is rejected whole, never repaired
         self.cache.put(key, parsed.model_dump(mode="json"))
+        if clauses_out is not None:
+            clauses_out += proposals.to_clauses(source, parsed, set(targets))
         return proposals.to_candidates(source, parsed, set(targets))
 
     def _reserve(self, usd: float | None, ledger: Ledger, label: str) -> tuple[str, str | None]:
@@ -492,6 +505,7 @@ class RecoveryPipeline:
         gaps: dict[int, PageGaps],
         targets: list[int],
         ledger: Ledger,
+        clauses_out: list[ClauseCandidate] | None = None,
     ) -> list[Candidate]:
         model = self.engines.text_model
         assert model is not None  # noqa: S101 - checked by caller
@@ -539,6 +553,7 @@ class RecoveryPipeline:
                 ),
                 max_out=self.limits.text_max_tokens,
                 max_attempts=_attempts(model),
+                clauses_out=clauses_out,
             )
         return out
 
@@ -669,10 +684,21 @@ class RecoveryPipeline:
                 docs[reader.name] = doc
                 rec, gaps = settle(stage)
 
-        if self.engines.text_model and (pages := routable()):
+        targets = (
+            self._text_targets(routable(), rec, layouts)
+            if self.limits.route_missed_amounts
+            else routable()
+        )
+        if self.engines.text_model and (pages := targets):
             if self._allowed("nvidia", "text", sha, authorization, ledger):
                 extra += self._text_stage(
-                    sha, layouts, docs, gaps=gaps, targets=pages, ledger=ledger
+                    sha,
+                    layouts,
+                    docs,
+                    gaps=gaps,
+                    targets=pages,
+                    ledger=ledger,
+                    clauses_out=extra_clauses,
                 )
                 rec, gaps = settle("text")
 

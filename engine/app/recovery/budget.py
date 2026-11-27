@@ -17,6 +17,9 @@ class RunLimits:
     max_page_chars: int = 12_000  # independent page text sent per page
     text_max_tokens: int = 16_000
     visual_max_tokens: int = 16_000
+    # P0-02 coverage as a routing signal: also send pages where printed amounts were
+    # proposed by nobody to the text model. Opt-in: it is a cost decision.
+    route_missed_amounts: bool = False
     max_judge_calls: int = 12  # semantic judge (key 2), facts batched per call
     judge_facts_per_call: int = 10
     judge_max_tokens: int = 4_000

@@ -21,7 +21,14 @@ export ENGINE_EVAL_BUDGET_USD="${ENGINE_EVAL_BUDGET_USD:-25}"
 MAX_COST="${MAX_COST_USD_PER_DOC:-0.05}"
 export ENGINE_CACHE_DIR="${ENGINE_CACHE_DIR:-$OUT_DIR/cache}"
 KEYS="$CORPUS_DIR/answer-keys/sbc_cells.tsv"
-uv sync -q --group hybrid
+# Reuse existing artifacts when READERS_DIR holds a reader cache
+# (python -m evaluation.build_reader_cache); otherwise run the readers live.
+if [ -n "${READERS_DIR:-}" ]; then
+  READERS=(--readers "$READERS_DIR")
+else
+  uv sync -q --group hybrid
+  READERS=(--start-hybrid)
+fi
 
 # Cloud policy for THIS run: public corpus only (customer documents stay refused).
 export ENGINE_CLOUD_PROVIDERS="${ENGINE_CLOUD_PROVIDERS:-nvidia,anthropic}"
@@ -36,7 +43,7 @@ uv run python -m evaluation.probe_providers | tee "$OUT_DIR/probe.json"
 run() {  # name, extra args
   local name=$1; shift
   uv run python -m evaluation.recovery_eval --keys "$KEYS" --pdfs "$CORPUS_DIR" \
-    --start-hybrid --stages primary,docling --max-cost-usd "$MAX_COST" \
+    "${READERS[@]}" --stages primary,docling --max-cost-usd "$MAX_COST" \
     --out "$OUT_DIR/$name.json" "$@" >/dev/null
   echo "$name: $(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['correct_keys'],'correct /',d['false_verified'],'false verified / $',d['model_cost_usd'])" "$OUT_DIR/$name.json")"
 }

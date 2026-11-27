@@ -681,3 +681,40 @@ def test_coverage_states_map_onto_the_user_contract() -> None:
     assert TO_CONTRACT[ItemState.REJECTED] is FactState.COULDNT_CONFIRM
     assert TO_CONTRACT[ItemState.NOT_STATED] is FactState.NOT_MENTIONED
     assert set(TO_CONTRACT) == set(ItemState)
+
+
+def test_missed_amounts_are_routed_only_when_asked() -> None:
+    pdf = _pdf()
+    text = FakeText(
+        {
+            "facts": [],
+            "clauses": [{"page": 1, "anchor": "Urgent care", "text": "Not covered"}],
+        }
+    )
+    primary = FakeReader(
+        _doc("opendataloader", [GOOD_SPECIALIST, ("Urgent care", NET, "$90 copay/visit")])
+    )
+    RecoveryPipeline(
+        Engines(primary, text_model=text),
+        limits=RunLimits(route_missed_amounts=True),
+        policy=OPEN,
+    ).run(pdf, _auth(pdf))
+    assert len(text.requests) == 1  # "50% coinsurance" and "Not covered" nobody proposed
+
+
+def test_model_clause_proposals_go_through_the_prose_verifier() -> None:
+    pdf = _pdf()
+    # a benefit-table row with two value cells: never a clause, whoever proposes it
+    text = FakeText(
+        {
+            "facts": [],
+            "clauses": [{"page": 1, "anchor": "Urgent care", "text": "$90 copay/visit"}],
+        }
+    )
+    result = RecoveryPipeline(Engines(_gappy_primary(), text_model=text), policy=OPEN).run(
+        pdf, _auth(pdf)
+    )
+    assert text.requests  # the gap page went to the model
+    assert result.clauses == []
+    refused = [v for v in result.clause_verdicts if v.candidate.source.startswith("text:")]
+    assert refused and all("row_has_several_value_cells" in v.reasons for v in refused)

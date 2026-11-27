@@ -246,6 +246,11 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--text", action="store_true", help="Nemotron stage")
     ap.add_argument("--visual", action="store_true", help="Claude stage")
     ap.add_argument(
+        "--route-missed",
+        action="store_true",
+        help="also send pages with printed amounts no reader proposed to the text model",
+    )
+    ap.add_argument(
         "--judge",
         choices=("none", "anthropic", "nvidia"),
         default="none",
@@ -350,7 +355,7 @@ def _main(argv: list[str]) -> int:
     spend = _spend_ledger(ap, args, max_cost)
     pipeline = RecoveryPipeline(
         engines,
-        limits=RunLimits(max_cost_usd=max_cost),
+        limits=RunLimits(max_cost_usd=max_cost, route_missed_amounts=args.route_missed),
         cache=Cache.from_env(),
         policy=CloudPolicy.from_env(),
         spend=spend,
