@@ -237,7 +237,17 @@ verified; 89 missed keys were read correctly by some reader (verifier gap), 17 b
 
 | Iteration | Change | Correct keys | False verified | Precision |
 |---|---|---|---|---|
-| R7 | a short header element is accepted when it opens a ruled, amount-free cell that is the topmost cell of its column (first line of a two-line header) | not scored yet | not scored yet | — |
+| R6 (baseline, reproduced 2026-11-27 on rebuilt reader outputs) | — | 348 | 0 | 1.000 |
+| R7 | short header element accepted when it opens a ruled, amount-free, topmost column cell | 348 | 0 | 1.000 — **rejected, no gain** |
+| R7b | same, but any run of whole printed lines of that cell (pdfplumber keeps the *second* line, "(You will pay the most)") | 348 | 0 | 1.000 — **rejected**: the 12 freed candidates fail next on `header_spans_several_columns` |
+| R8 | edges of dark filled header bands as row borders (merged "Answers $4,000 …" cells) | 170 | **36** | 0.825 — **rejected, unsafe** |
+
+Why R7 never fired: of 49 rejected header locations on missed keys, 21 are a *second*-line
+fragment (not a prefix) and 28 are an "Answers" header merged with the first data row
+because no rule is drawn under a dark header band (the cell then holds an amount). R8
+fixes that merge but splits cells elsewhere and creates false verified facts. Verifier stays
+at R6. These 31 `header_is_part_of_a_longer_cell` keys are left to model recovery, where a
+proposal must still pass the unchanged R6 verifier.
 
 Run with `engine/scripts/measure_reconciler.sh` (prints aggregates only; per-key files stay
 private). Missed keys are classed by `engine/evaluation/attribute_misses.py`.
