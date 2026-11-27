@@ -127,6 +127,9 @@ class ClauseFact:
     open_conditions: list[str] = field(default_factory=list)
     semantic_confirmed: bool = False  # key 2; see app.recovery.semantic
     semantic_reasons: list[str] = field(default_factory=list)
+    context: list[str] = field(default_factory=list)  # P1-01 governing text elsewhere
+    definitions: list[str] = field(default_factory=list)
+    possible_exclusions: list[str] = field(default_factory=list)
 
     @property
     def page(self) -> int:

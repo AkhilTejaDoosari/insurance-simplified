@@ -44,6 +44,7 @@ from app.recovery.context import layout_text, page_subset_pdf, tables_hint, with
 from app.recovery.coverage import CoverageReport, ItemState, coverage
 from app.recovery.engines import DocumentReader, PageReader, TextModel, VisualModel
 from app.recovery.gaps import GapKind, PageGaps, find_gaps
+from app.recovery.governing import exclusion_items, resolve, units
 from app.recovery.policy import CloudAuthorization, CloudPolicy
 from app.recovery.restrictions import VerifiedFact, link
 from app.recovery.semantic import (
@@ -235,20 +236,30 @@ class RecoveryPipeline:
                 continue
             f = vf.fact
             label = " ".join((*f.group_labels, f.label))
-            governing = [*vf.restrictions, *vf.footnotes]
+            governing = [*vf.restrictions, *vf.footnotes, *vf.context]
             code = interpret(f.value, label=label, header=f.header, governing=governing)
             item = JudgeItem(
-                label, f.header, f.value, tuple(governing), tuple(code.interpretations)
+                label,
+                f.header,
+                f.value,
+                tuple(governing),
+                tuple(code.interpretations),
+                tuple(vf.possible_exclusions),
             )
             pending.append((vf, code, item))
         for cf in clauses:
             e = cf.evidence
-            governing = [*cf.restrictions, *cf.footnotes]
+            governing = [*cf.restrictions, *cf.footnotes, *cf.context]
             code = interpret(
                 e.text, label=e.anchor, header=e.column, governing=governing, prose=True
             )
             item = JudgeItem(
-                e.anchor, e.column, e.text, tuple(governing), tuple(code.interpretations)
+                e.anchor,
+                e.column,
+                e.text,
+                tuple(governing),
+                tuple(code.interpretations),
+                tuple(cf.possible_exclusions),
             )
             pending.append((cf, code, item))
         verdicts: dict[int, JudgeVerdict] = {}
@@ -728,6 +739,7 @@ class RecoveryPipeline:
 
         clauses, clause_verdicts = self._clauses(docs, layouts, rec, extra_clauses)
         facts = link(rec.facts, layouts, rec.verdicts)
+        _governing(facts, clauses, layouts)
         self._semantic(sha, facts, clauses, authorization, ledger)
         return RecoveryResult(
             document_sha256=sha,
@@ -748,6 +760,41 @@ class RecoveryPipeline:
             verified_by_stage=verified_by_stage,
             reconciled=rec,
         )
+
+
+def _governing(
+    facts: list[VerifiedFact], clauses: list[ClauseFact], layouts: list[PageLayout]
+) -> None:
+    """P1-01: context printed elsewhere in the document (see governing.py)."""
+    all_units = units(layouts)
+    excluded = exclusion_items(all_units, layouts)
+    items: list[tuple[VerifiedFact | ClauseFact, str, list[str]]] = [
+        (
+            vf,
+            " ".join((*vf.fact.group_labels, vf.fact.label)),
+            [vf.fact.value, *vf.restrictions, *vf.footnotes],
+        )
+        for vf in facts
+        if not vf.is_governing_text
+    ]
+    items += [
+        (c, c.evidence.anchor, [c.evidence.text, *c.restrictions, *c.footnotes]) for c in clauses
+    ]
+    for fact, label, texts in items:
+        g = resolve(
+            texts=texts,
+            label=label,
+            all_units=all_units,
+            n_pages=len(layouts),
+            exclusions=excluded,
+        )
+        fact.context += [t for _p, t in g.context]
+        fact.definitions += [t for _p, t in g.definitions]
+        fact.possible_exclusions += [t for _p, t in g.exclusions]
+        fact.open_conditions[:] = [c for c in fact.open_conditions if c not in g.conditions_remove]
+        for c in g.conditions_add:
+            if c not in fact.open_conditions and c != "cross_reference_located":
+                fact.open_conditions.append(c)
 
 
 def _unresolved(rec: Reconciled, gaps: dict[int, PageGaps]) -> list[Unresolved]:

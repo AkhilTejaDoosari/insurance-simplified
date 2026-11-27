@@ -51,9 +51,15 @@ GOVERNING_COLUMN = re.compile(
 MARKERS = ("†", "‡", "§", "*")
 _EMPTY = {"", "none", "na", "notapplicable", "nolimitations"}
 CROSS_REFERENCE = re.compile(
-    r"\bsee\b|\brefer(?:s|red)? to\b|\bpage \d|\bsection\b|\bplan document|"
+    # "see" only with a reference target - "you can see the specialist" is not one
+    r"\bsee\s+(?:the\s+|your\s+|our\s+|a\s+|an\s+)?(?:[\w-]+\s+){0,3}?"
+    r"(?:list|chart|page|section|below|above|plan document|policy|certificate|summary|"
+    r"evidence of coverage|benefit booklet|booklet|document|glossary|appendix|schedule|"
+    r"www\.|https?:|[\w.-]+\.(?:com|gov|org|net)\b)|"
+    r"\brefer(?:s|red)? to\b|\bpage \d|\bsection\b|\bplan document|"
     r"\bpolicy (?:document|certificate)|\bcertificate of coverage|\bsummary plan description"
-    r"|\bevidence of coverage|\bfor more information\b|\bdetails? (?:in|at)\b",
+    r"|\bevidence of coverage|\bfor more information\b|\bdetails? (?:in|at)\b"
+    r"|\bcall\s+(?:us\s+)?(?:at\s+)?(?:1[-\s.])?\(?\d{3}",
     re.I,
 )
 
@@ -73,6 +79,9 @@ class VerifiedFact:
     open_conditions: list[str] = field(default_factory=list)
     semantic_confirmed: bool = False  # D-034 key 2: code reading + judge (semantic.py)
     semantic_reasons: list[str] = field(default_factory=list)
+    context: list[str] = field(default_factory=list)  # P1-01 governing text elsewhere
+    definitions: list[str] = field(default_factory=list)
+    possible_exclusions: list[str] = field(default_factory=list)
 
     @property
     def is_governing_text(self) -> bool:
