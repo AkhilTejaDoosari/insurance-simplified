@@ -37,6 +37,7 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 from app.parsing.grid import has_value
 from app.reconcile.layout import Box, PageLayout, Word, norm
@@ -127,6 +128,8 @@ class ClauseFact:
     open_conditions: list[str] = field(default_factory=list)
     semantic_confirmed: bool = False  # key 2; see app.recovery.semantic
     semantic_reasons: list[str] = field(default_factory=list)
+    readings: list[Any] = field(default_factory=list)  # semantic.Interpretation (key 2 code)
+    judge: Any = None  # semantic.JudgeVerdict, when the judge ran
     context: list[str] = field(default_factory=list)  # P1-01 governing text elsewhere
     definitions: list[str] = field(default_factory=list)
     possible_exclusions: list[str] = field(default_factory=list)

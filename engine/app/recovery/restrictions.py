@@ -39,6 +39,7 @@ import re
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 from app.reconcile.engine import Fact
 from app.reconcile.layout import PageLayout, Word, norm
@@ -79,6 +80,8 @@ class VerifiedFact:
     open_conditions: list[str] = field(default_factory=list)
     semantic_confirmed: bool = False  # D-034 key 2: code reading + judge (semantic.py)
     semantic_reasons: list[str] = field(default_factory=list)
+    readings: list[Any] = field(default_factory=list)  # semantic.Interpretation (key 2 code)
+    judge: Any = None  # semantic.JudgeVerdict, when the judge ran
     context: list[str] = field(default_factory=list)  # P1-01 governing text elsewhere
     definitions: list[str] = field(default_factory=list)
     possible_exclusions: list[str] = field(default_factory=list)

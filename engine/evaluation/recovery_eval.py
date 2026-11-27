@@ -24,8 +24,10 @@ from pathlib import Path
 from app.parsing.base import sha256
 from app.providers.anthropic import AnthropicClient, AnthropicConfig
 from app.providers.nvidia import NvidiaClient, NvidiaConfig
+from app.reconcile.layout import read_layouts
 from app.recovery.budget import RunLimits, SpendLedger
 from app.recovery.cache import Cache
+from app.recovery.clauses import ClauseFact
 from app.recovery.engines import (
     DoclingViaOpenDataLoader,
     DocumentReader,
@@ -36,8 +38,9 @@ from app.recovery.engines import (
 )
 from app.recovery.pipeline import Engines, RecoveryPipeline, RecoveryResult
 from app.recovery.policy import CloudAuthorization, CloudPolicy, DocumentClass
+from app.recovery.present import to_contract
 from app.recovery.restrictions import VerifiedFact
-from app.schemas.document import Document
+from app.schemas.document import Document, ParserInfo
 from evaluation.score_keys import Key, judge, load_keys
 
 
@@ -278,6 +281,31 @@ def _parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _contract_states(results: dict[str, RecoveryResult], pdfs: Path) -> dict[str, int]:
+    """What the web app would receive: the user contract's states (present.py)."""
+    states: Counter[str] = Counter()
+    for sha, r in results.items():
+        layouts = {lay.number: lay for lay in read_layouts((pdfs / f"{sha}.pdf").read_bytes())}
+        parser = ParserInfo(name="opendataloader", version="eval")
+        items: list[VerifiedFact | ClauseFact] = [
+            *(f for f in r.facts if not f.is_governing_text),
+            *r.clauses,
+        ]
+        for f in items:
+            for c in to_contract(
+                f,
+                f.readings,
+                f.judge,
+                layouts=layouts,
+                document_sha256=sha,
+                plan_id="eval",
+                parser=parser,
+            ):
+                states[str(c.state)] += 1
+        states["couldnt_confirm(review_required)"] += len(r.review)
+    return dict(states)
+
+
 def _cost_cap(value: str) -> float | None:
     if value.strip().lower() == "none":
         return None
@@ -377,6 +405,7 @@ def _main(argv: list[str]) -> int:
         results[pdf.stem] = pipeline.run(pdf.read_bytes(), auth)
         print(f"  {doc}: {len(results[pdf.stem].facts)} verified", file=sys.stderr)
     report = score(results, keys)
+    report["contract_facts_by_state"] = _contract_states(results, args.pdfs)
     report["stages"] = sorted(
         stages
         | ({"text"} if args.text else set())

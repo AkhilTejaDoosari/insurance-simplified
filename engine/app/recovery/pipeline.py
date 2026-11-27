@@ -276,6 +276,8 @@ class RecoveryPipeline:
             ok, why = confirmed(code, verdicts.get(i), fact.proposed_by_all)
             fact.semantic_confirmed = ok
             fact.semantic_reasons = list(why)
+            fact.readings = list(code.interpretations)
+            fact.judge = verdicts.get(i)
 
     def _judge(
         self, sha: str, judge: TextModel, items: list[JudgeItem], ledger: Ledger
