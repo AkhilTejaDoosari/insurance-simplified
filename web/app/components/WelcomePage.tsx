@@ -37,40 +37,42 @@ export default function WelcomePage({
           </div>
         </div>
         <div
-          className="composition"
-          aria-label="Illustrative policy review, not an analysis of your documents"
+          className="lsheetwrap"
+          role="img"
+          aria-label="Example, not your document: a plan excerpt with highlighted phrases and their plain-English explanations"
         >
-          <div className="halo" />
-          <div className="dots" />
-          <div className="paper">
-            <div className="paperhead">
-              <span>Illustrative policy review</span>
-              <span>01 / 03</span>
-            </div>
-            <h3>
-              Before you choose,
-              <br />
-              know the details.
-            </h3>
-            <div className="fact">
-              <span>Deductible</span>
-              <b>Check selected option</b>
-            </div>
-            <div className="fact">
-              <span>Coverage limit</span>
-              <b>Verify policy maximum</b>
-            </div>
-            <div className="fact">
-              <span>Exclusions</span>
-              <b>Read before enrolling</b>
-            </div>
-            <div className="source">
-              Each finding should connect back to the original policy. If we
-              can&apos;t verify something, we&apos;ll say so.
-            </div>
+          <div className="lsheet">
+            <div className="lsheet__title">Campus Care Student Health Plan</div>
+            <div className="lsheet__meta">Example document, excerpt</div>
+            <p>
+              Section 4. Deductible. The Insured Person must satisfy the{" "}
+              <span className="lsweep">Deductible of $250 per Injury or Sickness</span>{" "}
+              before benefits are payable. The Deductible applies separately to
+              each covered Injury or Sickness.
+            </p>
+            <p>
+              Section 5. Limitations.{" "}
+              <span className="lsweep lsweep--two">
+                Pre-existing conditions are excluded for the first 12 months
+              </span>{" "}
+              of continuous coverage under this Policy.
+            </p>
+            <p>
+              All benefits are subject to the Schedule of Benefits and the terms
+              of the Policy.
+            </p>
           </div>
-          <div className="floatnote">
-            <span aria-hidden="true">●</span> &nbsp;Evidence, not guesswork
+          <div className="lmargin">
+            <div className="lnote lnote--one">
+              <b>In plain words</b>You pay $250 for each new illness or injury. A
+              second, separate illness means another $250.
+              <span className="lnote__src">Page 2 of the example</span>
+            </div>
+            <div className="lnote lnote--two">
+              <b>In plain words</b>Health problems you already had aren&apos;t
+              covered during your first 12 months.
+              <span className="lnote__src">Page 9 of the example</span>
+            </div>
           </div>
         </div>
       </section>
