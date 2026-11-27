@@ -23,9 +23,9 @@ Sections 1–4 below are the pre-V2 record and are no longer the plan.
 | --- | --- | --- |
 | 0 | Preserve + baseline: `backup/*` branches for Mac-only work, tag `baseline/pre-v2-2026-11-26`, baseline numbers | Done — tag `baseline/pre-v2-2026-11-26` and `backup/demo-compare-chat`, `backup/gen-unseen-docs` on GitHub; baseline numbers in audit §11 |
 | 1 | Consolidate: app moved to `web/` with no logic change | Tested — CI (run 45915395465: unit 1462 passed / 22 skipped = 1459 kept + 3 contract; e2e 55 passed / 1 skipped; DB suites 7 passed; tsc; build) |
-| 2 | Sourcing check, sealed blind batches A/B, validation answer keys | Not started — blocker: ≈45 more public PDFs |
+| 2 | Sourcing check, sealed blind batches A/B, validation answer keys | Partial — 69 public candidates found (kept privately); fetch-and-seal tool tested (`engine/evaluation/corpus.py`); owner to run the fetch; answer keys not started |
 | 3 | Engine skeleton: FastAPI, Pydantic contract with guardrails, trace-id logs, Docker, CI (lint, types, tests, licenses, contract, secret scan) | Tested — CI (run 45915395465: 38 pytest, ruff, mypy strict, licenses, contract current, image builds and answers /health, gitleaks clean) |
-| 4 | Document model + parser evaluation (decision rule written before the run) | Not started |
+| 4 | Document model + parser evaluation (decision rule written before the run) | Partial — rule pre-registered (`docs/v2/parser-evaluation.md`); pdfplumber + PyMuPDF readers and harness tested on synthetic fixtures; Docling, TS baseline export and the validation run left |
 | 5 | Jobs table (migration 0008), worker loop, parser sandbox; web calls the engine behind `ENGINE_URL` | Not started |
 | 6 | Classification + plan families/levels | Not started |
 | 7 | Category dictionary, discovery extraction, cross-document matching | Not started |
