@@ -160,6 +160,12 @@ def score(results: dict[str, RecoveryResult], keys: list[Key]) -> dict[str, obje
         "facts_with_open_conditions": dict(open_conditions),
         "facts_presentable_as_fully_verified": presentable,
         "unresolved_items": sum(len(r.unresolved) for r in results.values()),
+        "unresolved_by_state": dict(
+            Counter(str(u.state) for r in results.values() for u in r.unresolved)
+        ),
+        "printed_amount_lines_by_state": dict(
+            Counter(str(i.state) for r in results.values() if r.coverage for i in r.coverage.items)
+        ),
         "conflicts": sum(len(r.conflicts) for r in results.values()),
         "pages_routed": dict(pages),
         "stage_seconds": {k: round(v, 1) for k, v in seconds.items()},

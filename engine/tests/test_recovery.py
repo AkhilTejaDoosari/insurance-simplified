@@ -21,11 +21,13 @@ from app.recovery import proposals
 from app.recovery.budget import BudgetExceededError, RunLimits, SpendLedger
 from app.recovery.cache import Cache
 from app.recovery.context import layout_text, page_subset_pdf
+from app.recovery.coverage import TO_CONTRACT, CoverageReport, ItemState, not_stated
 from app.recovery.gaps import GapKind, find_gaps
 from app.recovery.pipeline import Engines, RecoveryPipeline
 from app.recovery.policy import CloudAuthorization, CloudPolicy, DocumentClass
 from app.recovery.restrictions import link
 from app.schemas.document import Document
+from app.schemas.facts import FactState
 from tests.test_reconcile import NETWORK, _doc, _pdf
 
 NET = NETWORK[1]
@@ -637,3 +639,45 @@ def test_marker_without_a_linked_footnote_is_open() -> None:
 def test_cross_reference_is_open() -> None:
     (vf,) = link([_fact("Out-of-pocket limit", NET, "$5,000. See your plan document.")])
     assert vf.open_conditions == ["cross_reference_unresolved"]
+
+
+# ------------------------------------------- P0-02 parser-independent completeness
+
+
+def test_amounts_no_reader_proposed_are_not_extracted() -> None:
+    pdf = _pdf()
+    only_specialist = FakeReader(_doc("opendataloader", [GOOD_SPECIALIST]))
+    result = RecoveryPipeline(Engines(only_specialist)).run(pdf)
+    lines = {(i.line, str(i.state)) for i in result.coverage.items}  # type: ignore[union-attr]
+    assert ("Specialist visit $45 copay/visit 50% coinsurance", "verified") in lines
+    assert ("Specialist visit $45 copay/visit 50% coinsurance", "not_extracted") in lines
+    assert ("Urgent care $90 copay/visit Not covered", "not_extracted") in lines
+    assert not result.coverage.complete  # type: ignore[union-attr]
+
+
+def test_refused_proposals_are_rejected_with_the_rule() -> None:
+    result = RecoveryPipeline(Engines(_gappy_primary())).run(_pdf())
+    rejected = [i for i in result.coverage.items if i.state == "rejected"]  # type: ignore[union-attr]
+    assert rejected and all(i.reasons for i in rejected)
+    rows = {(u.label, str(u.state)) for u in result.unresolved}
+    assert ("Specialist visit", "rejected") in rows
+
+
+def test_not_stated_needs_proven_absence() -> None:
+    pdf = _pdf()
+    layouts = read_layouts(pdf)
+    full = RecoveryPipeline(Engines(_gappy_primary())).run(pdf).coverage
+    assert full is not None
+    # printed somewhere -> never "not stated"
+    assert not_stated(["Urgent care"], layouts, full) == ItemState.UNRESOLVED
+    # absent, but amounts were missed or refused on the page -> could be hiding it
+    assert not_stated(["Acupuncture"], layouts, full) == ItemState.UNRESOLVED
+    # absent and every printed amount accounted for -> proven not stated
+    assert not_stated(["Acupuncture"], layouts, CoverageReport([])) == ItemState.NOT_STATED
+
+
+def test_coverage_states_map_onto_the_user_contract() -> None:
+    assert TO_CONTRACT[ItemState.NOT_EXTRACTED] is FactState.COULDNT_CONFIRM
+    assert TO_CONTRACT[ItemState.REJECTED] is FactState.COULDNT_CONFIRM
+    assert TO_CONTRACT[ItemState.NOT_STATED] is FactState.NOT_MENTIONED
+    assert set(TO_CONTRACT) == set(ItemState)

@@ -33,6 +33,7 @@ from app.recovery.budget import (
 )
 from app.recovery.cache import Cache
 from app.recovery.context import layout_text, page_subset_pdf, tables_hint, with_context
+from app.recovery.coverage import CoverageReport, ItemState, coverage
 from app.recovery.engines import DocumentReader, PageReader, TextModel, VisualModel
 from app.recovery.gaps import GapKind, PageGaps, find_gaps
 from app.recovery.policy import CloudAuthorization, CloudPolicy
@@ -55,7 +56,7 @@ class Engines:
 class Unresolved:
     page: int
     label: str  # "" for page-level states
-    state: str  # unresolved | conflicting | no_text_layer | table_not_found
+    state: str  # an ItemState: not_extracted | rejected | conflicting | unresolved
     reasons: tuple[str, ...]
 
 
@@ -68,6 +69,7 @@ class RecoveryResult:
     ledger: Ledger
     verified_by_stage: dict[str, int] = field(default_factory=dict)
     reconciled: Reconciled | None = None
+    coverage: CoverageReport | None = None  # P0-02: parser-independent completeness
 
 
 class RecoveryPipeline:
@@ -485,6 +487,7 @@ class RecoveryPipeline:
             facts=link(rec.facts, layouts, rec.verdicts),
             conflicts=rec.conflicts,
             unresolved=_unresolved(rec, gaps),
+            coverage=coverage(layouts, rec.facts, rec.verdicts, rec.conflicts),
             ledger=ledger,
             verified_by_stage=verified_by_stage,
             reconciled=rec,
@@ -492,20 +495,26 @@ class RecoveryPipeline:
 
 
 def _unresolved(rec: Reconciled, gaps: dict[int, PageGaps]) -> list[Unresolved]:
+    """Rows and pages left open, in the P0-02 states: a row nobody proposed a value for
+    is ``not_extracted``; one whose proposals the verifier refused is ``rejected`` (with
+    the rules); a scanned page is ``unresolved``; a ruled page without any table found
+    is ``not_extracted``."""
     reasons: dict[tuple[int, str], set[str]] = {}
     for v in rec.verdicts:
         if v.status is not Status.VERIFIED:
             reasons.setdefault((v.candidate.page, norm(v.candidate.label)), set()).update(v.reasons)
     out: list[Unresolved] = []
     for page, g in gaps.items():
-        for kind in (GapKind.NO_TEXT_LAYER, GapKind.TABLE_NOT_FOUND):
-            if kind in g.kinds:
-                out.append(Unresolved(page, "", kind.value, ()))
+        if GapKind.NO_TEXT_LAYER in g.kinds:
+            out.append(Unresolved(page, "", ItemState.UNRESOLVED, ("no_text_layer",)))
+        if GapKind.TABLE_NOT_FOUND in g.kinds:
+            out.append(Unresolved(page, "", ItemState.NOT_EXTRACTED, ("table_not_found",)))
         for label in dict.fromkeys(g.rows):
-            why = tuple(sorted(reasons.get((page, norm(label)), set()))) or ("not_proposed",)
-            out.append(Unresolved(page, label, "unresolved", why))
+            why = tuple(sorted(reasons.get((page, norm(label)), set())))
+            state = ItemState.REJECTED if why else ItemState.NOT_EXTRACTED
+            out.append(Unresolved(page, label, state, why or ("not_proposed",)))
     for a, b in rec.conflicts:
-        out.append(Unresolved(a.page, a.label, "conflicting", (a.value, b.value)))
+        out.append(Unresolved(a.page, a.label, ItemState.CONFLICTING, (a.value, b.value)))
     return out
 
 
