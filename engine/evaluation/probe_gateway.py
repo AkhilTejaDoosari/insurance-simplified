@@ -19,7 +19,7 @@ from evaluation.eval_env import collect, resolve
 
 def _call(url: str, headers: dict[str, str], body: dict[str, Any] | None) -> tuple[int, Any]:
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method="POST" if data else "GET")
+    req = urllib.request.Request(url, data=data, method="POST" if data else "GET")  # noqa: S310
     for k, v in {**headers, "content-type": "application/json"}.items():
         req.add_header(k, v)
     try:
