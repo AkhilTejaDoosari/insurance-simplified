@@ -94,6 +94,7 @@ Verified precision 100% (stated as "0 wrong in N") · core recall ≥ 95% (benef
 10. **Cost comparison** (premiums + likely yearly cost) — only where documents state prices.
 11. **User-entered values** (e.g. answers from a phone call) — only if ever added, always labelled "entered by you, not from a document", never counted as verified or in the match score.
 12. **Dark theme** (only with its own contrast check for highlights and states).
+13. **Sign in with Google** (owner, 2026-11-27). V2 has no accounts; this changes the session-auth model and needs its own decision. Hosting on Vercel is already planned in V2 (WP12).
 
 ## Order of work (work packages: `docs/v2/audit-2026-11-26.md` §8; status: `docs/roadmap.md` §0)
 Audit (done) → preserve + baseline (WP0) → consolidate into the monorepo (WP1, done on `v2/foundation`) → sourcing check, seal blind batches, build validation keys (WP2) → engine skeleton with CI/Docker/logging/contract and one-way-door guardrails (WP3, done on `v2/foundation`) → parser evaluation, picks parser + host (WP4) → jobs (WP5) → plan families/levels (WP6) → category dictionary, discovery, cross-document matching (WP7) → two-key verification (WP8) → comparison and scoring (WP9) → chat router (WP10) → web cut-over to the locked design (WP11) → operations and safety (WP12) → V2-preview (WP13) → blind run → V2.0 (WP14).
