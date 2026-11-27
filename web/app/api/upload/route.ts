@@ -185,8 +185,18 @@ export async function POST(request: NextRequest) {
         }))
       )
     );
-  } catch {
-    console.error("[UPLOAD] persistSessionUpload failed", { requestId });
+  } catch (err) {
+    // Which step failed and the driver's error code (e.g. 42P01 missing table,
+    // 28P01 bad password, ECONNREFUSED, ENOTFOUND, 404 bucket). Never the message:
+    // it can carry a connection string, a URL or document text.
+    const e = err as { step?: string; name?: string; code?: string; status?: number; cause?: { code?: string } };
+    console.error("[UPLOAD] persistSessionUpload failed", {
+      requestId,
+      step: e?.step,
+      name: e?.name,
+      code: e?.code ?? e?.cause?.code,
+      status: e?.status,
+    });
     try {
       await deleteSessionDb(sessionId);
     } catch {
