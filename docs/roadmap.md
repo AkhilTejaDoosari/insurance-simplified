@@ -23,9 +23,9 @@ Sections 1–4 below are the pre-V2 record and are no longer the plan.
 | --- | --- | --- |
 | 0 | Preserve + baseline: `backup/*` branches for Mac-only work, tag `baseline/pre-v2-2026-11-26`, baseline numbers | Done — tag `baseline/pre-v2-2026-11-26` and `backup/demo-compare-chat`, `backup/gen-unseen-docs` on GitHub; baseline numbers in audit §11 |
 | 1 | Consolidate: app moved to `web/` with no logic change | Tested — CI (run 45915395465: unit 1462 passed / 22 skipped = 1459 kept + 3 contract; e2e 55 passed / 1 skipped; DB suites 7 passed; tsc; build) |
-| 2 | Sourcing check, sealed blind batches A/B, validation answer keys | Partial — 69 public candidates found (kept privately); fetch-and-seal tool tested (`engine/evaluation/corpus.py`); owner to run the fetch; answer keys not started |
+| 2 | Sourcing check, sealed blind batches A/B, validation answer keys | Partial — corpus sealed: 82 public PDFs (validation 37: 17 SBC / 13 student / 7 travel; blind A 27; blind B 18), split by layout group, manifest committed; validation PDFs in the owner's private corpus repo; answer keys not started |
 | 3 | Engine skeleton: FastAPI, Pydantic contract with guardrails, trace-id logs, Docker, CI (lint, types, tests, licenses, contract, secret scan) | Tested — CI (run 45915395465: 38 pytest, ruff, mypy strict, licenses, contract current, image builds and answers /health, gitleaks clean) |
-| 4 | Document model + parser evaluation (decision rule written before the run) | Partial — rule pre-registered (`docs/v2/parser-evaluation.md`); pdfplumber + PyMuPDF readers and harness tested on synthetic fixtures; Docling, TS baseline export and the validation run left |
+| 4 | Document model + parser evaluation (decision rule written before the run) | Partial — real validation run done: pdfplumber 37/37 parsed, SBC structure 49/102; PyMuPDF 30/37 (7 native crashes), 29/102; provisional choice pdfplumber; sandboxed parsing in place; final decision waits for answer keys, Docling and the TS baseline |
 | 5 | Jobs table (migration 0008), worker loop, parser sandbox; web calls the engine behind `ENGINE_URL` | Not started |
 | 6 | Classification + plan families/levels | Not started |
 | 7 | Category dictionary, discovery extraction, cross-document matching | Not started |

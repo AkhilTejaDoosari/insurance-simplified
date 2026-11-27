@@ -1573,6 +1573,14 @@
       "TableRow": {
         "additionalProperties": false,
         "properties": {
+          "group_labels": {
+            "description": "Labels of the row groups this row sits under (outermost first).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Group Labels",
+            "type": "array"
+          },
           "id": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
             "title": "Id",

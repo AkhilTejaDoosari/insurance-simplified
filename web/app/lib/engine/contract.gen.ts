@@ -673,6 +673,11 @@ export interface components {
         };
         /** TableRow */
         TableRow: {
+            /**
+             * Group Labels
+             * @description Labels of the row groups this row sits under (outermost first).
+             */
+            group_labels?: string[];
             /** Id */
             id: string;
             /** Label */

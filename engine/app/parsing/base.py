@@ -16,10 +16,6 @@ from app.schemas.document import (
     BlockKind,
     Document,
     ParserInfo,
-    Table,
-    TableCell,
-    TableColumn,
-    TableRow,
     TextSpan,
 )
 
@@ -40,66 +36,7 @@ def clean(text: str | None) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
-def find_span(page_text: str, needle: str, page: int, start: int = 0) -> TextSpan | None:
-    """Exact span of ``needle`` in page text, tolerant of line breaks inside it; None if absent."""
-    words = [re.escape(w) for w in needle.split()]
-    if not words:
-        return None
-    match = re.compile(r"\s+".join(words)).search(page_text, start)
-    return TextSpan(page=page, start=match.start(), end=match.end()) if match else None
-
-
-def _fill_merged(row: Sequence[str | None]) -> list[str]:
-    """A None cell in a header row is covered by the cell to its left (column span)."""
-    out: list[str] = []
-    for cell in row:
-        out.append(clean(cell) if cell is not None else (out[-1] if out else ""))
-    return out
-
-
-def _header_rows(grid: Grid) -> int:
-    """Two header rows when the second row has an empty first cell and is not all numbers."""
-    if len(grid) < 3:
-        return 1
-    second = [clean(c) for c in grid[1]]
-    if second and second[0] == "" and any(second[1:]):
-        has_money = any(re.search(r"[$%]|\d", c) for c in second[1:])
-        return 1 if has_money else 2
-    return 1
-
-
-def table_from_grid(grid: Grid, page: int, table_id: str, page_text: str) -> Table | None:
-    """Rows of cell text (first row(s) = headers, first column = row labels) -> Table."""
-    rows_in: list[list[str | None]] = [list(r) for r in grid if any(clean(c) for c in r)]
-    if len(rows_in) < 2 or max(len(r) for r in rows_in) < 2:
-        return None
-    width = max(len(r) for r in rows_in)
-    grid = [r + [None] * (width - len(r)) for r in rows_in]
-    n_head = _header_rows(grid)
-    heads = [_fill_merged(grid[i]) for i in range(n_head)]
-    columns = []
-    for c in range(1, width):
-        path = [h[c] for h in heads if h[c]]
-        spans = [s for s in (find_span(page_text, p, page) for p in dict.fromkeys(path)) if s]
-        columns.append(TableColumn(id=f"{table_id}-c{c}", header_path=path, header_spans=spans))
-    rows, cells = [], []
-    cursor = 0
-    for r, raw in enumerate(grid[n_head:]):
-        label = clean(raw[0])
-        row_id = f"{table_id}-r{r}"
-        label_span = find_span(page_text, label, page, cursor) if label else None
-        if label_span:
-            cursor = label_span.start
-        rows.append(TableRow(id=row_id, label=label, label_span=label_span))
-        for c in range(1, width):
-            text = clean(raw[c])
-            if text:
-                span = find_span(page_text, text, page, cursor)
-                cells.append(
-                    TableCell(row_id=row_id, column_id=f"{table_id}-c{c}", text=text, span=span)
-                )
-    return Table(id=table_id, page=page, columns=columns, rows=rows, cells=cells)
-
+from app.parsing.grid import find_span, table_from_grid  # noqa: E402, F401 - re-exported
 
 _PRINTED = (
     re.compile(r"^\s*page\s+(\d+|[ivxlc]+)(?:\s+of\s+\d+)?\s*$", re.I),

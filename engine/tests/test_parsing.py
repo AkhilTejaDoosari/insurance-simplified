@@ -4,7 +4,8 @@ import importlib.util
 
 import pytest
 
-from app.parsing.base import find_span, printed_label, table_from_grid
+from app.parsing.base import printed_label
+from app.parsing.grid import find_span, table_from_grid
 from app.parsing.pdfplumber_reader import PdfplumberReader
 from evaluation.parser_eval import score
 from evaluation.synthetic import all_fixtures, levels_ruled, network_two_row_header
@@ -52,3 +53,50 @@ def test_pymupdf_emits_valid_model() -> None:
 
     doc = PymupdfReader().read(levels_ruled().pdf)
     assert doc.parser.name == "pymupdf" and doc.pages[0].tables
+
+
+def test_tall_header_cell_does_not_bleed_sideways() -> None:
+    grid: list[list[str | None]] = [
+        ["Services", "What You Will Pay", None, "Limitations"],
+        [None, "In-Network", "Out-of-Network", None],
+        ["Specialist visit", "$40 copay", "40%", "Referral needed"],
+    ]
+    table = table_from_grid(grid, 1, "t", "")
+    assert table is not None
+    assert [c.header_path for c in table.columns] == [
+        ["What You Will Pay", "In-Network"],
+        ["What You Will Pay", "Out-of-Network"],
+        ["Limitations"],
+    ]
+
+
+def test_header_ends_at_no_charge_rows_and_wrapped_lines_merge() -> None:
+    grid: list[list[str | None]] = [
+        ["Event", "Services", "Network Provider"],
+        [None, None, "(You will pay the least)"],
+        ["If you visit a doctor", "Primary care visit to treat", "No charge"],
+        ["", "an injury or illness", ""],
+        ["", "Specialist visit", "No charge"],
+    ]
+    table = table_from_grid(grid, 1, "t", "")
+    assert table is not None
+    assert table.columns[0].header_path == ["Network Provider", "(You will pay the least)"]
+    assert [r.label for r in table.rows] == [
+        "Primary care visit to treat an injury or illness",
+        "Specialist visit",
+    ]
+    assert table.rows[1].group_labels == ["If you visit a doctor"]
+
+
+def test_split_columns_are_merged_but_real_columns_never() -> None:
+    grid: list[list[str | None]] = [
+        ["Services", "In-Network", "", "Out-of-Network", ""],
+        ["Primary care visit", "$15 copay", "", "40%", ""],
+        ["Specialist visit", "", "$30 copay", "", "40%"],
+    ]
+    table = table_from_grid(grid, 1, "t", "")
+    assert table is not None
+    assert [c.header_path for c in table.columns] == [["In-Network"], ["Out-of-Network"]]
+    specialist = table.rows[1]
+    values = {c.column_id: c.text for c in table.cells if c.row_id == specialist.id}
+    assert list(values.values()) == ["$30 copay", "40%"]

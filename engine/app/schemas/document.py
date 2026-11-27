@@ -87,6 +87,10 @@ class TableRow(ContractModel):
     id: Identifier
     label: str
     label_span: TextSpan | None = None
+    group_labels: list[str] = Field(
+        default_factory=list,
+        description="Labels of the row groups this row sits under (outermost first).",
+    )
 
 
 class TableCell(ContractModel):

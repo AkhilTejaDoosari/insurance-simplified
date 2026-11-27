@@ -7,7 +7,8 @@ runtime code or shipped until the owner approves the AGPL license
 
 from typing import Any
 
-from app.parsing.base import line_blocks, printed_label, sha256, table_from_grid
+from app.parsing.base import line_blocks, printed_label, sha256
+from app.parsing.grid import table_from_grid
 from app.schemas.common import Market
 from app.schemas.document import Document, Page, ParserInfo, Table
 

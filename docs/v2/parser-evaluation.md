@@ -54,3 +54,22 @@ The chosen reader sets the engine host: a small container (pdfplumber or PyMuPDF
 
   PyMuPDF's misses are all on the table drawn without lines: its whitespace table finder returns no table there, even with looser settings. Recorded as a reader difference, not tuned around.
 - Left for WP4: Docling adapter; export of the current TypeScript reader as the document model (baseline); validation answer keys (WP2); the run and the decision record.
+
+## Real validation run (2026-11-26, 21:00) — 37 validation PDFs (17 SBC, 13 student, 7 travel)
+
+Run with `CORPUS_DIR=… uv run --group parser-eval python -m evaluation.real_run`; every reader in the sandbox.
+
+| Reader | Parsed | Native crashes | Time (37 docs) | SBC structural check (17 SBCs) |
+|---|---|---|---|---|
+| pdfplumber | 37/37 | 0 | 54 s | deductible 16, out-of-pocket 8, primary care 8, specialist 7, emergency room 4, generic drugs 6 — **49/102** |
+| PyMuPDF | 30/37 | **7** (all SBCs, segfault in its table finder) | 151 s | deductible 9, out-of-pocket 7, primary care 4, specialist 4, emergency room 2, generic drugs 3 — **29/102** |
+
+The SBC check is a **structural proxy**, not the answer-key score: it asks whether a value landed in the right row and column of the federal SBC tables, not whether it is the right value.
+
+**What changed to get here** (shared by both readers, `engine/app/parsing/grid.py`): leading banner rows are captions; header rows end at the first value row (money, percent, "no charge", "not covered", copay); merged header cells resolve from above (tall) or from the left (wide); neighbouring physical columns that never hold different text in the same row are merged (readers split one logical column when text shifts); a second label column is used when its rows carry their values further right; wrapped lines merge into the row above. Before these rules the same check scored pdfplumber 6/102 and PyMuPDF 4/102.
+
+**Provisional decision: pdfplumber.** Rule 1 excludes PyMuPDF (AGPL, not approved) and its 7 native crashes on 37 real documents would independently disqualify it. pdfplumber leads on every structural measure and is ~3× faster. Final under rules 2–5 once: (a) answer keys exist for the validation set, (b) Docling has run (needs its models; owner's machine or CI), (c) the TypeScript baseline export exists.
+
+**Engine consequence (done):** readers always run in a separate process (`app/parsing/sandbox.py`) with time, memory and page limits; crashes, hangs and oversize files become typed failures (`crashed`, `timed_out`, `too_many_pages`, `reader_error`).
+
+**Known gaps (next):** out-of-pocket rows and cost-chart rows where the reader merges two table rows into one cell, or splits the chart across pages; student and travel brochures have no shared template, so they are scored only by answer keys.
