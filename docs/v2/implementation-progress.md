@@ -18,6 +18,33 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-28 — key 2 in /v1/extract, match score, plain words, saved results
+
+Owner (2026-11-28): judge = Claude for reader facts and GPT-5.5 through KodeKey for
+Claude's facts (D-034: never the same family; Nemotron excluded); V1 screens "hide, delete
+later" (TB-3's UI leg still renders them). Earlier the same day (one branch, not committed):
+the demo ported to `/demo`, Claude text recovery in `/v1/extract` ($1/document cap), the
+category dictionary `us-1` (synonyms only), and the V2 screens at `/` on engine results.
+
+**Done:** both judges inside `/v1/extract`; proposer family from the model name (the old
+stage rule treated Claude text proposals as Nemotron); plain-words line per VERIFIED fact
+(Claude, from label + quote only, code-checked); cumulative Claude token allowance
+(`ENGINE_CLAUDE_TOKEN_CAP`) and per-provider token/cost report; fail-closed reading rules
+(header-as-value, unclear-basis readings, trip basis, brochure lines from printed basis
+words only); single-column brochure lines (`labelled.single_column`). Web: match gauges as
+the demo's `score()` with verified values only (a value whose kind isn't an amount, and
+"ER with no per-visit cap", are not compared: scored as not met); the engine's plain line
+replaces the web templates; results saved with the session (`comparison_results.result_json.engine`,
+no migration) and shown again on reload through `GET /api/results/[sessionId]`
+(capability-checked) after a read-back gate (quote still printed on its page, value inside
+its quote, else couldn't confirm); `/classic` no longer routed (component kept).
+
+**Measured:** SBCs (17, Claude judge): 395/454, 0 false verified, 89 keyed facts pass both
+keys, 0 presentable false verified. Brochures (20, both judges, before the reading rules):
+460 quotes, 0 off-page, 100 verified, 76 plain lines, $6.40, max $0.86/document. Then the
+KodeKey account budget ran out ($15.18 of $15.00): every further call is refused (422).
+**Not measured:** brochures under the new reading rules (judge requests changed; refused).
+
 ## Session 2026-11-27 (f) — WP5 started: the app calls the engine
 
 Owner: Nemotron free tier measured unusable (in ~2 h: 15 calls, 12 timeouts at 547 s,

@@ -131,6 +131,43 @@ workspace); OpenDataLoader also run live here (identical result).
 Measured on the 17 SBCs: 395/454 correct keys, 0 false verified; 0 facts presentable
 until the judge runs. Progress record: `implementation-progress.md`.
 
+## 4c. Key 2 inside `/v1/extract` (2026-11-28, owner decisions)
+
+* **Judges.** Claude judges the facts the local readers proposed; GPT-5.5 (OpenAI, through
+  KodeKey, `app/providers/openai.py`, `ENGINE_OPENAI_*`) judges the facts Claude proposed.
+  Never the proposer's own family (D-034). A proposer's family now comes from the model
+  name (`semantic.model_family`), not from the stage: the text stage runs Claude here, and
+  the old stage rule would have counted Claude's own proposals as "Nemotron". An unknown
+  model name is never judged. The contract also records the proposer's family
+  (`extractor_model_family`), so its own guardrail refuses a same-family judge.
+* **Consent.** `X-Engine-Cloud-Consent: anthropic, openai` (GPT never without Claude); the
+  cloud policy must also enable and retention-review `openai`.
+* **Plain words.** One line per VERIFIED fact, written by Claude from the printed label
+  and quote only (`recovery/plain.py`); code drops it on any number or negation not
+  printed, advice, or more than one sentence. Explanation, never evidence.
+* **Token allowance.** `ENGINE_CLAUDE_TOKEN_CAP` (cumulative Claude tokens across
+  documents, file-locked ledger at `ENGINE_CLAUDE_TOKEN_LEDGER`; a cap without a ledger
+  runs no Claude call). Tokens and cost per provider and stage in `model_usage`.
+* **Fail-closed reading rules added after the first judged runs:**
+  a value that only repeats its own column header ("IN-NETWORK PROVIDER") is refused
+  (`value_is_column_header`; local readers had proposed such cells and a judge confirmed
+  them); a reading the contract cannot carry as VERIFIED (unclear basis) turns the whole
+  printed fact into couldn't confirm instead of failing the request; "per covered trip",
+  "per certificate period", "period of coverage" read as `per_period_of_coverage`;
+  brochure lines are read as numbers only from printed basis words (the SBC term rule
+  "a deductible is per year" never applies to them), otherwise as printed text.
+* **Brochure columns (rule change, owner review).** A brochure line carries
+  `column_unproven` unless it is provably single-column: unruled page, the label starts
+  the line, nothing but the quote follows it, and no network-tier wording anywhere else on
+  the page (`labelled.single_column`).
+
+Measured (17 SBCs, Claude judge on reader facts): 395/454 correct keys, **0 false
+verified**, 89 keyed facts pass both keys with **0 presentable false verified**. Brochures
+(20 public validation brochures, before the reading rules above): 460 quotes, 0 off-page,
+100 verified, 76 plain lines; the review found the header-as-value facts the new rule now
+refuses. Re-measuring the brochures under the new rules was stopped by the KodeKey account
+budget (provider refuses every call: 422 budget exceeded).
+
 ## 5. Owner actions
 
 1. **Run the AI-assisted measurement** (17 pinned public validation SBCs only):
