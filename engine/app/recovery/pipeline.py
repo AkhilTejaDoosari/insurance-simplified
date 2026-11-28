@@ -20,6 +20,7 @@ from app.reconcile.layout import PageLayout, norm, read_layouts
 from app.reconcile.verify import Candidate, Status
 from app.recovery import proposals
 from app.recovery.budget import (
+    PROVIDER_REFUSED,
     BudgetExceededError,
     Ledger,
     LedgerEntry,
@@ -427,6 +428,7 @@ class RecoveryPipeline:
             reply = judge.complete_json(system, request, schema_name, schema, max_tokens)
         except Exception as exc:
             self._settle_tokens(tid, exc, one_tokens)
+            _mark_unavailable(ledger, provider, exc)
             charged = None
             if worst is not None and isinstance(exc, ProviderError):
                 charged = (token_cost(price, exc.input_tokens, exc.output_tokens) or 0.0) + (
@@ -602,6 +604,7 @@ class RecoveryPipeline:
             reply = call()
         except Exception as exc:
             self._settle_tokens(tid, exc, one_tokens)
+            _mark_unavailable(ledger, provider, exc)
             charged: float | None
             if worst is None:
                 charged = None
@@ -662,6 +665,8 @@ class RecoveryPipeline:
         self, provider: str, usd: float | None, tokens: int, ledger: Ledger, label: str
     ) -> tuple[str, str | None, str | None]:
         """Both reservations or neither: (refusal reason or "", spend id, token id)."""
+        if provider in ledger.unavailable:  # refused or timed out earlier in this run
+            return "provider_unavailable", None, None
         refusal, rid = self._reserve(usd, ledger, label)
         if refusal:
             return refusal, None, None
@@ -1053,6 +1058,15 @@ def _unresolved(rec: Reconciled, gaps: dict[int, PageGaps]) -> list[Unresolved]:
     for a, b in rec.conflicts:
         out.append(Unresolved(a.page, a.label, ItemState.CONFLICTING, (a.value, b.value)))
     return out
+
+
+def _mark_unavailable(ledger: Ledger, provider: str, exc: Exception) -> None:
+    """A refusal (budget, auth, rate limit, unprocessable) or a timeout: stop calling this
+    provider for the rest of the document. What is already verified stays; the rest is
+    "couldn't confirm" with its page."""
+    status = getattr(exc, "status", None)
+    if isinstance(exc, ProviderError) and (status in PROVIDER_REFUSED or status == 0):
+        ledger.unavailable.add(provider)
 
 
 def _model_only(proposed_by: set[str]) -> bool:

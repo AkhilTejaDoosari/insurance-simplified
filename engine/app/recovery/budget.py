@@ -82,6 +82,8 @@ class Ledger:
     # Optional progress sink: one line per model call (stage, provider, page numbers,
     # status, seconds, tokens, cost). Never document content.
     notify: Callable[[str], None] | None = field(default=None, repr=False, compare=False)
+    # providers that refused or timed out during this run: skipped from then on
+    unavailable: set[str] = field(default_factory=set)
 
     def elapsed(self) -> float:
         return time.monotonic() - self.started
@@ -134,7 +136,12 @@ def token_cost(price: Price | None, input_tokens: int, output_tokens: int) -> fl
 
 CHARS_PER_TOKEN = 2.5
 VISUAL_TOKENS_PER_PAGE = 8_000
-NOT_BILLED = frozenset({429})  # rate limited: rejected before any work was done
+# The provider rejected the request before doing any work (bad request, no credit or
+# budget, auth, too large, unprocessable, rate limited): nothing is charged for it.
+NOT_BILLED = frozenset({400, 401, 402, 403, 404, 413, 422, 429})
+# After one of these (or a timeout, status 0) the provider is not called again for the
+# rest of the document: a used-up budget or a refusing gateway won't change mid-run.
+PROVIDER_REFUSED = frozenset({400, 401, 402, 403, 422, 429})
 
 
 def estimate_text_tokens(*parts: str) -> int:

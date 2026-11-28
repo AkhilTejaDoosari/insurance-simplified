@@ -603,6 +603,20 @@
             "title": "Category Search",
             "type": "object"
           },
+          "checks_incomplete": {
+            "default": false,
+            "description": "True when model checks the user consented to could not all run (a provider refused - budget, rate limit, unprocessable - timed out, failed, or a cost or token cap was reached). What the local readers verified is still returned; everything else is couldn't confirm with its page.",
+            "title": "Checks Incomplete",
+            "type": "boolean"
+          },
+          "checks_incomplete_reasons": {
+            "description": "Why, as short codes (never document content).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Checks Incomplete Reasons",
+            "type": "array"
+          },
           "claude_tokens": {
             "anyOf": [
               {

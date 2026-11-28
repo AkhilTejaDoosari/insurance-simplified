@@ -159,6 +159,23 @@ def model_usage(ledger: Ledger) -> list[ModelUsage]:
     return list(rows.values())
 
 
+def incomplete_checks(
+    ledger: Ledger, consented: bool, models_configured: bool
+) -> tuple[bool, list[str]]:
+    """Whether checks the user consented to could not all run, and why (short codes)."""
+    if not consented:
+        return False, []
+    reasons = {
+        e.detail or e.status
+        for e in ledger.entries
+        if e.stage in MODEL_STAGES
+        and e.status in ("failed", "invalid_output", "skipped", "refused")
+    }
+    if not models_configured:
+        reasons.add("models_not_configured")
+    return bool(reasons), sorted(reasons)
+
+
 def model_cost(ledger: Ledger) -> float | None:
     costs = [e.cost_usd for e in ledger.entries if e.stage in MODEL_STAGES]
     return None if any(c is None for c in costs) else round(sum(c or 0.0 for c in costs), 6)
@@ -240,6 +257,7 @@ def extract_pdf(
         for i in (result.coverage.items if result.coverage else [])
         if i.state in OPEN_STATES
     ]
+    incomplete = incomplete_checks(result.ledger, authorization is not None, text_model is not None)
     calls = sum(
         e.stage in MODEL_STAGES and e.status in ("ok", "failed", "invalid_output")
         for e in result.ledger.entries
@@ -255,6 +273,8 @@ def extract_pdf(
         model_cost_usd=model_cost(result.ledger),
         plain=plain,
         model_usage=model_usage(result.ledger),
+        checks_incomplete=incomplete[0],
+        checks_incomplete_reasons=incomplete[1],
         claude_tokens=None
         if tokens is None
         else TokenAllowance(

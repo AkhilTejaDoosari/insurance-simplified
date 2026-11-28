@@ -316,6 +316,17 @@ export interface components {
                 [key: string]: number | null;
             };
             /**
+             * Checks Incomplete
+             * @description True when model checks the user consented to could not all run (a provider refused - budget, rate limit, unprocessable - timed out, failed, or a cost or token cap was reached). What the local readers verified is still returned; everything else is couldn't confirm with its page.
+             * @default false
+             */
+            checks_incomplete: boolean;
+            /**
+             * Checks Incomplete Reasons
+             * @description Why, as short codes (never document content).
+             */
+            checks_incomplete_reasons?: string[];
+            /**
              * @description The cumulative Claude token allowance, when one is set.
              * @default null
              */

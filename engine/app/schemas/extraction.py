@@ -78,6 +78,16 @@ class Extraction(ContractModel):
         "from the fact's printed label and quote and checked against them (explanation, "
         "never evidence).",
     )
+    checks_incomplete: bool = Field(
+        default=False,
+        description="True when model checks the user consented to could not all run (a "
+        "provider refused - budget, rate limit, unprocessable - timed out, failed, or a "
+        "cost or token cap was reached). What the local readers verified is still "
+        "returned; everything else is couldn't confirm with its page.",
+    )
+    checks_incomplete_reasons: list[str] = Field(
+        default_factory=list, description="Why, as short codes (never document content)."
+    )
     model_usage: list[ModelUsage] = Field(
         default_factory=list, description="Tokens and cost per provider and stage."
     )
