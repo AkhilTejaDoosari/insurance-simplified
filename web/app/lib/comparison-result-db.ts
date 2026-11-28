@@ -28,6 +28,7 @@ import type {
   TableCoverage,
 } from "@/app/lib/extraction/types";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
+import type { V2Document } from "@/app/lib/engine/client";
 import { contentDigest } from "@/app/lib/evidence/canonical";
 
 export const COMPARISON_RESULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -51,6 +52,9 @@ export interface PersistedComparisonResultPayload {
   /** Server-derived reading coverage (EC-10) when the extraction produced
    *  one. Additive JSON field — no schema migration. */
   coverage?: TableCoverage;
+  /** The engine's own results (V2 screens), so a reload shows them again. Additive JSON
+   *  field - no schema migration; not part of the result fingerprint. */
+  engine?: { documents: V2Document[] };
 }
 
 export interface ComparisonResultRecord {

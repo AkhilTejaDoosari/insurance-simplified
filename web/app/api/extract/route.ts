@@ -45,6 +45,9 @@ export async function POST(request: NextRequest) {
     sessionId?: string;
     engine?: string;
     context?: Record<string, string>;
+    /** The user agreed, for this request, that Claude may read pages the engine's own
+     *  readers can't settle. Relayed to the engine, whose cloud policy still decides. */
+    cloudConsent?: boolean;
   } | null;
   if (!body?.sessionId) {
     return errorResponse("VALIDATION_ERROR", 400, { requestId, message: "sessionId required" });
@@ -105,8 +108,10 @@ export async function POST(request: NextRequest) {
   try {
     const raw = useEngine
       ? await timeAsync("extract.extractViaEngine", async () => {
-          const run = await runEngine(session.documents, (id) =>
-            readDocumentFile(session.sessionId, id),
+          const run = await runEngine(
+            session.documents,
+            (id) => readDocumentFile(session.sessionId, id),
+            { cloudConsent: body.cloudConsent === true },
           );
           engineDocuments = registerEngineEvidence(session.sessionId, run.documents);
           return run.table;
@@ -195,6 +200,7 @@ export async function POST(request: NextRequest) {
             contacts,
             userContext: session.userContext,
             resultFingerprint,
+            ...(engineDocuments ? { engine: { documents: engineDocuments } } : {}),
           },
         })
       );

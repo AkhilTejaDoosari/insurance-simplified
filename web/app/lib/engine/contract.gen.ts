@@ -109,6 +109,31 @@ export interface components {
          * @enum {string}
          */
         BlockKind: "heading" | "paragraph" | "list_item" | "page_header" | "page_footer" | "caption" | "other";
+        /**
+         * CategoryInfo
+         * @description A dictionary category (US pack). Used only to match wording and order rows.
+         */
+        CategoryInfo: {
+            /**
+             * Explain
+             * @description One-line general explanation ('general info').
+             */
+            explain: string;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Order
+             * @description Display order inside the tier.
+             */
+            order: number;
+            /**
+             * Tier
+             * @description 1 must know, 2 important, 3 good to know
+             */
+            tier: number;
+        };
         /** ChatAnswer */
         ChatAnswer: {
             /** Assumptions */
@@ -278,6 +303,29 @@ export interface components {
         };
         /** Extraction */
         Extraction: {
+            /**
+             * Categories
+             * @description The category dictionary the facts were mapped with.
+             */
+            categories?: components["schemas"]["CategoryInfo"][];
+            /**
+             * Category Search
+             * @description For each dictionary category no fact of this document maps to: the first page where one of its dictionary wordings is printed (couldn't confirm - check that page), or null when none is printed anywhere. Searched by the dictionary's wording only, not by meaning.
+             */
+            category_search?: {
+                [key: string]: number | null;
+            };
+            /**
+             * @description The cumulative Claude token allowance, when one is set.
+             * @default null
+             */
+            claude_tokens: components["schemas"]["TokenAllowance"] | null;
+            /**
+             * Dictionary Version
+             * @description Category dictionary version.
+             * @default
+             */
+            dictionary_version: string;
             /** Document Sha256 */
             document_sha256: string;
             /**
@@ -287,15 +335,33 @@ export interface components {
             facts: components["schemas"]["Fact"][];
             /**
              * Model Calls
-             * @description Cloud model calls made (none here).
+             * @description Cloud model calls made for this document.
              * @default 0
              */
             model_calls: number;
+            /**
+             * Model Cost Usd
+             * @description USD charged for this document's model calls at list price (capped per document); null when a call's cost could not be known.
+             * @default 0
+             */
+            model_cost_usd: number | null;
+            /**
+             * Model Usage
+             * @description Tokens and cost per provider and stage.
+             */
+            model_usage?: components["schemas"]["ModelUsage"][];
             /** Open Items */
             open_items?: components["schemas"]["OpenItem"][];
             /** Pages */
             pages: number;
             parser: components["schemas"]["ParserInfo"];
+            /**
+             * Plain
+             * @description Fact id -> one plain-words line, only for VERIFIED facts, written only from the fact's printed label and quote and checked against them (explanation, never evidence).
+             */
+            plain?: {
+                [key: string]: string;
+            };
             /**
              * Printed
              * @description Fact id -> the exact printed words (and column) of its evidence (quotes).
@@ -467,6 +533,32 @@ export interface components {
             document_model_version: string;
             /** Engine Version */
             engine_version: string;
+        };
+        /** ModelUsage */
+        ModelUsage: {
+            /**
+             * Calls
+             * @description Calls sent (cached replies are not counted).
+             */
+            calls: number;
+            /**
+             * Cost Usd
+             * @default null
+             */
+            cost_usd: number | null;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Model */
+            model: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Provider */
+            provider: string;
+            /**
+             * Stage
+             * @description text | judge | plain (recovery stage).
+             */
+            stage: string;
         };
         /** Need */
         Need: {
@@ -777,6 +869,21 @@ export interface components {
             /** Start */
             start: number;
         };
+        /** TokenAllowance */
+        TokenAllowance: {
+            /**
+             * Cap
+             * @description ENGINE_CLAUDE_TOKEN_CAP: cumulative Claude tokens.
+             */
+            cap: number;
+            /**
+             * Committed
+             * @description Claude tokens used so far, all documents.
+             */
+            committed: number;
+            /** Remaining */
+            remaining: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -856,6 +963,8 @@ export interface operations {
                 plan_id: string;
             };
             header?: {
+                /** @description Comma-separated providers the user consented to for this document: 'anthropic' (Claude reads unsettled pages, judges reader facts, writes plain words) and optionally 'openai' (GPT judges Claude's facts). Used only when the deployment's cloud policy also allows it. */
+                "X-Engine-Cloud-Consent"?: string | null;
                 authorization?: string | null;
             };
             path?: never;

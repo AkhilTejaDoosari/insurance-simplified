@@ -10,8 +10,8 @@ const fact = (label: string, column: string, quote: string, state = "couldnt_con
 describe("V2 results rows", () => {
   it("groups the same printed label and column across documents, keeps columns apart", () => {
     const docs: V2Document[] = [
-      { documentId: "a", filename: "a.pdf", pages: 1, openItems: [], facts: [fact("Specialist visit", "In-Network", "$45"), fact("Specialist visit", "Out-of-Network", "50%")] },
-      { documentId: "b", filename: "b.pdf", pages: 1, openItems: [], facts: [fact("specialist  visit", "in-network", "$30")] },
+      { documentId: "a", filename: "a.pdf", pages: 1, openItems: [], categories: [], categorySearch: {}, facts: [fact("Specialist visit", "In-Network", "$45"), fact("Specialist visit", "Out-of-Network", "50%")] },
+      { documentId: "b", filename: "b.pdf", pages: 1, openItems: [], categories: [], categorySearch: {}, facts: [fact("specialist  visit", "in-network", "$30")] },
     ];
     const rows = buildRows(docs);
     const inNet = rows.find((r) => r.column === "In-Network")!;
@@ -21,7 +21,7 @@ describe("V2 results rows", () => {
 
   it('treats the SBC "Answers" header as no column', () => {
     const rows = buildRows([
-      { documentId: "a", filename: "a.pdf", pages: 1, openItems: [], facts: [fact("Is there a deductible?", "Answers", "$500")] },
+      { documentId: "a", filename: "a.pdf", pages: 1, openItems: [], categories: [], categorySearch: {}, facts: [fact("Is there a deductible?", "Answers", "$500")] },
     ]);
     expect(rows[0].column).toBe("");
   });
@@ -44,8 +44,43 @@ describe("toV2Documents", () => {
     };
     const [d] = toV2Documents(docs, new Map([["d1", ex as never]]));
     expect(d.facts).toEqual([
-      { label: "Urgent care", column: "In-Network", state: "couldnt_confirm", quote: "$90 copay/visit", page: 2 },
+      {
+        id: "f1",
+        label: "Urgent care",
+        column: "In-Network",
+        state: "couldnt_confirm",
+        quote: "$90 copay/visit",
+        page: 2,
+        categoryKey: null,
+        value: null,
+        plain: "",
+      },
     ]);
     expect(d.openItems).toEqual([{ page: 2, state: "not_extracted", line: "Hospital stay $500" }]);
+    expect(d.categories).toEqual([]);
+    expect(d.categorySearch).toEqual({});
+  });
+
+  it("carries the engine's value only for a verified fact, and its category", () => {
+    const docs = [{ documentId: "d1", filename: "p.pdf", pageCount: 1 }] as SessionDocument[];
+    const value = { kind: "amount", number: "250", currency: "USD", basis: "per_year", year_kind: "policy" };
+    const ex = {
+      document_sha256: "a".repeat(64),
+      pages: 1,
+      parser: { name: "opendataloader", version: "t" },
+      facts: [
+        { id: "v", benefit_label: "Deductible", state: "verified", category_key: "ded", value, evidence: [{ page: 1 }] },
+        { id: "u", benefit_label: "Coinsurance", state: "couldnt_confirm", category_key: "coins", value, evidence: [{ page: 1 }] },
+      ],
+      printed: { v: { text: "$250 per Policy Year" }, u: { text: "80%" } },
+      category_search: { rx: 1, mat: null },
+      plain: { v: "You pay the first $250 yourself each policy year.", u: "You pay 80%." },
+    };
+    const [d] = toV2Documents(docs, new Map([["d1", ex as never]]));
+    expect(d.facts.map((f) => [f.id, f.categoryKey, f.value, f.plain])).toEqual([
+      ["v", "ded", value, "You pay the first $250 yourself each policy year."],
+      ["u", "coins", null, ""], // never a plain line for anything not verified
+    ]);
+    expect(d.categorySearch).toEqual({ rx: 1, mat: null });
   });
 });

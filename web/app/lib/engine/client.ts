@@ -11,8 +11,21 @@ import type { components } from "@/app/lib/engine/contract.gen";
 
 type Extraction = components["schemas"]["Extraction"];
 type EngineFact = components["schemas"]["Fact"];
+export type EngineValue = components["schemas"]["FactValue"];
+export type EngineCategory = components["schemas"]["CategoryInfo"];
+
+/** Options for one engine read. `cloudConsent`: the user agreed, for this request, that
+ *  Claude may read the pages the engine's own readers can't settle and that Claude and GPT
+ *  may check the values found (the second key). It is relayed to the
+ *  engine, which still applies its own cloud policy (it is never enough on its own). */
+export interface EngineOptions {
+  cloudConsent?: boolean;
+}
 
 const TIMEOUT_MS = 180_000;
+/** With consent the engine may call models for up to its own run limit (900 s per
+ *  document, engine RunLimits.max_seconds); wait for that rather than abort mid-read. */
+const MODEL_TIMEOUT_MS = 960_000;
 
 export class EngineError extends Error {
   constructor(public readonly status: number, public readonly code: string) {
@@ -37,16 +50,22 @@ export function verdictFor(state: EngineFact["state"]): Verdict {
   }
 }
 
-export async function callEngine(pdf: Uint8Array, planId: string): Promise<Extraction> {
+export async function callEngine(
+  pdf: Uint8Array,
+  planId: string,
+  options: EngineOptions = {},
+): Promise<Extraction> {
   const base = (process.env.ENGINE_URL ?? "").replace(/\/+$/, "");
   const res = await fetch(`${base}/v1/extract?plan_id=${encodeURIComponent(planId)}`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${process.env.ENGINE_SERVICE_TOKEN ?? ""}`,
       "content-type": "application/pdf",
+      // Claude reads and judges; GPT judges only what Claude proposed (D-034 key 2)
+      ...(options.cloudConsent ? { "x-engine-cloud-consent": "anthropic, openai" } : {}),
     },
     body: new Blob([new Uint8Array(pdf)], { type: "application/pdf" }),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(options.cloudConsent ? MODEL_TIMEOUT_MS : TIMEOUT_MS),
   });
   if (!res.ok) {
     let code = "ENGINE_ERROR";
@@ -116,11 +135,18 @@ export function toComparisonTable(
  *  column, the state, the exact printed words and their page. Nothing here is
  *  interpreted; `evidenceId` is added by the route when it registers the quote. */
 export interface V2Fact {
+  id: string;
   label: string;
   column: string;
   state: EngineFact["state"];
   quote: string;
   page: number;
+  /** Dictionary category (synonym match in the engine), or null: a plan-specific row. */
+  categoryKey: string | null;
+  /** The engine's code reading of the value - present only when both keys passed. */
+  value: EngineValue | null;
+  /** One plain-words line, written only from the printed label and quote - VERIFIED only. */
+  plain: string;
   evidenceId?: string;
 }
 
@@ -131,6 +157,10 @@ export interface V2Document {
   facts: V2Fact[];
   /** Printed lines the engine could not settle: "check page N". */
   openItems: { page: number; state: string; line: string }[];
+  /** The engine's category dictionary (used only to match wording and order rows). */
+  categories: EngineCategory[];
+  /** Categories with no fact here: first page printing their wording, or null. */
+  categorySearch: Record<string, number | null>;
 }
 
 export function toV2Documents(
@@ -146,11 +176,15 @@ export function toV2Documents(
       const ev = fact.evidence?.[0];
       if (!printed || !ev) continue;
       facts.push({
+        id: fact.id,
         label: fact.benefit_label,
         column: printed.column_header ?? "",
         state: fact.state,
         quote: printed.text,
         page: ev.page,
+        categoryKey: fact.category_key ?? null,
+        value: fact.state === "verified" && fact.value ? fact.value : null,
+        plain: fact.state === "verified" ? (ex.plain?.[fact.id] ?? "") : "",
       });
     }
     return [
@@ -164,6 +198,8 @@ export function toV2Documents(
           state: i.state,
           line: i.line ?? "",
         })),
+        categories: ex.categories ?? [],
+        categorySearch: (ex.category_search ?? {}) as Record<string, number | null>,
       },
     ];
   });
@@ -177,13 +213,18 @@ export interface EngineRun {
 export async function runEngine(
   documents: SessionDocument[],
   readPdf: (documentId: string) => Uint8Array | undefined,
+  options: EngineOptions = {},
 ): Promise<EngineRun> {
   const extractions = new Map<string, Extraction>();
-  for (const doc of documents) {
+  const pdfs = documents.map((doc) => {
     const pdf = readPdf(doc.documentId);
     if (!pdf) throw new EngineError(0, "PDF_NOT_AVAILABLE");
-    extractions.set(doc.documentId, await callEngine(pdf, doc.documentId));
-  }
+    return pdf;
+  });
+  // at most 5 documents per session: read them at the same time (model calls wait on
+  // the provider), each under its own per-document cost cap in the engine
+  const results = await Promise.all(documents.map((doc, i) => callEngine(pdfs[i], doc.documentId, options)));
+  documents.forEach((doc, i) => extractions.set(doc.documentId, results[i]));
   return {
     table: toComparisonTable(documents, extractions),
     documents: toV2Documents(documents, extractions),
