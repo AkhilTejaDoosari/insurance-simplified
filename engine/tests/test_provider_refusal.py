@@ -142,3 +142,27 @@ def test_the_endpoint_answers_200_when_every_provider_refuses(
 def test_consent_without_a_configured_model_is_incomplete() -> None:
     x = extract_pdf(TABLE, "p", auth(TABLE), text_model=None, policy=ALLOW)
     assert x.checks_incomplete and x.checks_incomplete_reasons == ["models_not_configured"]
+
+
+def test_spend_cap_configuration(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    monkeypatch.delenv("ENGINE_SPEND_CAP_USD", raising=False)
+    assert api.spend_ledger() == (None, "")
+    monkeypatch.setenv("ENGINE_SPEND_CAP_USD", "5")
+    monkeypatch.delenv("ENGINE_SPEND_LEDGER", raising=False)
+    assert api.spend_ledger() == (None, "spend_ledger_not_configured")
+    monkeypatch.setenv("ENGINE_SPEND_CAP_USD", "-1")
+    assert api.spend_ledger()[1] == "spend_cap_invalid"
+    monkeypatch.setenv("ENGINE_SPEND_CAP_USD", "5")
+    monkeypatch.setenv("ENGINE_SPEND_LEDGER", str(tmp_path / "spend.jsonl"))
+    ledger, why = api.spend_ledger()
+    assert ledger is not None and ledger.cap_usd == 5 and why == ""
+
+
+def test_a_spent_allowance_is_a_hard_stop_across_documents(tmp_path: Any) -> None:
+    from app.recovery.budget import SpendLedger  # noqa: PLC0415
+
+    spend = SpendLedger(tmp_path / "spend.jsonl", 0.001)  # below one call's worst case
+    judge = JudgeOnly()
+    x = extract_pdf(TABLE, "p", auth(TABLE), text_model=judge, policy=ALLOW, spend=spend)
+    assert {f.state for f in x.facts} == {"couldnt_confirm"}  # nothing sent, nothing verified
+    assert x.checks_incomplete and x.model_calls == 0 and spend.committed_usd() == 0

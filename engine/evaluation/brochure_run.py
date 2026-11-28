@@ -31,7 +31,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from app.api.extract import claude_text_model, claude_token_ledger, extract_pdf, gpt_judge_model
+from app.api.extract import (
+    claude_text_model,
+    claude_token_ledger,
+    extract_pdf,
+    gpt_judge_model,
+    spend_ledger,
+)
 from app.parsing.base import sha256
 from app.reconcile.layout import norm, read_layouts
 from app.recovery.budget import Ledger, SpendLedger
@@ -68,6 +74,7 @@ def run_one(  # noqa: PLR0917
     gpt: bool = False,
     tokens: SpendLedger | None = None,
     review: list[dict[str, Any]] | None = None,
+    spend: SpendLedger | None = None,
 ) -> dict[str, Any]:
     sha = sha256(pdf)
     providers = frozenset({"anthropic", "openai"} if gpt else {"anthropic"})
@@ -82,6 +89,7 @@ def run_one(  # noqa: PLR0917
         policy=policy,
         cache=cache,
         tokens=tokens,
+        spend=spend,
         on_ledger=ledgers.append,
     )
     layouts = {lay.number: lay for lay in read_layouts(pdf)}
@@ -155,10 +163,17 @@ def main(argv: list[str]) -> int:  # noqa: PLR0915 - a linear measurement script
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--gpt", action="store_true", help="GPT judges Claude's lines (key 2)")
     ap.add_argument("--review", type=Path, help="write verified facts here (outside git)")
+    ap.add_argument(
+        "--sha",
+        action="append",
+        default=[],
+        help="only the validation documents whose SHA-256 starts with this (repeatable)",
+    )
     args = ap.parse_args(argv)
     tokens, refusal = claude_token_ledger()
-    if refusal:
-        print(f"Claude token allowance: {refusal}")
+    spend, spend_refusal = spend_ledger()
+    if refusal or spend_refusal:
+        print(f"model allowance: {refusal or spend_refusal}")
         return 2
     granted_by = os.environ.get("ENGINE_EVAL_GRANTED_BY", "")
     if not os.environ.get("ENGINE_ANTHROPIC_API_KEY") or not granted_by:
@@ -181,6 +196,8 @@ def main(argv: list[str]) -> int:  # noqa: PLR0915 - a linear measurement script
             print(f"hash mismatch {d['sha256'][:12]}: stopping")
             return 2
         pdfs.append((d, pdf))
+    if args.sha:
+        pdfs = [(d, p) for d, p in pdfs if any(d["sha256"].startswith(x) for x in args.sha)]
     if args.only:
         pdfs = sorted(pdfs, key=lambda t: len(t[1]))[: args.only]
     retention = frozenset(
@@ -204,7 +221,7 @@ def main(argv: list[str]) -> int:  # noqa: PLR0915 - a linear measurement script
 
     def one(item: tuple[dict[str, Any], bytes]) -> dict[str, Any]:
         d, pdf = item
-        r = run_one(pdf, granted_by, policy, cache, args.gpt, tokens, review)
+        r = run_one(pdf, granted_by, policy, cache, args.gpt, tokens, review, spend)
         r["type"] = d["type"]
         print(
             f"{d['type']:7} {r['sha']} p={r['pages']:3} quotes={r['quotes']:3} "
@@ -233,6 +250,7 @@ def main(argv: list[str]) -> int:  # noqa: PLR0915 - a linear measurement script
         "tokens_out": sum(r["tokens_out"] for r in results),
         "plain_lines": sum(r["plain_lines"] for r in results),
         "claude_tokens_committed": None if tokens is None else tokens.committed_usd(),
+        "spend_committed_usd": None if spend is None else spend.committed_usd(),
     }
     by_provider: dict[str, dict[str, float]] = {}
     for r in results:

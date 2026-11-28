@@ -132,6 +132,26 @@ def claude_token_ledger() -> tuple[SpendLedger | None, str]:
     return SpendLedger(path, float(cap)), ""
 
 
+def spend_ledger() -> tuple[SpendLedger | None, str]:
+    """(the cumulative model spend allowance across documents or None, why models may not
+    run or ""). ENGINE_SPEND_CAP_USD with a ledger file at ENGINE_SPEND_LEDGER: every call
+    reserves its worst case against it first (testing; a hard stop across runs). A cap that
+    is invalid or has no ledger: no model call at all."""
+    raw = os.environ.get("ENGINE_SPEND_CAP_USD", "").strip()
+    if not raw:
+        return None, ""
+    try:
+        cap = float(raw)
+    except ValueError:
+        return None, "spend_cap_invalid"
+    if cap <= 0:
+        return None, "spend_cap_invalid"
+    path = os.environ.get("ENGINE_SPEND_LEDGER", "").strip()
+    if not path:
+        return None, "spend_ledger_not_configured"
+    return SpendLedger(path, cap), ""
+
+
 def model_usage(ledger: Ledger) -> list[ModelUsage]:
     rows: dict[tuple[str, str, str], ModelUsage] = {}
     for e in ledger.entries:
@@ -191,6 +211,7 @@ def extract_pdf(
     policy: CloudPolicy | None = None,
     cache: Cache | None = None,
     tokens: SpendLedger | None = None,
+    spend: SpendLedger | None = None,
     on_ledger: Callable[[Ledger], None] | None = None,
 ) -> Extraction:
     """The whole read, synchronous (called off the event loop). Without an authorization
@@ -213,6 +234,7 @@ def extract_pdf(
         policy=policy or CloudPolicy.from_env(),
         cache=cache,
         tokens=tokens,
+        spend=spend,
     )
     result = pipeline.run(pdf, authorization)
     if on_ledger is not None:  # evaluation: per-call stages, tokens and cost
@@ -353,19 +375,28 @@ async def extract(
     if not pdf.startswith(b"%PDF-"):
         raise HTTPException(415, detail={"code": "PDF_REQUIRED"})
     auth = None
-    model = gpt = tokens = None
+    model = gpt = tokens = spend = None
     if cloud_consent is not None:
         names = frozenset(p.strip().lower() for p in cloud_consent.split(","))
         if not names or not names <= CONSENT_PROVIDERS or "anthropic" not in names:
             raise HTTPException(422, detail={"code": "BAD_CLOUD_CONSENT"})
         auth = CloudAuthorization(sha256(pdf), DocumentClass.CUSTOMER, names, "caller_consent")
         tokens, refusal = claude_token_ledger()
-        if not refusal:  # a misconfigured allowance means no Claude call at all
+        spend, spend_refusal = spend_ledger()
+        refusal = refusal or spend_refusal
+        if not refusal:  # a misconfigured allowance means no model call at all
             model = claude_text_model()
             gpt = gpt_judge_model() if GPT_PROVIDER in names else None
     try:
         return await run_in_threadpool(
-            extract_pdf, pdf, plan_id, auth, text_model=model, gpt_model=gpt, tokens=tokens
+            extract_pdf,
+            pdf,
+            plan_id,
+            auth,
+            text_model=model,
+            gpt_model=gpt,
+            tokens=tokens,
+            spend=spend,
         )
     except HTTPException:
         raise
