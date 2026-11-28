@@ -20,7 +20,7 @@ from app.recovery.clauses import ClauseFact
 from app.recovery.coverage import ItemState
 from app.recovery.engines import OpenDataLoaderPrimary, PdfplumberTables
 from app.recovery.pipeline import Engines, RecoveryPipeline
-from app.recovery.present import column_of, page_text, to_contract
+from app.recovery.present import box_text, column_of, to_contract
 from app.recovery.restrictions import VerifiedFact
 from app.schemas.document import ParserInfo
 from app.schemas.extraction import Extraction, OpenItem, Printed
@@ -63,7 +63,7 @@ def extract_pdf(pdf: bytes, plan_id: str) -> Extraction:
             parser=parser,
         ):
             facts.append(c)
-            if c.evidence and (text := _printed(c, layouts)):
+            if c.evidence and (text := _printed(f, layouts)):
                 printed[c.id] = Printed(text=text, column_header=column_of(f))
     open_items = [
         OpenItem(page=i.page, state=str(i.state), line=i.line)
@@ -85,9 +85,12 @@ def extract_pdf(pdf: bytes, plan_id: str) -> Extraction:
     )
 
 
-def _printed(fact: Fact, layouts: dict[int, PageLayout]) -> str:
-    e = fact.evidence[0]
-    return page_text(layouts[e.page])[e.value_span.start : e.value_span.end]
+def _printed(item: VerifiedFact | ClauseFact, layouts: dict[int, PageLayout]) -> str:
+    """The fact's own printed words: the whole clause as verified, or the words
+    inside the value's cell (never a neighbouring column's words)."""
+    if isinstance(item, ClauseFact):
+        return item.evidence.text
+    return box_text(layouts[item.fact.page], item.fact.value_box)
 
 
 @router.post(

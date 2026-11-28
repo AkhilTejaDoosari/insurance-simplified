@@ -51,6 +51,18 @@ def page_text(layout: PageLayout) -> str:
     return " ".join(w.text for w in _order(layout))
 
 
+def box_text(layout: PageLayout, box: tuple[float, float, float, float]) -> str:
+    """Only the words printed inside ``box``, in reading order. Unlike the
+    ``page_text`` span (a positional anchor), this never takes in a neighbouring
+    column's words between the lines of a multi-line cell."""
+    x0, top, x1, bottom = box
+    return " ".join(
+        w.text
+        for w in _order(layout)
+        if x0 - 1 <= w.box.cx <= x1 + 1 and top - 1 <= (w.box.top + w.box.bottom) / 2 <= bottom + 1
+    )
+
+
 def span_of(layout: PageLayout, box: tuple[float, float, float, float]) -> TextSpan | None:
     """The span of ``page_text`` covering the words inside ``box``."""
     x0, top, x1, bottom = box
@@ -177,4 +189,4 @@ def to_contract(
     return out
 
 
-__all__ = ["column_of", "page_text", "span_of", "to_contract"]
+__all__ = ["box_text", "column_of", "page_text", "span_of", "to_contract"]

@@ -51,6 +51,18 @@ specs: 2 passed, 4 failed — the same 4 fail on the commit before (pre-existing
 upload/compare flows). Web unit 1,466 passed / 22 skipped, tsc, build. Screenshots
 (desktop, phone) sent to the owner. Fonts and the results layout not started.
 
+**Then — results screen V2 (owner: "this is not our design"):** the V1 render gates drop
+every engine fact (they only accept V1 claim proofs), so engine results now reach the
+browser beside the table: the route registers each printed quote as session evidence
+and returns `engine.documents`; `ResultsV2` renders them (sidebar, ≤5 columns, groups,
+badges, printed words, page links into the existing viewer, counts, confirmed gauge,
+open lines, contacts). **Evidence fix:** the shown quote for a multi-line cell took in
+the neighbouring column's words (page-text span); it is now only the words inside the
+cell (`box_text`), or the clause's verified text. Not built: match % (needs WP9), the
+importance filter (needs WP7), cross-document label matching (WP7: rows group only on
+identical printed label + column), reload keeps only the V1 view (engine facts are not
+persisted yet). Engine 199 passed; web 1,469 passed / 22 skipped; build; e2e unchanged.
+
 ## Session 2026-11-27 (e) — first real model run, interrupted; runner made faster
 
 Owner's first run on the Mac: setup, probes (NVIDIA and Claude through KodeKey, PDF input

@@ -112,15 +112,87 @@ export function toComparisonTable(
   };
 }
 
-export async function extractViaEngine(
+/** One engine fact as the V2 results screen shows it: the printed label and
+ *  column, the state, the exact printed words and their page. Nothing here is
+ *  interpreted; `evidenceId` is added by the route when it registers the quote. */
+export interface V2Fact {
+  label: string;
+  column: string;
+  state: EngineFact["state"];
+  quote: string;
+  page: number;
+  evidenceId?: string;
+}
+
+export interface V2Document {
+  documentId: string;
+  filename: string;
+  pages: number;
+  facts: V2Fact[];
+  /** Printed lines the engine could not settle: "check page N". */
+  openItems: { page: number; state: string; line: string }[];
+}
+
+export function toV2Documents(
+  documents: SessionDocument[],
+  extractions: Map<string, Extraction>,
+): V2Document[] {
+  return documents.flatMap((doc) => {
+    const ex = extractions.get(doc.documentId);
+    if (!ex) return [];
+    const facts: V2Fact[] = [];
+    for (const fact of ex.facts) {
+      const printed = ex.printed?.[fact.id];
+      const ev = fact.evidence?.[0];
+      if (!printed || !ev) continue;
+      facts.push({
+        label: fact.benefit_label,
+        column: printed.column_header ?? "",
+        state: fact.state,
+        quote: printed.text,
+        page: ev.page,
+      });
+    }
+    return [
+      {
+        documentId: doc.documentId,
+        filename: doc.filename,
+        pages: ex.pages,
+        facts,
+        openItems: (ex.open_items ?? []).map((i) => ({
+          page: i.page,
+          state: i.state,
+          line: i.line ?? "",
+        })),
+      },
+    ];
+  });
+}
+
+export interface EngineRun {
+  table: ComparisonTable;
+  documents: V2Document[];
+}
+
+export async function runEngine(
   documents: SessionDocument[],
   readPdf: (documentId: string) => Uint8Array | undefined,
-): Promise<ComparisonTable> {
+): Promise<EngineRun> {
   const extractions = new Map<string, Extraction>();
   for (const doc of documents) {
     const pdf = readPdf(doc.documentId);
     if (!pdf) throw new EngineError(0, "PDF_NOT_AVAILABLE");
     extractions.set(doc.documentId, await callEngine(pdf, doc.documentId));
   }
-  return toComparisonTable(documents, extractions);
+  return {
+    table: toComparisonTable(documents, extractions),
+    documents: toV2Documents(documents, extractions),
+  };
+}
+
+export async function extractViaEngine(
+  documents: SessionDocument[],
+  readPdf: (documentId: string) => Uint8Array | undefined,
+): Promise<ComparisonTable> {
+  return (await runEngine(documents, readPdf)).table;
 }

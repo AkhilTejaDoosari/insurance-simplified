@@ -76,3 +76,24 @@ def test_couldnt_confirm_carries_the_printed_words_but_no_value() -> None:
     assert c.state is FactState.COULDNT_CONFIRM and c.value is None  # nothing interpreted
     span = c.evidence[0].value_span
     assert page_text(read_layouts(pdf)[0])[span.start : span.end] == "$45 copay/visit"
+
+
+def test_box_text_keeps_only_the_cells_own_words_across_lines() -> None:
+    from app.reconcile.layout import Box, PageLayout, Word  # noqa: PLC0415
+    from app.recovery.present import box_text, span_of  # noqa: PLC0415
+
+    def w(text: str, x0: float, top: float) -> Word:
+        return Word(text=text, key=text.lower(), box=Box(x0, top, x0 + 30, top + 10))
+
+    # two columns, two lines each: the left cell's lines are interleaved with the right
+    # column's words in page reading order
+    lay = PageLayout(
+        number=1,
+        width=600,
+        height=800,
+        words=[w("Yes.", 10, 10), w("Why", 300, 10), w("See", 10, 25), w("this", 300, 25)],
+    )
+    left = (0.0, 5.0, 200.0, 40.0)
+    assert box_text(lay, left) == "Yes. See"
+    span = span_of(lay, left)
+    assert span is not None and page_text(lay)[span.start : span.end] == "Yes. Why See"

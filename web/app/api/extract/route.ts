@@ -14,7 +14,8 @@ import {
   registerEvidence,
   updateSessionContext,
 } from "@/app/lib/session";
-import { extractViaEngine, isEngineConfigured } from "@/app/lib/engine/client";
+import { isEngineConfigured, runEngine, type V2Document } from "@/app/lib/engine/client";
+import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import { loadSession } from "@/app/lib/session-store";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
 import type { ComparisonTable } from "@/app/lib/extraction/types";
@@ -100,11 +101,16 @@ export async function POST(request: NextRequest) {
   const useLlm =
     body.engine === "llm" || (body.engine !== "fallback" && isLlmConfigured());
 
+  let engineDocuments: V2Document[] | null = null;
   try {
     const raw = useEngine
-      ? await timeAsync("extract.extractViaEngine", () =>
-          extractViaEngine(session.documents, (id) => readDocumentFile(session.sessionId, id))
-        )
+      ? await timeAsync("extract.extractViaEngine", async () => {
+          const run = await runEngine(session.documents, (id) =>
+            readDocumentFile(session.sessionId, id),
+          );
+          engineDocuments = registerEngineEvidence(session.sessionId, run.documents);
+          return run.table;
+        })
       : useLlm
         ? await timeAsync("extract.extractViaLlm", () =>
             extractViaLlm(session.documents, session.userContext)
@@ -197,6 +203,7 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({
       ...verified,
+      ...(engineDocuments ? { engine: { documents: engineDocuments } } : {}),
       resultFingerprint,
       ...(verified.plans ? { plans: verified.plans.map((plan) => ({ ...plan, sources: plan.sources.map(withEvidenceId) })) } : {}),
       presentationGroups,
@@ -222,4 +229,20 @@ export async function POST(request: NextRequest) {
       { requestId, retryable: status === 503 }
     );
   }
+}
+
+/** Register every engine quote as session evidence so the viewer can open the
+ *  cited page with the exact printed words highlighted (fail-closed there). */
+function registerEngineEvidence(sessionId: string, documents: V2Document[]): V2Document[] {
+  const entries = documents.flatMap((d) =>
+    d.facts.map((f) => ({ documentId: d.documentId, page: f.page, quote: f.quote })),
+  );
+  registerEvidence(sessionId, entries);
+  return documents.map((d) => ({
+    ...d,
+    facts: d.facts.map((f) => ({
+      ...f,
+      evidenceId: evidenceIdFor(d.documentId, f.page, f.quote),
+    })),
+  }));
 }

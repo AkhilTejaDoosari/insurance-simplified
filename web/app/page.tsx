@@ -5,6 +5,8 @@ import UploadDropzone, {
   type UploadResult,
 } from "@/app/components/UploadDropzone";
 import AdaptiveResults from "@/app/components/AdaptiveResults";
+import ResultsV2 from "@/app/components/ResultsV2";
+import type { V2Document } from "@/app/lib/engine/client";
 import PolicyViewControls from "@/app/components/PolicyViewControls";
 import ChatPanel, {
   type ChatSelectionPayload,
@@ -91,6 +93,8 @@ export default function Home() {
   const contextRequestSequence = useRef(0);
   const contextRequestPending = useRef(false);
   const [contacts, setContacts] = useState<ContactHit[]>([]);
+  // V2: the engine's facts, when the engine read the documents (else null).
+  const [engineDocs, setEngineDocs] = useState<V2Document[] | null>(null);
   const [extractError, setExtractError] = useState<ExtractFailure | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
@@ -201,6 +205,9 @@ export default function Home() {
         return;
       }
       setExtractError(null);
+      setEngineDocs(
+        (data as { engine?: { documents?: V2Document[] } }).engine?.documents ?? null,
+      );
       setTable(data as Table);
       setActiveDocumentId((data as Table).documents[0]?.documentId ?? "");
       setReadings({});
@@ -390,6 +397,8 @@ export default function Home() {
       )}
       {page === "results" && table && sessionId && (
         <>
+          {!engineDocs && (
+            <>
           <div className="reviewModeBar" data-chat-background>
             <div>
               <span className="eyebrow">Your document review</span>
@@ -513,6 +522,8 @@ export default function Home() {
               </button>
             </div>
           </div>
+            </>
+          )}
           {exportError && (
             <p role="alert" className="alert">
               {exportError}
@@ -522,6 +533,18 @@ export default function Home() {
             className={`results-workspace${chatOpen ? " results-workspace--chat-open" : ""}`}
           >
             <div className="reviewBody" data-chat-background>
+              {engineDocs ? (
+                <ResultsV2
+                  documents={engineDocs}
+                  sessionId={sessionId}
+                  contacts={contacts}
+                  busy={busy}
+                  onAddDocument={goToUpload}
+                  onDownload={() => void downloadPdf()}
+                  onAsk={() => setChatOpen(true)}
+                />
+              ) : (
+                <>
               {viewMode === "understand" && (
                 <PolicyViewControls
                   table={table}
@@ -642,6 +665,8 @@ export default function Home() {
                   setChatOpen(true);
                 }}
               />
+                </>
+              )}
             </div>
             <aside
               id="document-chat"
