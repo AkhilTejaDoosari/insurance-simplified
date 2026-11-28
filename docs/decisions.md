@@ -537,3 +537,51 @@ with a visible filter bar. Tokens: `docs/v2/design.md`.
 **Decision:** the plan above is **V2**, with checkpoints **V2-preview** (live
 link + validation scorecard) and **V2.0** (all gates on a blind batch). The
 engine package starts at `2.0.0a0`; the contract at `2.0.0-alpha.1`.
+
+# D-040 — /demo port: deviations from the HTML demo
+
+**Status: Accepted (owner, 2026-11-28)** · applies D-038.
+
+**Decision:** the React port at `/demo` keeps the demo 1:1 except: typed chat questions
+match benefit names on whole words only ("covered" no longer matches "ER"); no "See the
+page" link when no plan has a verified yearly max; on phones every selected plan is
+shown, 2 per screen with a swipe note, under a two-row toolbar (chat as an icon with a
+screen-reader label) and a pinned plan header that follows the swipe; pills use the
+8 px radius (three radii); the Find page keeps typed text when the country changes; the
+app header is hidden on `/demo`, which draws its own with the "Demo data" label; the
+invented demo PDFs are stored as base64 (`web/app/demo/data/demo-pdfs.json`), as in the
+committed demo HTML, because no `.pdf` may be committed outside test fixtures.
+
+# D-041 — GPT-5.5 judges the facts Claude proposed
+
+**Status: Accepted (owner, 2026-11-28)** · implements D-034 key 2 without Nemotron.
+
+**Decision:** in `/v1/extract`, Claude judges the facts the local readers proposed and
+OpenAI GPT-5.5, through KodeKey, judges the facts Claude proposed. A judge never comes
+from the proposer's model family; an unknown family is never judged. Documents users
+upload may go to OpenAI through KodeKey for this; `openai` is added to the retention
+record (`ENGINE_CLOUD_RETENTION_REVIEWED`) and to `ENGINE_CLOUD_PROVIDERS`, and the user's
+consent for the document names both providers.
+**Revisit when:** a direct provider account replaces KodeKey, or Nemotron becomes usable.
+
+# D-042 — Brochure lines: column only when provably single-column
+
+**Status: Accepted (owner, 2026-11-28)** · evidence rule.
+
+**Decision:** a brochure line (label and value on one printed line) is treated as having
+no column - and so may be verified - only when the page is unruled, the label starts the
+line, nothing but the quote follows it, and no network-tier wording (in-network,
+out-of-network, participating, preferred provider, PPO …) is printed anywhere else on the
+page. Otherwise it carries `column_unproven` and stays "couldn't confirm"
+(`engine/app/recovery/labelled.py`, `single_column`).
+
+# D-043 — $1 per-document model cap for testing
+
+**Status: Accepted (owner, 2026-11-28)** · amends D-036 for testing only.
+
+**Decision:** while testing, `/v1/extract` may spend up to $1.00 of model calls per
+document (`ENGINE_DOCUMENT_COST_CAP_USD`, clamped to $1.00; worst case reserved before
+each call). D-036's production per-document cap is decided later.
+**Later (WP12):** a durable path for the cumulative Claude token ledger
+(`ENGINE_CLAUDE_TOKEN_LEDGER`; production state never in `/tmp`), and moving TB-3
+(evidence-core.md §5) fully to the V2 screens, after which the V1 components are deleted.

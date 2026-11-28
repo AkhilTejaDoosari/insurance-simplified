@@ -18,6 +18,16 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-28 (b) — owner decisions recorded, branch pushed
+
+Owner: approved the `/demo` deviations (D-040), GPT-5.5 through KodeKey as the judge of
+Claude's proposals with `openai` in the retention record and `ENGINE_CLOUD_PROVIDERS`
+(D-041), the stricter single-column rule (D-042), and the $1 per-document cap for testing
+only (D-043; D-036's production cap later). Later, WP12: a durable token-ledger path and
+moving TB-3 fully to V2 (then V1 is deleted). Work committed in logical commits and
+pushed to `origin/integration/recovery-r7` (not merged). `engine/.env.example` lists the
+model variables by name.
+
 ## Session 2026-11-28 — key 2 in /v1/extract, match score, plain words, saved results
 
 Owner (2026-11-28): judge = Claude for reader facts and GPT-5.5 through KodeKey for
