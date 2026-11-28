@@ -18,6 +18,28 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-28 (c) — graceful refusals, explicit engine deadline, TB-3 on V2, V1 deleted
+
+Owner: KodeKey budget fixed until its monthly reset — no paid model calls (fakes and saved
+replies only).
+
+**Done:** a provider that refuses (budget/402/422, 429, auth, timeout) never fails a read:
+the engine stops calling it for that document, charges nothing for a request rejected
+before any work, returns the readers' facts (couldn't confirm with their page unless both
+keys passed) and `checks_incomplete` with short reason codes; the V2 screen says "Some
+checks couldn't run right now" (reading and results), never an error page. The web→engine
+call no longer uses fetch (which stops at 300 s): node:http with one deadline = the
+engine's 900 s limit + 60 s, and a plain message when it is hit. TB-3 moved to V2: the
+results screen, its chat and the export read saved V2 results through the read-back gate;
+the test edits the saved value, plain words and printed words, and fails without the gate.
+`evidence-core.md` §5 updated. V1 deleted: `app/components/{ClassicApp, UploadDropzone,
+AdaptiveResults, ResultsV2, PolicyViewControls, ChatPanel, WelcomePage, ContextInputs,
+ChecklistFlow, ComparisonTable, ConditionalValue, VerdictBadge, VerifyContact,
+PersonalizedOverview, InsurerQuestions}.tsx`, the 13 skipped V1 browser specs and their
+fixture, and the 12 unit test files that only rendered those components.
+**Verified here:** engine 272 passed / 1 skipped; web unit 1,416 passed / 22 skipped; e2e
+15 passed (local Supabase), 0 skipped; tsc; build; docker build engine and web.
+
 ## Session 2026-11-28 (b) — owner decisions recorded, branch pushed
 
 Owner: approved the `/demo` deviations (D-040), GPT-5.5 through KodeKey as the judge of
