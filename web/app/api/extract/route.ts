@@ -14,7 +14,7 @@ import {
   registerEvidence,
   updateSessionContext,
 } from "@/app/lib/session";
-import { isEngineConfigured, runEngine, type V2Document } from "@/app/lib/engine/client";
+import { EngineError, ENGINE_LIMIT_S, isEngineConfigured, runEngine, type V2Document } from "@/app/lib/engine/client";
 import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import { loadSession } from "@/app/lib/session-store";
 import { withEvidenceId } from "@/app/lib/evidence-ids";
@@ -226,6 +226,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     logFailure(requestId, "extract", err);
+    if (err instanceof EngineError && err.code === "ENGINE_TIMEOUT") {
+      // the explicit deadline matching the engine's own limit: say so plainly
+      return errorResponse("DEPENDENCY_UNAVAILABLE", 504, {
+        requestId,
+        retryable: true,
+        message: `Reading took longer than ${ENGINE_LIMIT_S / 60} minutes, so it was stopped. Nothing was saved. Please try again, or read fewer or shorter documents at a time.`,
+      });
+    }
     const message = err instanceof Error ? err.message : "Extraction failed";
     const status = message.startsWith("LLM") ? 503 : 500;
     // Contract: fixed public message only — raw provider text stays server-side.

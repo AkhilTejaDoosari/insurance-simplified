@@ -1745,3 +1745,23 @@
   accent-color: var(--cobalt);
   flex: none;
 }
+
+/* Some model checks couldn't run (provider refused, timed out, cap reached) */
+.checksNotice {
+  display: flex;
+  gap: var(--s3);
+  align-items: flex-start;
+  margin: var(--s4) 0;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--amber);
+  border-left-width: 4px;
+  border-radius: var(--r-md);
+  background: var(--amber-soft);
+  color: var(--ink);
+  font-size: 14px;
+}
+.checksNotice > svg {
+  color: var(--amber);
+  margin-top: 2px;
+  flex: none;
+}

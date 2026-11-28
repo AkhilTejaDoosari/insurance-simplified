@@ -1,4 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { postToEngine, type EngineRequest } from "@/app/lib/engine/http";
+
+// the engine is reached through one transport (explicit deadline, not fetch); stub it here
+vi.mock("@/app/lib/engine/http", async (orig) => ({
+  ...(await orig<typeof import("@/app/lib/engine/http")>()),
+  postToEngine: vi.fn(),
+}));
+const reply = (status: number, body: unknown) => ({ status, json: async () => body });
 import {
   EngineError,
   extractViaEngine,
@@ -26,6 +34,7 @@ function fact(id: string, label: string, state: string, page = 2) {
 const doc = { documentId: "doc-1", filename: "plan.pdf", pageCount: 3 } as SessionDocument;
 
 afterEach(() => {
+  vi.mocked(postToEngine).mockReset();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
@@ -49,11 +58,12 @@ describe("engine client", () => {
   it("sends the PDF with the service token and maps printed quotes onto rows", async () => {
     vi.stubEnv("ENGINE_URL", "http://engine:8000/");
     vi.stubEnv("ENGINE_SERVICE_TOKEN", "secret-t");
-    const calls: { url: string; init: RequestInit }[] = [];
-    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    const calls: { url: string; init: EngineRequest }[] = [];
+    vi.mocked(postToEngine).mockImplementation(async (url: string, init: EngineRequest) => {
       calls.push({ url, init });
-      return new Response(
-        JSON.stringify({
+      return reply(
+        200,
+        {
           document_sha256: SHA,
           pages: 3,
           parser: { name: "opendataloader", version: "t" },
@@ -68,8 +78,7 @@ describe("engine client", () => {
           },
           open_items: [],
           model_calls: 0,
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
+        },
       );
     });
     const table = await extractViaEngine([doc], () => new Uint8Array([37, 80, 68, 70]));
@@ -90,10 +99,7 @@ describe("engine client", () => {
   it("reports the engine's error code, never its body", async () => {
     vi.stubEnv("ENGINE_URL", "http://engine:8000");
     vi.stubEnv("ENGINE_SERVICE_TOKEN", "t");
-    vi.stubGlobal(
-      "fetch",
-      async () => new Response(JSON.stringify({ detail: { code: "UNREADABLE_PDF" } }), { status: 422 }),
-    );
+    vi.mocked(postToEngine).mockImplementation(async () => reply(422, { detail: { code: "UNREADABLE_PDF" } }));
     await expect(extractViaEngine([doc], () => new Uint8Array([1]))).rejects.toEqual(
       new EngineError(422, "UNREADABLE_PDF"),
     );

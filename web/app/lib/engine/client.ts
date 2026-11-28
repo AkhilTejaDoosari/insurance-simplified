@@ -8,6 +8,7 @@ import type { SessionDocument } from "@/app/lib/session";
 import type { ComparisonTable, TableRow, CellValue } from "@/app/lib/extraction/types";
 import type { Verdict } from "@/app/lib/verdicts";
 import type { components } from "@/app/lib/engine/contract.gen";
+import { EngineError, ENGINE_READ_TIMEOUT_MS, postToEngine } from "@/app/lib/engine/http";
 
 type Extraction = components["schemas"]["Extraction"];
 type EngineFact = components["schemas"]["Fact"];
@@ -22,16 +23,7 @@ export interface EngineOptions {
   cloudConsent?: boolean;
 }
 
-const TIMEOUT_MS = 180_000;
-/** With consent the engine may call models for up to its own run limit (900 s per
- *  document, engine RunLimits.max_seconds); wait for that rather than abort mid-read. */
-const MODEL_TIMEOUT_MS = 960_000;
-
-export class EngineError extends Error {
-  constructor(public readonly status: number, public readonly code: string) {
-    super(`engine ${status} ${code}`);
-  }
-}
+export { EngineError, ENGINE_LIMIT_S, ENGINE_READ_TIMEOUT_MS } from "@/app/lib/engine/http";
 
 export function isEngineConfigured(): boolean {
   return Boolean(process.env.ENGINE_URL && process.env.ENGINE_SERVICE_TOKEN);
@@ -56,18 +48,19 @@ export async function callEngine(
   options: EngineOptions = {},
 ): Promise<Extraction> {
   const base = (process.env.ENGINE_URL ?? "").replace(/\/+$/, "");
-  const res = await fetch(`${base}/v1/extract?plan_id=${encodeURIComponent(planId)}`, {
-    method: "POST",
+  // explicit deadline matching the engine's own limit (fetch would give up at 300 s)
+  const res = await postToEngine(`${base}/v1/extract?plan_id=${encodeURIComponent(planId)}`, {
     headers: {
       authorization: `Bearer ${process.env.ENGINE_SERVICE_TOKEN ?? ""}`,
       "content-type": "application/pdf",
       // Claude reads and judges; GPT judges only what Claude proposed (D-034 key 2)
       ...(options.cloudConsent ? { "x-engine-cloud-consent": "anthropic, openai" } : {}),
     },
-    body: new Blob([new Uint8Array(pdf)], { type: "application/pdf" }),
-    signal: AbortSignal.timeout(options.cloudConsent ? MODEL_TIMEOUT_MS : TIMEOUT_MS),
+    body: pdf,
+    timeoutMs: ENGINE_READ_TIMEOUT_MS,
   });
-  if (!res.ok) {
+  const ok = res.status >= 200 && res.status < 300;
+  if (!ok) {
     let code = "ENGINE_ERROR";
     try {
       code = ((await res.json()) as { detail?: { code?: string } }).detail?.code ?? code;
@@ -161,6 +154,9 @@ export interface V2Document {
   categories: EngineCategory[];
   /** Categories with no fact here: first page printing their wording, or null. */
   categorySearch: Record<string, number | null>;
+  /** Some checks the user consented to couldn't run (a provider refused, timed out or a
+   *  cap was reached): what wasn't checked shows as "couldn't confirm" with its page. */
+  checksIncomplete: boolean;
 }
 
 export function toV2Documents(
@@ -200,6 +196,7 @@ export function toV2Documents(
         })),
         categories: ex.categories ?? [],
         categorySearch: (ex.category_search ?? {}) as Record<string, number | null>,
+        checksIncomplete: ex.checks_incomplete === true,
       },
     ];
   });

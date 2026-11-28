@@ -17,7 +17,7 @@ const fact = (o: Partial<V2Fact>): V2Fact => ({
   ...o,
 });
 const doc = (facts: V2Fact[]): V2Document => ({
-  documentId: "d1", filename: "a.pdf", pages: 2, facts, openItems: [], categories: [], categorySearch: {},
+  documentId: "d1", filename: "a.pdf", pages: 2, facts, openItems: [], categories: [], categorySearch: {}, checksIncomplete: false,
 });
 const SESSION = [{ documentId: "d1", pages: ["Cover page", "Deductible:  $2,500 per\nPolicy Year. Coinsurance 80%"] }];
 

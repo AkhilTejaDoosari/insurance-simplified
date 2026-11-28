@@ -155,6 +155,23 @@ export function LiveUpload(p: {
   );
 }
 
+/** Shown when some model checks the user consented to couldn't run (a provider refused,
+ *  timed out or a cap was reached). Plain words; never an error page. */
+export function ChecksNotice() {
+  return (
+    <div className={s.checksNotice} role="status">
+      <CircleAlert size={18} aria-hidden className={s.icon} />
+      <div>
+        <b>Some checks couldn&apos;t run right now</b>
+        <div className={s.small}>
+          Anything we couldn&apos;t check is shown as &ldquo;Couldn&apos;t confirm&rdquo; with the page to look at.
+          Nothing is marked verified unless both checks passed. You can try again later.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Step 2: reading (real request) ---------- */
 export type ReadPhase = "uploading" | "reading" | "done" | "error";
 
@@ -163,6 +180,7 @@ export function LiveReading(p: {
   phase: ReadPhase;
   error: string;
   M: DemoModel | null;
+  incomplete?: boolean;
   onResults: () => void;
   onRetry: () => void;
   onStartOver: () => void;
@@ -261,6 +279,7 @@ export function LiveReading(p: {
         <div className={cx(s.muted, s.small)} style={{ marginTop: "var(--s3)" }}>
           Reading takes up to a few minutes per document. Keep this page open.
         </div>
+        {p.phase === "done" && p.incomplete && <ChecksNotice />}
         {p.phase === "done" && (
           <button type="button" className={s.btn} style={{ marginTop: "var(--s4)" }} onClick={p.onResults}>
             See results

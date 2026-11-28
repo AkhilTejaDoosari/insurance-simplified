@@ -28,6 +28,7 @@ const doc = (id: string, facts: V2Fact[], search: Record<string, number | null>)
   openItems: [],
   categories: CATS,
   categorySearch: search,
+  checksIncomplete: false,
 });
 
 const A = doc(

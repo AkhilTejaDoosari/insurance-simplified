@@ -126,6 +126,35 @@ test("a failed read shows a designed error with retry", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
 
+test("when some checks couldn't run, the results say so plainly — never an error page", async ({ page }) => {
+  const docs = DOCS.map((d, i) => ({ ...d, checksIncomplete: i === 0 }));
+  await mock(page, { status: 200, body: { engine: { documents: docs } } });
+  await upload(page, true);
+  await expect(page.getByText("Some checks couldn't run right now")).toBeVisible();
+  await page.getByRole("button", { name: "See results" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Some checks couldn't run right now" })).toBeVisible();
+  await expect(page.getByText("$250 per Policy Year")).toBeVisible(); // what was read is still shown
+  await expect(page.getByRole("heading", { name: "We couldn't read your documents" })).toHaveCount(0);
+});
+
+test("without a refusal there is no notice", async ({ page }) => {
+  await mock(page, { status: 200, body: { engine: { documents: DOCS.map((d) => ({ ...d, checksIncomplete: false })) } } });
+  await upload(page, true);
+  await page.getByRole("button", { name: "See results" }).click();
+  await expect(page.getByText("$250 per Policy Year")).toBeVisible();
+  await expect(page.getByText("Some checks couldn't run right now")).toHaveCount(0);
+});
+
+test("a read that hits the time limit says so clearly", async ({ page }) => {
+  const message =
+    "Reading took longer than 15 minutes, so it was stopped. Nothing was saved. Please try again, or read fewer or shorter documents at a time.";
+  await mock(page, { status: 504, body: { error: { code: "DEPENDENCY_UNAVAILABLE", message, retryable: true } } });
+  await upload(page, true);
+  await expect(page.getByRole("heading", { name: "We couldn't read your documents" })).toBeVisible();
+  await expect(page.getByText(message)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+});
+
 test("/classic is no longer routed", async ({ page }) => {
   const res = await page.goto("/classic");
   expect(res?.status()).toBe(404);

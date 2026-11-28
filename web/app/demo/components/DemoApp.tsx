@@ -13,7 +13,7 @@ import { ChatPanel } from "./ChatPanel";
 import { FindDocuments } from "./FindDocuments";
 import { Landing } from "./Landing";
 import { DEMO_PDF_NOTE, PdfViewer, demoPdfUrl, type ViewerTarget } from "./PdfViewer";
-import { LiveReading, LiveUpload, checkFiles, type ReadPhase, type Rejected } from "./LiveScreens";
+import { ChecksNotice, LiveReading, LiveUpload, checkFiles, type ReadPhase, type Rejected } from "./LiveScreens";
 import { ResultsMain } from "./ResultsMain";
 import { Sidebar } from "./Sidebar";
 import { ReadingScreen, UploadScreen } from "./StepScreens";
@@ -42,6 +42,7 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
   const live = source === "live";
   const demoM = useMemo(() => demoModel(loadDemoBundle()), []);
   const [bundle, setBundle] = useState<DemoBundle | null>(null);
+  const [incomplete, setIncomplete] = useState(false);
   const M = useMemo(() => (live && bundle ? demoModel(bundle) : demoM), [live, bundle, demoM]);
   const chat = useMemo(() => demoChat(M), [M]);
   const M0 = demoM;
@@ -106,6 +107,7 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
 
   /* ---------- live: upload the files, then read them through the engine ---------- */
   const show = useCallback((docs: V2Document[]) => {
+    setIncomplete(docs.some((d) => d.checksIncomplete === true));
     const b = bundleFromEngine(docs);
     setBundle(b);
     setLoaded(b.DOCS.map((d) => d.id));
@@ -423,6 +425,7 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
               phase={phase}
               error={readError}
               M={bundle ? M : null}
+              incomplete={incomplete}
               onResults={() => go("results")}
               onRetry={read}
               onStartOver={() => go("upload")}
@@ -523,6 +526,7 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
                     </span>
                   </div>
                 )}
+                {live && incomplete && <ChecksNotice />}
                 <ResultsMain
                   ids={ids}
                   needs={needs}
