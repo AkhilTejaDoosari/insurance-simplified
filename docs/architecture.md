@@ -110,6 +110,7 @@ identity needed by retained citations.
 | `POST /api/sessions` | Create a session with an anonymous capability |
 | `POST /api/upload` / `DELETE /api/upload` | Validate and store 1–5 PDFs / close and delete the session (vectors, objects, row, result) |
 | `POST /api/extract` | Build and verify the comparison result (deterministic engine, or LLM engine when configured) |
+| `GET /api/results/[sessionId]` | The session's saved V2 engine results for a reload, re-checked by the read-back gate (`lib/engine/read-back.ts`) |
 | `POST /api/chat` | Grounded question answering with citation verification or refusal |
 | `POST /api/export` | PDF report from the stored validated result (never recomputed) |
 | `GET /api/document/[sessionId]/[documentId]/[filename]` | Authorized original-PDF bytes |
@@ -129,11 +130,11 @@ converted into NOT STATED or a refusal.
 
 ```text
 app/
-  page.tsx, layout.tsx, globals.css   Welcome/Intake/Results shell; design tokens
-  components/                         React UI (WelcomePage, UploadDropzone, ContextInputs,
-                                      PersonalizedOverview, ComparisonTable, ConditionalValue,
-                                      PolicyViewControls, VerifyContact, ChatPanel,
-                                      PdfEvidenceViewer, ChecklistFlow, …)
+  page.tsx, layout.tsx, globals.css   "/" = the V2 screens on the session's engine results
+  demo/                               V2 screens (DemoApp, LiveScreens, ResultsMain, …) and
+                                      /demo with the demo's invented data
+  components/                         SiteHeader, HeaderBrandLink, PdfEvidenceViewer
+                                      (the V1 screens were deleted 2026-11-28)
   api/                                Route handlers listed in §4
   view/                               Evidence viewer route
   lib/

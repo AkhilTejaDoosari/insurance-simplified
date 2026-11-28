@@ -1,31 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildRows } from "@/app/components/ResultsV2";
 import { toV2Documents } from "@/app/lib/engine/client";
-import type { V2Document } from "@/app/lib/engine/client";
 import type { SessionDocument } from "@/app/lib/session";
-
-const fact = (label: string, column: string, quote: string, state = "couldnt_confirm") =>
-  ({ label, column, state, quote, page: 1 }) as V2Document["facts"][number];
-
-describe("V2 results rows", () => {
-  it("groups the same printed label and column across documents, keeps columns apart", () => {
-    const docs: V2Document[] = [
-      { documentId: "a", filename: "a.pdf", pages: 1, openItems: [], categories: [], categorySearch: {}, facts: [fact("Specialist visit", "In-Network", "$45"), fact("Specialist visit", "Out-of-Network", "50%")] },
-      { documentId: "b", filename: "b.pdf", pages: 1, openItems: [], categories: [], categorySearch: {}, facts: [fact("specialist  visit", "in-network", "$30")] },
-    ];
-    const rows = buildRows(docs);
-    const inNet = rows.find((r) => r.column === "In-Network")!;
-    expect([...inNet.cells.keys()]).toEqual(["a", "b"]);
-    expect(rows.find((r) => r.column === "Out-of-Network")!.cells.size).toBe(1);
-  });
-
-  it('treats the SBC "Answers" header as no column', () => {
-    const rows = buildRows([
-      { documentId: "a", filename: "a.pdf", pages: 1, openItems: [], categories: [], categorySearch: {}, facts: [fact("Is there a deductible?", "Answers", "$500")] },
-    ]);
-    expect(rows[0].column).toBe("");
-  });
-});
 
 describe("toV2Documents", () => {
   it("keeps only facts with printed words and evidence; never a value", () => {
