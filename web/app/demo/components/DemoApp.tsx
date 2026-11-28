@@ -13,7 +13,7 @@ import { ChatPanel } from "./ChatPanel";
 import { FindDocuments } from "./FindDocuments";
 import { Landing } from "./Landing";
 import { DEMO_PDF_NOTE, PdfViewer, demoPdfUrl, type ViewerTarget } from "./PdfViewer";
-import { ChecksNotice, LiveReading, LiveUpload, checkFiles, type ReadPhase, type Rejected } from "./LiveScreens";
+import { ChecksNotice, LiveReading, LiveUpload, checkFiles, type JobView, type ReadPhase, type Rejected } from "./LiveScreens";
 import { ResultsMain } from "./ResultsMain";
 import { Sidebar } from "./Sidebar";
 import { ReadingScreen, UploadScreen } from "./StepScreens";
@@ -43,6 +43,7 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
   const demoM = useMemo(() => demoModel(loadDemoBundle()), []);
   const [bundle, setBundle] = useState<DemoBundle | null>(null);
   const [incomplete, setIncomplete] = useState(false);
+  const [jobs, setJobs] = useState<JobView[]>([]);
   const M = useMemo(() => (live && bundle ? demoModel(bundle) : demoM), [live, bundle, demoM]);
   const chat = useMemo(() => demoChat(M), [M]);
   const M0 = demoM;
@@ -115,8 +116,49 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
     setOrder(Object.keys(b.PLANS));
     setLog([]);
   }, []);
+  /* ---------- background reads (WP5): follow the session's jobs until they all end ---------- */
+  const follow = useCallback(
+    async (sid: string, seq: number) => {
+      remember(sid); // a reload mid-read picks the reading up again
+      for (;;) {
+        const r = await fetch(`/api/jobs/${encodeURIComponent(sid)}`, { credentials: "include", cache: "no-store" });
+        const d = (await r.json().catch(() => null)) as {
+          done?: boolean;
+          jobs?: JobView[];
+          engine?: { documents?: V2Document[] };
+          error?: { message?: string };
+        } | null;
+        if (seq !== readSeq.current) return;
+        if (!r.ok) throw new Error(d?.error?.message ?? "Reading failed. Please try again.");
+        setJobs(d?.jobs ?? []);
+        if (d?.done) {
+          const docs = d.engine?.documents ?? [];
+          if (!docs.length)
+            throw new Error(
+              (d.jobs ?? []).every((j) => j.status === "cancelled")
+                ? "Reading was cancelled. Choose files to start again."
+                : "None of your documents could be read. Please try again.",
+            );
+          show(docs);
+          setPhase("done");
+          return;
+        }
+        await new Promise((res) => setTimeout(res, 2000));
+        if (seq !== readSeq.current) return;
+      }
+    },
+    [show],
+  );
+  const cancelRead = useCallback(async () => {
+    if (!sessionId) return;
+    const r = await fetch(`/api/jobs/${encodeURIComponent(sessionId)}/cancel`, { method: "POST", credentials: "include" });
+    const d = (await r.json().catch(() => null)) as { jobs?: JobView[] } | null;
+    if (d?.jobs) setJobs(d.jobs);
+  }, [sessionId]);
+
   const read = useCallback(async () => {
     const seq = ++readSeq.current;
+    setJobs([]);
     setBundle(null);
     setReadError("");
     setPhase("uploading");
@@ -142,6 +184,11 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
       } | null;
       if (seq !== readSeq.current) return;
       if (!ex.ok) throw new Error(ed?.error?.message ?? "Reading failed. Please try again.");
+      if (ex.status === 202) {
+        // read in the background: one job per document
+        await follow(ud.sessionId, seq);
+        return;
+      }
       const docs = ed?.engine?.documents;
       if (!docs?.length)
         throw new Error("The document reader isn't connected right now, so nothing could be read. Please try again later.");
@@ -153,7 +200,7 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
       setReadError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
       setPhase("error");
     }
-  }, [files, consent, go, show]);
+  }, [files, consent, go, show, follow]);
 
   // A reload shows the saved results again: the session id is kept in this tab only
   // (sessionStorage; it is not authorization - the HttpOnly capability cookie is), and the
@@ -169,6 +216,23 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
         if (gone) return;
         const docs = r.ok ? d?.engine?.documents : undefined;
         if (!docs?.length) {
+          // maybe still being read in the background: pick the reading up again
+          const j = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { credentials: "include", cache: "no-store" });
+          const jd = (await j.json().catch(() => null)) as { jobs?: JobView[] } | null;
+          if (gone) return;
+          if (j.ok && jd?.jobs?.length) {
+            const seq = ++readSeq.current;
+            setSessionId(id);
+            setJobs(jd.jobs);
+            setPhase("reading");
+            setScreen("reading");
+            follow(id, seq).catch((e) => {
+              if (seq !== readSeq.current) return;
+              setReadError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
+              setPhase("error");
+            });
+            return;
+          }
           forget();
           return;
         }
@@ -181,7 +245,7 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
     return () => {
       gone = true;
     };
-  }, [live, show]);
+  }, [live, show, follow]);
 
   /* ---------- viewer ---------- */
   const viewerActions = useCallback(
@@ -421,7 +485,9 @@ export default function DemoApp({ source = "demo" }: { source?: "demo" | "live" 
         {screen == "reading" &&
           (live ? (
             <LiveReading
-              names={files.map((f) => f.name)}
+              names={jobs.length ? jobs.map((j) => j.filename) : files.map((f) => f.name)}
+              jobs={jobs}
+              onCancel={cancelRead}
               phase={phase}
               error={readError}
               M={bundle ? M : null}

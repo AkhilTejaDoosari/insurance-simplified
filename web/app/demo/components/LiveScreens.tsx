@@ -175,12 +175,34 @@ export function ChecksNotice() {
 /* ---------- Step 2: reading (real request) ---------- */
 export type ReadPhase = "uploading" | "reading" | "done" | "error";
 
+/** One background read (WP5) as the server reports it. */
+export interface JobView {
+  documentId: string;
+  filename: string;
+  status: "uploaded" | "parsing" | "extracting" | "verifying" | "completed" | "failed" | "cancelled";
+  attempts: number;
+  cancelRequested: boolean;
+  errorCode: string | null;
+}
+const JOB_STAGE: Record<JobView["status"], number> = {
+  uploaded: 0,
+  parsing: 1,
+  extracting: 2,
+  verifying: 3,
+  completed: 4,
+  failed: 4,
+  cancelled: 4,
+};
+
 export function LiveReading(p: {
   names: string[];
   phase: ReadPhase;
   error: string;
   M: DemoModel | null;
   incomplete?: boolean;
+  /** Background reads: each document's real stage (else the stages advance on a timer). */
+  jobs?: JobView[];
+  onCancel?: () => void;
   onResults: () => void;
   onRetry: () => void;
   onStartOver: () => void;
@@ -193,7 +215,10 @@ export function LiveReading(p: {
     const t = setInterval(() => setTick((x) => x + 1), 2500);
     return () => clearInterval(t);
   }, [p.phase]);
-  const stage = p.phase === "uploading" ? 0 : p.phase === "done" ? 4 : Math.min(3, 1 + tick);
+  const timed = p.phase === "uploading" ? 0 : p.phase === "done" ? 4 : Math.min(3, 1 + tick);
+  const jobs = p.jobs ?? [];
+  const running = jobs.some((j) => JOB_STAGE[j.status] < 4);
+  const cancelling = jobs.some((j) => j.cancelRequested && JOB_STAGE[j.status] < 4);
 
   if (p.phase === "error")
     return (
@@ -226,7 +251,9 @@ export function LiveReading(p: {
       <h1>Reading your documents</h1>
       <div className={s.card}>
         {p.names.map((name, i) => {
-          const d = docs[i];
+          const job = jobs[i];
+          const stage = job ? JOB_STAGE[job.status] : timed;
+          const d = docs.find((x) => x.file === name) ?? (job ? undefined : docs[i]);
           const plan = d?.plans[0];
           const keys = plan && p.M ? p.M.KEYS.filter((k) => p.M!.F(plan, k)) : [];
           const u = keys.filter((k) => p.M!.F(plan!, k)?.s === "u").length;
@@ -260,7 +287,13 @@ export function LiveReading(p: {
                 </div>
               )}
               <div className={cx(s.small, s.num)} aria-live="polite">
-                {stage >= 4 ? (
+                {job?.status === "failed" ? (
+                  <span style={{ color: "var(--amber)" }}>This document couldn&apos;t be read.</span>
+                ) : job?.status === "cancelled" ? (
+                  <span className={s.muted}>Cancelled</span>
+                ) : stage >= 4 && !d ? (
+                  "Done"
+                ) : stage >= 4 ? (
                   <span>
                     <span className={s.ok}>
                       <Check size={16} strokeWidth={3} aria-hidden />
@@ -279,6 +312,17 @@ export function LiveReading(p: {
         <div className={cx(s.muted, s.small)} style={{ marginTop: "var(--s3)" }}>
           Reading takes up to a few minutes per document. Keep this page open.
         </div>
+        {p.phase === "reading" && running && p.onCancel && (
+          <button
+            type="button"
+            className={cx(s.btn, s.sec)}
+            style={{ marginTop: "var(--s4)" }}
+            onClick={p.onCancel}
+            disabled={cancelling}
+          >
+            {cancelling ? "Cancelling…" : "Cancel reading"}
+          </button>
+        )}
         {p.phase === "done" && p.incomplete && <ChecksNotice />}
         {p.phase === "done" && (
           <button type="button" className={s.btn} style={{ marginTop: "var(--s4)" }} onClick={p.onResults}>

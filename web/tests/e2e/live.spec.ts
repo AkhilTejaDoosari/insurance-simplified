@@ -155,6 +155,76 @@ test("a read that hits the time limit says so clearly", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
 
+const job = (documentId: string, filename: string, status: string, cancelRequested = false) => ({
+  documentId,
+  filename,
+  status,
+  attempts: 1,
+  cancelRequested,
+  errorCode: null,
+});
+
+test("background reads: each document's stage, then the results; a reload mid-read picks it up", async ({ page }) => {
+  await mock(page, {
+    status: 202,
+    body: { sessionId: "s1", jobs: DOCS.map((d) => job(d.documentId, d.filename, "uploaded")) },
+  });
+  let polls = 0;
+  await page.route("**/api/jobs/s1", (r) => {
+    polls++;
+    if (polls < 3)
+      return r.fulfill({
+        json: {
+          sessionId: "s1",
+          done: false,
+          jobs: [job("d1", DOCS[0].filename, "extracting"), job("d2", DOCS[1].filename, "parsing")],
+        },
+      });
+    return r.fulfill({
+      json: {
+        sessionId: "s1",
+        done: true,
+        jobs: DOCS.map((d) => job(d.documentId, d.filename, "completed")),
+        engine: { documents: DOCS },
+      },
+    });
+  });
+  await page.route("**/api/results/s1", (r) => r.fulfill({ status: 404, json: { error: { message: "No saved results" } } }));
+  await upload(page, true);
+  await expect(page.getByRole("progressbar", { name: /alpha-student-plan\.pdf progress/ })).toHaveAttribute(
+    "aria-valuetext",
+    "Finding values",
+  );
+  await expect(page.getByRole("button", { name: "Cancel reading" })).toBeVisible();
+  await page.reload(); // mid-read: the reading screen comes back from the jobs
+  await expect(page.getByRole("button", { name: "See results" })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "See results" }).click();
+  await expect(page.getByText("$250 per Policy Year")).toBeVisible();
+});
+
+test("background reads can be cancelled", async ({ page }) => {
+  await mock(page, {
+    status: 202,
+    body: { sessionId: "s1", jobs: DOCS.map((d) => job(d.documentId, d.filename, "uploaded")) },
+  });
+  let cancelled = false;
+  await page.route("**/api/jobs/s1/cancel", (r) => {
+    cancelled = true;
+    return r.fulfill({ json: { sessionId: "s1", jobs: DOCS.map((d) => job(d.documentId, d.filename, "parsing", true)) } });
+  });
+  await page.route("**/api/jobs/s1", (r) =>
+    r.fulfill({
+      json: cancelled
+        ? { sessionId: "s1", done: true, jobs: DOCS.map((d) => job(d.documentId, d.filename, "cancelled")), engine: { documents: [] } }
+        : { sessionId: "s1", done: false, jobs: DOCS.map((d) => job(d.documentId, d.filename, "parsing")) },
+    }),
+  );
+  await upload(page, false);
+  await page.getByRole("button", { name: "Cancel reading" }).click();
+  await expect(page.getByText("Reading was cancelled. Choose files to start again.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Choose other files" })).toBeVisible();
+});
+
 test("/classic is no longer routed", async ({ page }) => {
   const res = await page.goto("/classic");
   expect(res?.status()).toBe(404);

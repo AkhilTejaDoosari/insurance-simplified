@@ -14,6 +14,7 @@ import {
   registerEvidence,
   updateSessionContext,
 } from "@/app/lib/session";
+import { jobStore, jobView, jobsEnabled } from "@/app/lib/jobs/store";
 import { EngineError, ENGINE_LIMIT_S, isEngineConfigured, runEngine, type V2Document } from "@/app/lib/engine/client";
 import { evidenceIdFor } from "@/app/lib/evidence-ids";
 import { loadSession } from "@/app/lib/session-store";
@@ -103,6 +104,27 @@ export async function POST(request: NextRequest) {
     body.engine !== "llm" && body.engine !== "fallback" && isEngineConfigured();
   const useLlm =
     body.engine === "llm" || (body.engine !== "fallback" && isLlmConfigured());
+
+  // WP5: with ENGINE_JOBS=1 the engine reads in the background - one durable job per
+  // document; the client follows GET /api/jobs/[sessionId]. Flag off: the synchronous
+  // read below (the rollback path).
+  if (useEngine && jobsEnabled()) {
+    try {
+      const jobs = await jobStore().enqueue(
+        session.sessionId,
+        session.documents.map((d) => d.documentId),
+        body.cloudConsent === true,
+      );
+      const names = new Map(session.documents.map((d) => [d.documentId, d.filename] as const));
+      return NextResponse.json(
+        { sessionId: session.sessionId, jobs: jobs.map((j) => jobView(j, names.get(j.documentId) ?? j.documentId)) },
+        { status: 202 },
+      );
+    } catch (err) {
+      logFailure(requestId, "extract.enqueue", err);
+      return errorResponse("DEPENDENCY_UNAVAILABLE", 503, { requestId, retryable: true });
+    }
+  }
 
   let engineDocuments: V2Document[] | null = null;
   try {

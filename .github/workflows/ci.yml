@@ -109,8 +109,8 @@ jobs:
         run: bash scripts/e2e-local-supabase.sh
       # DB-backed suites that skip in the web job (no database there):
       # FILT-1 (M5) and the pgvector round-trip against the local stack.
-      - name: Database integration tests (FILT-1, pgvector)
-        run: npx vitest run tests/integration/m5-filt1.test.ts tests/integration/postgres-vector.test.ts
+      - name: Database integration tests (FILT-1, pgvector, WP5 jobs)
+        run: npx vitest run tests/integration/m5-filt1.test.ts tests/integration/postgres-vector.test.ts tests/integration/extraction-jobs.test.ts
         working-directory: web
       - run: npm run test:e2e
         working-directory: web
