@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 test("M2: verified plans remain separate and same-plan contradictions show both sources", async ({
   page,
 }) => {
@@ -51,7 +55,7 @@ test("M2: verified plans remain separate and same-plan contradictions show both 
       },
     }),
   );
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();
@@ -127,7 +131,7 @@ test("M2: ambiguous figures and unsupported qualifiers remain visibly unresolved
       },
     }),
   );
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();

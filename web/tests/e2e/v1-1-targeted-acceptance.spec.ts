@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { registered } from "./registered-fixture";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 const PDF_A = "tests/fixtures/plan-a.pdf";
 const DEDUCTIBLE_QUOTE =
   "Annual deductible: $250 in-network / $500 out-of-network.";
@@ -92,7 +96,7 @@ async function beginUpload(
   page: import("@playwright/test").Page,
   age?: string,
 ) {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   if (age) await page.getByLabel("Age", { exact: true }).fill(age);
   await page.setInputFiles('input[type="file"]', PDF_A);
@@ -131,7 +135,7 @@ test("UX-24 keyboard-only journey reaches tier, details, and original PDF eviden
 }) => {
   mockExtractForUploadedDocument(page, true);
 
-  await page.goto("/");
+  await page.goto("/classic");
   await page.keyboard.press("Tab");
   await expect(
     page.getByRole("link", { name: "Insurance Simplified home" }),

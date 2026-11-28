@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 const FIXTURE = "tests/fixtures/plan-a.pdf";
 
 function mockExtractResponse(
@@ -25,7 +29,7 @@ async function uploadAndExtract(
   city = "Cleveland",
   zip = "44118",
 ) {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await fillContext(page, city, zip);
   await page.setInputFiles('input[type="file"]', FIXTURE);
@@ -313,7 +317,7 @@ test("selection and context: overview costs change with A tier while B unchanged
       },
     ],
   });
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await fillContext(page, "Cleveland", "44118");
   await page.setInputFiles('input[type="file"]', [FIXTURE, FIXTURE]);

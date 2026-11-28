@@ -1,0 +1,875 @@
+{
+ "CAT": {
+  "ded": [
+   1,
+   "Deductible",
+   "The amount you pay yourself before the plan starts paying its share."
+  ],
+  "oop": [
+   1,
+   "Most you pay in a year",
+   "The \"out-of-pocket maximum\". Once you have paid this much in a year, the plan pays 100% of covered care."
+  ],
+  "er": [
+   1,
+   "ER visit",
+   "Emergency room care."
+  ],
+  "coins": [
+   1,
+   "Coinsurance",
+   "After the deductible, you and the plan split each bill by percentage. \"You pay 20%\" means on a $1,000 bill you pay $200."
+  ],
+  "pre": [
+   1,
+   "Condition you had before",
+   "A \"pre-existing condition\" is a health problem you had before the plan started."
+  ],
+  "max": [
+   1,
+   "Overall plan maximum",
+   "The most the plan will pay in total, for the period shown."
+  ],
+  "doc": [
+   2,
+   "Doctor visit",
+   "A regular visit to a primary care doctor. A \"copay\" is a fixed amount you pay at each visit."
+  ],
+  "rx": [
+   2,
+   "Generic prescriptions",
+   "Lower-cost versions of brand-name medicines."
+  ],
+  "evac": [
+   2,
+   "Medical evacuation",
+   "Transport to a hospital that can treat you when local care isn't enough."
+  ],
+  "mh": [
+   2,
+   "Mental health",
+   "Therapy or counseling visits."
+  ],
+  "repat": [
+   2,
+   "Repatriation",
+   "Transport back to your home country after a serious illness."
+  ],
+  "dent": [
+   3,
+   "Dental",
+   "Care for teeth."
+  ],
+  "chiro": [
+   3,
+   "Chiropractic",
+   "Treatment of joints and spine by a chiropractor."
+  ],
+  "bedside": [
+   3,
+   "Bedside visit",
+   "Travel costs for a family member to come to you if you're in hospital."
+  ],
+  "sports": [
+   3,
+   "Sports injury rider",
+   "Extra cover for injuries from school sports."
+  ]
+ },
+ "DOCS": [
+  {
+   "id": "globe",
+   "file": "globe-student-care-2026.pdf",
+   "family": "Globe Student Care",
+   "type": "International student plan",
+   "pages": 12,
+   "offset": 2,
+   "levels": [
+    "Basic",
+    "Gold",
+    "Platinum"
+   ],
+   "plans": [
+    "g1",
+    "g2",
+    "g3"
+   ],
+   "initial": true,
+   "contacts": [
+    [
+     "Phone",
+     "+1-800-555-0142",
+     "Customer service",
+     12
+    ],
+    [
+     "Email",
+     "claims@globe.example",
+     "Claims",
+     12
+    ]
+   ]
+  },
+  {
+   "id": "campus",
+   "file": "campus-care-2026.pdf",
+   "family": "Campus Care",
+   "type": "Student health plan",
+   "pages": 12,
+   "offset": 0,
+   "levels": [
+    "Standard"
+   ],
+   "plans": [
+    "c1"
+   ],
+   "initial": true,
+   "contacts": [
+    [
+     "Phone",
+     "+1-888-555-0199",
+     "Member services",
+     12
+    ]
+   ]
+  },
+  {
+   "id": "scholar",
+   "file": "scholar-shield-sbc-2026.pdf",
+   "family": "Scholar Shield",
+   "type": "Benefits summary (SBC)",
+   "pages": 4,
+   "offset": 0,
+   "levels": [
+    "Gold"
+   ],
+   "plans": [
+    "s1"
+   ],
+   "initial": true,
+   "contacts": [
+    [
+     "Phone",
+     "+1-877-555-0110",
+     "Customer service",
+     1
+    ],
+    [
+     "Email",
+     "help@scholarshield.example",
+     "Coverage questions",
+     1
+    ]
+   ]
+  },
+  {
+   "id": "travel",
+   "file": "travel-guard-2026.pdf",
+   "family": "Travel Guard",
+   "type": "Travel medical plan",
+   "pages": 5,
+   "offset": 0,
+   "levels": [
+    "Standard"
+   ],
+   "plans": [
+    "t1"
+   ],
+   "initial": false,
+   "contacts": [
+    [
+     "Phone",
+     "+1-855-555-0123",
+     "24/7 emergency help",
+     3
+    ],
+    [
+     "Email",
+     "service@travelguard.example",
+     "Customer service",
+     3
+    ]
+   ]
+  }
+ ],
+ "FACTS": {
+  "g1": {
+   "ded": {
+    "s": "v",
+    "d": "$500 per year",
+    "n": 500,
+    "b": "year",
+    "w": "Deductible: $500 per Policy Year",
+    "p": 3,
+    "pl": "You pay the first $500 of covered care each year, across all visits. Then the plan starts paying.",
+    "look": "Row “Deductible” · Column “Basic”"
+   },
+   "oop": {
+    "s": "v",
+    "d": "$7,500 per year",
+    "n": 7500,
+    "b": "year",
+    "w": "Out-of-Pocket Maximum: $7,500 per Policy Year",
+    "p": 3,
+    "pl": "In a bad year, the most you pay for covered care is $7,500.",
+    "look": "Row “Out-of-Pocket Maximum” · Column “Basic”"
+   },
+   "coins": {
+    "s": "v",
+    "d": "You pay 20%",
+    "n": 20,
+    "b": "",
+    "w": "Coinsurance: Plan pays 80%",
+    "p": 3,
+    "pl": "After your deductible, the plan pays 80% of each bill and you pay 20%.",
+    "look": "Row “Coinsurance” · Column “Basic”"
+   },
+   "max": {
+    "s": "v",
+    "d": "$100,000 per year",
+    "n": 100000,
+    "b": "year",
+    "w": "Overall Maximum: $100,000 per Policy Year",
+    "p": 3,
+    "pl": "The plan pays up to $100,000 in total each policy year.",
+    "look": "Row “Overall Maximum” · Column “Basic”"
+   },
+   "er": {
+    "s": "v",
+    "d": "$250 per visit, then 100%",
+    "n": 1,
+    "b": "visit",
+    "w": "Emergency Room – Illness or Injury: $250 copay per visit, then 100%",
+    "p": 4,
+    "pl": "You pay $250 at each ER visit. The plan pays the rest.",
+    "look": "Row “Emergency Room – Illness or Injury” · Column “Basic”"
+   },
+   "doc": {
+    "s": "v",
+    "d": "$30 per visit",
+    "n": 30,
+    "b": "visit",
+    "w": "Physician Office Visit: $30 copay per visit",
+    "p": 4,
+    "pl": "You pay $30 at each doctor visit.",
+    "look": "Row “Physician Office Visit” · Column “Basic”"
+   },
+   "mh": {
+    "s": "x",
+    "d": "Not covered",
+    "n": 0,
+    "b": "",
+    "w": "Outpatient Mental Health: Not covered",
+    "p": 4,
+    "pl": "Not covered on this level.",
+    "look": "Row “Outpatient Mental Health” · Column “Basic”"
+   },
+   "pre": {
+    "s": "x",
+    "d": "Excluded for first 12 months",
+    "n": 0,
+    "b": "",
+    "w": "Pre-existing Conditions: Excluded for the first 12 months",
+    "p": 7,
+    "pl": "Not covered during your first 12 months on the plan.",
+    "look": "Row “Pre-existing Conditions” · Column “Basic”"
+   },
+   "rx": {
+    "s": "v",
+    "d": "$15 per prescription",
+    "n": 15,
+    "b": "",
+    "w": "Generic Drugs: $15 copay per prescription",
+    "p": 5,
+    "pl": "You pay $15 for each generic prescription.",
+    "look": "Line “Generic Drugs” (all levels)"
+   },
+   "evac": {
+    "s": "v",
+    "d": "Up to $500,000",
+    "n": 500000,
+    "b": "",
+    "w": "Emergency Medical Evacuation: up to $500,000",
+    "p": 8,
+    "pl": "The plan pays up to $500,000 to move you to proper care.",
+    "look": "Line “Emergency Medical Evacuation” (all levels)"
+   },
+   "dent": {
+    "s": "v",
+    "d": "Accident only, up to $500 per year",
+    "n": 500,
+    "b": "year",
+    "w": "Dental – Accidental Injury: up to $500 per Policy Year",
+    "p": 9,
+    "pl": "Only dental care after an accident, up to $500 a year.",
+    "look": "Line “Dental – Accidental Injury” (all levels)"
+   },
+   "bedside": {
+    "s": "v",
+    "d": "Up to $1,500",
+    "n": 1500,
+    "b": "",
+    "w": "Bedside Visit: up to $1,500",
+    "p": 10,
+    "pl": "Up to $1,500 for a family member to travel to you.",
+    "look": "Line “Bedside Visit” (all levels)"
+   }
+  },
+  "g2": {
+   "ded": {
+    "s": "v",
+    "d": "$250 per year",
+    "n": 250,
+    "b": "year",
+    "w": "Deductible: $250 per Policy Year",
+    "p": 3,
+    "pl": "You pay the first $250 of covered care each year, across all visits. Then the plan starts paying.",
+    "look": "Row “Deductible” · Column “Gold”"
+   },
+   "oop": {
+    "s": "v",
+    "d": "$5,000 per year",
+    "n": 5000,
+    "b": "year",
+    "w": "Out-of-Pocket Maximum: $5,000 per Policy Year",
+    "p": 3,
+    "pl": "In a bad year, the most you pay for covered care is $5,000.",
+    "look": "Row “Out-of-Pocket Maximum” · Column “Gold”"
+   },
+   "coins": {
+    "s": "v",
+    "d": "You pay 10%",
+    "n": 10,
+    "b": "",
+    "w": "Coinsurance: Plan pays 90%",
+    "p": 3,
+    "pl": "After your deductible, the plan pays 90% of each bill and you pay 10%.",
+    "look": "Row “Coinsurance” · Column “Gold”"
+   },
+   "max": {
+    "s": "v",
+    "d": "$250,000 per year",
+    "n": 250000,
+    "b": "year",
+    "w": "Overall Maximum: $250,000 per Policy Year",
+    "p": 3,
+    "pl": "The plan pays up to $250,000 in total each policy year.",
+    "look": "Row “Overall Maximum” · Column “Gold”"
+   },
+   "er": {
+    "s": "v",
+    "d": "$250 per visit, then 100%",
+    "n": 1,
+    "b": "visit",
+    "w": "Emergency Room – Illness or Injury: $250 copay per visit, then 100%",
+    "p": 4,
+    "pl": "You pay $250 at each ER visit. The plan pays the rest.",
+    "look": "Row “Emergency Room – Illness or Injury” · Column “Gold”"
+   },
+   "doc": {
+    "s": "v",
+    "d": "$30 per visit",
+    "n": 30,
+    "b": "visit",
+    "w": "Physician Office Visit: $30 copay per visit",
+    "p": 4,
+    "pl": "You pay $30 at each doctor visit.",
+    "look": "Row “Physician Office Visit” · Column “Gold”"
+   },
+   "mh": {
+    "s": "v",
+    "d": "$30 per visit",
+    "n": 30,
+    "b": "visit",
+    "w": "Outpatient Mental Health: $30 copay per visit",
+    "p": 4,
+    "pl": "You pay $30 per visit, like a doctor visit.",
+    "look": "Row “Outpatient Mental Health” · Column “Gold”"
+   },
+   "pre": {
+    "s": "v",
+    "d": "Covered",
+    "n": 1,
+    "b": "",
+    "w": "Pre-existing Conditions: Covered",
+    "p": 7,
+    "pl": "Covered from day one, like any other condition.",
+    "look": "Row “Pre-existing Conditions” · Column “Gold”"
+   },
+   "rx": {
+    "s": "v",
+    "d": "$15 per prescription",
+    "n": 15,
+    "b": "",
+    "w": "Generic Drugs: $15 copay per prescription",
+    "p": 5,
+    "pl": "You pay $15 for each generic prescription.",
+    "look": "Line “Generic Drugs” (all levels)"
+   },
+   "evac": {
+    "s": "v",
+    "d": "Up to $500,000",
+    "n": 500000,
+    "b": "",
+    "w": "Emergency Medical Evacuation: up to $500,000",
+    "p": 8,
+    "pl": "The plan pays up to $500,000 to move you to proper care.",
+    "look": "Line “Emergency Medical Evacuation” (all levels)"
+   },
+   "dent": {
+    "s": "v",
+    "d": "Accident only, up to $500 per year",
+    "n": 500,
+    "b": "year",
+    "w": "Dental – Accidental Injury: up to $500 per Policy Year",
+    "p": 9,
+    "pl": "Only dental care after an accident, up to $500 a year.",
+    "look": "Line “Dental – Accidental Injury” (all levels)"
+   },
+   "bedside": {
+    "s": "v",
+    "d": "Up to $1,500",
+    "n": 1500,
+    "b": "",
+    "w": "Bedside Visit: up to $1,500",
+    "p": 10,
+    "pl": "Up to $1,500 for a family member to travel to you.",
+    "look": "Line “Bedside Visit” (all levels)"
+   }
+  },
+  "g3": {
+   "ded": {
+    "s": "v",
+    "d": "$0",
+    "n": 0,
+    "b": "year",
+    "w": "Deductible: $0 per Policy Year",
+    "p": 3,
+    "pl": "No deductible: the plan pays from your first visit.",
+    "look": "Row “Deductible” · Column “Platinum”"
+   },
+   "oop": {
+    "s": "v",
+    "d": "$3,000 per year",
+    "n": 3000,
+    "b": "year",
+    "w": "Out-of-Pocket Maximum: $3,000 per Policy Year",
+    "p": 3,
+    "pl": "In a bad year, the most you pay for covered care is $3,000.",
+    "look": "Row “Out-of-Pocket Maximum” · Column “Platinum”"
+   },
+   "coins": {
+    "s": "v",
+    "d": "You pay 0%",
+    "n": 0,
+    "b": "",
+    "w": "Coinsurance: Plan pays 100%",
+    "p": 3,
+    "pl": "The plan pays 100% of covered bills.",
+    "look": "Row “Coinsurance” · Column “Platinum”"
+   },
+   "max": {
+    "s": "v",
+    "d": "$500,000 per year",
+    "n": 500000,
+    "b": "year",
+    "w": "Overall Maximum: $500,000 per Policy Year",
+    "p": 3,
+    "pl": "The plan pays up to $500,000 in total each policy year.",
+    "look": "Row “Overall Maximum” · Column “Platinum”"
+   },
+   "er": {
+    "s": "v",
+    "d": "$250 per visit, then 100%",
+    "n": 1,
+    "b": "visit",
+    "w": "Emergency Room – Illness or Injury: $250 copay per visit, then 100%",
+    "p": 4,
+    "pl": "You pay $250 at each ER visit. The plan pays the rest.",
+    "look": "Row “Emergency Room – Illness or Injury” · Column “Platinum”"
+   },
+   "doc": {
+    "s": "v",
+    "d": "$30 per visit",
+    "n": 30,
+    "b": "visit",
+    "w": "Physician Office Visit: $30 copay per visit",
+    "p": 4,
+    "pl": "You pay $30 at each doctor visit.",
+    "look": "Row “Physician Office Visit” · Column “Platinum”"
+   },
+   "mh": {
+    "s": "v",
+    "d": "$30 per visit",
+    "n": 30,
+    "b": "visit",
+    "w": "Outpatient Mental Health: $30 copay per visit",
+    "p": 4,
+    "pl": "You pay $30 per visit, like a doctor visit.",
+    "look": "Row “Outpatient Mental Health” · Column “Platinum”"
+   },
+   "pre": {
+    "s": "v",
+    "d": "Covered",
+    "n": 1,
+    "b": "",
+    "w": "Pre-existing Conditions: Covered",
+    "p": 7,
+    "pl": "Covered from day one, like any other condition.",
+    "look": "Row “Pre-existing Conditions” · Column “Platinum”"
+   },
+   "rx": {
+    "s": "v",
+    "d": "$15 per prescription",
+    "n": 15,
+    "b": "",
+    "w": "Generic Drugs: $15 copay per prescription",
+    "p": 5,
+    "pl": "You pay $15 for each generic prescription.",
+    "look": "Line “Generic Drugs” (all levels)"
+   },
+   "evac": {
+    "s": "v",
+    "d": "Up to $500,000",
+    "n": 500000,
+    "b": "",
+    "w": "Emergency Medical Evacuation: up to $500,000",
+    "p": 8,
+    "pl": "The plan pays up to $500,000 to move you to proper care.",
+    "look": "Line “Emergency Medical Evacuation” (all levels)"
+   },
+   "dent": {
+    "s": "v",
+    "d": "Accident only, up to $500 per year",
+    "n": 500,
+    "b": "year",
+    "w": "Dental – Accidental Injury: up to $500 per Policy Year",
+    "p": 9,
+    "pl": "Only dental care after an accident, up to $500 a year.",
+    "look": "Line “Dental – Accidental Injury” (all levels)"
+   },
+   "bedside": {
+    "s": "v",
+    "d": "Up to $1,500",
+    "n": 1500,
+    "b": "",
+    "w": "Bedside Visit: up to $1,500",
+    "p": 10,
+    "pl": "Up to $1,500 for a family member to travel to you.",
+    "look": "Line “Bedside Visit” (all levels)"
+   }
+  },
+  "c1": {
+   "ded": {
+    "s": "v",
+    "d": "$250 per illness or injury",
+    "n": 250,
+    "b": "incident",
+    "w": "Deductible: $250 per Injury or Sickness",
+    "p": 2,
+    "pl": "You pay $250 for each new illness or injury. A second, separate illness means another $250.",
+    "look": ""
+   },
+   "coins": {
+    "s": "v",
+    "d": "You pay 20%",
+    "n": 20,
+    "b": "",
+    "w": "Coinsurance: 80% after Deductible",
+    "p": 3,
+    "pl": "After your deductible, the plan pays 80% and you pay 20%.",
+    "look": ""
+   },
+   "oop": {
+    "s": "v",
+    "d": "$6,350 per year",
+    "n": 6350,
+    "b": "year",
+    "w": "Out of Pocket Maximum (PPO): $6,350 per Policy Year",
+    "p": 4,
+    "pl": "In a bad year, the most you pay for covered care in-network is $6,350.",
+    "look": ""
+   },
+   "doc": {
+    "s": "v",
+    "d": "$40 per visit",
+    "n": 40,
+    "b": "visit",
+    "w": "Office Visit – PCP: $40 copay",
+    "p": 5,
+    "pl": "You pay $40 at each doctor visit.",
+    "look": ""
+   },
+   "mh": {
+    "s": "v",
+    "d": "$40 per visit",
+    "n": 40,
+    "b": "visit",
+    "w": "Behavioral Health – Office: $40 copay",
+    "p": 5,
+    "pl": "You pay $40 per visit.",
+    "look": ""
+   },
+   "er": {
+    "s": "v",
+    "d": "Plan pays up to $500 per visit",
+    "n": 0,
+    "b": "visit",
+    "w": "Emergency Room: Covered up to $500 per visit",
+    "p": 6,
+    "pl": "The plan pays at most $500 each ER visit. Anything above that is yours to pay.",
+    "look": ""
+   },
+   "rx": {
+    "s": "u",
+    "d": "Check page 7",
+    "n": 0,
+    "b": "",
+    "w": "Rx Tier 1 … $15 | $40 (columns not labelled)",
+    "p": 7,
+    "pl": "We found an amount on page 7 but could not tell which column it belongs to.",
+    "look": "Line “Rx Tier 1” — two amounts, no column headers"
+   },
+   "pre": {
+    "s": "x",
+    "d": "Excluded for first 12 months",
+    "n": 0,
+    "b": "",
+    "w": "Pre-existing conditions are excluded for the first 12 months of coverage.",
+    "p": 9,
+    "pl": "Not covered during your first 12 months on the plan.",
+    "look": ""
+   },
+   "sports": {
+    "s": "v",
+    "d": "Up to $5,000",
+    "n": 5000,
+    "b": "",
+    "w": "Intercollegiate Sports Rider: covered up to $5,000",
+    "p": 12,
+    "pl": "Injuries from school sports covered up to $5,000.",
+    "look": ""
+   }
+  },
+  "s1": {
+   "ded": {
+    "s": "v",
+    "d": "$250 per year",
+    "n": 250,
+    "b": "year",
+    "w": "What is the overall deductible? $250 per year",
+    "p": 1,
+    "pl": "You pay the first $250 of covered care each year, across all visits. Then the plan starts paying.",
+    "look": "Important Questions table"
+   },
+   "oop": {
+    "s": "v",
+    "d": "$3,000 per year",
+    "n": 3000,
+    "b": "year",
+    "w": "What is the out-of-pocket limit for this plan? $3,000 per year",
+    "p": 1,
+    "pl": "In a bad year, the most you pay for covered care in-network is $3,000.",
+    "look": "Important Questions table"
+   },
+   "er": {
+    "s": "v",
+    "d": "$150 per visit, then you pay 20%",
+    "n": 1,
+    "b": "visit",
+    "w": "Emergency room care: $150 copay, then 20% coinsurance",
+    "p": 2,
+    "pl": "You pay $150 at each ER visit. After your deductible, you also pay 20% of the rest.",
+    "look": ""
+   },
+   "coins": {
+    "s": "v",
+    "d": "You pay 20%",
+    "n": 20,
+    "b": "",
+    "w": "Coinsurance: 20%",
+    "p": 2,
+    "pl": "After your deductible, the plan pays 80% and you pay 20%.",
+    "look": ""
+   },
+   "doc": {
+    "s": "v",
+    "d": "$25 per visit",
+    "n": 25,
+    "b": "visit",
+    "w": "Primary care visit: $25 copay",
+    "p": 2,
+    "pl": "You pay $25 at each doctor visit.",
+    "look": ""
+   },
+   "rx": {
+    "s": "v",
+    "d": "$10 per prescription",
+    "n": 10,
+    "b": "",
+    "w": "Generic drugs (Tier 1): $10 copay",
+    "p": 2,
+    "pl": "You pay $10 for each generic prescription.",
+    "look": ""
+   },
+   "mh": {
+    "s": "v",
+    "d": "$25 per visit",
+    "n": 25,
+    "b": "visit",
+    "w": "Outpatient mental health: $25 copay",
+    "p": 2,
+    "pl": "You pay $25 per visit.",
+    "look": ""
+   },
+   "max": {
+    "s": "k",
+    "d": "Unlimited (p.2) vs $1,000,000 (p.4)",
+    "n": 0,
+    "b": "",
+    "w": "p.2: Lifetime limit: None · p.4: Maximum benefit $1,000,000",
+    "p": 2,
+    "pl": "The document says two different things. Check pages 2 and 4.",
+    "look": "Compare page 2 with page 4"
+   },
+   "pre": {
+    "s": "v",
+    "d": "Covered",
+    "n": 1,
+    "b": "",
+    "w": "Pre-existing condition exclusion: None",
+    "p": 3,
+    "pl": "Covered from day one.",
+    "look": ""
+   },
+   "chiro": {
+    "s": "v",
+    "d": "$25 per visit, up to 20 visits per year",
+    "n": 25,
+    "b": "visit",
+    "w": "Chiropractic care: $25 copay, 20 visits per year",
+    "p": 3,
+    "pl": "You pay $25 per visit, up to 20 visits a year.",
+    "look": ""
+   }
+  },
+  "t1": {
+   "ded": {
+    "s": "v",
+    "d": "$100 per trip",
+    "n": 100,
+    "b": "trip",
+    "w": "Deductible per Period of Coverage: $100",
+    "p": 2,
+    "pl": "You pay $100 once for the whole trip, however many illnesses.",
+    "look": ""
+   },
+   "er": {
+    "s": "v",
+    "d": "Plan pays 100% after deductible",
+    "n": 1,
+    "b": "",
+    "w": "Emergency Room: 100% after Deductible",
+    "p": 2,
+    "pl": "After your $100 deductible, the plan pays the full ER bill.",
+    "look": ""
+   },
+   "max": {
+    "s": "v",
+    "d": "$250,000 per trip",
+    "n": 250000,
+    "b": "trip",
+    "w": "Overall Maximum Limit: $250,000 per Period of Coverage",
+    "p": 2,
+    "pl": "The plan pays up to $250,000 in total for the trip.",
+    "look": ""
+   },
+   "doc": {
+    "s": "v",
+    "d": "Plan pays 100% after deductible",
+    "n": 0,
+    "b": "",
+    "w": "Physician Visits: 100% after Deductible",
+    "p": 2,
+    "pl": "After your deductible, the plan pays the full doctor bill.",
+    "look": ""
+   },
+   "evac": {
+    "s": "v",
+    "d": "Up to $1,000,000",
+    "n": 1000000,
+    "b": "",
+    "w": "Emergency Evacuation: up to $1,000,000",
+    "p": 3,
+    "pl": "The plan pays up to $1,000,000 to move you to proper care.",
+    "look": ""
+   },
+   "repat": {
+    "s": "v",
+    "d": "Up to $50,000",
+    "n": 50000,
+    "b": "",
+    "w": "Return of Remains / Return Home: up to $50,000",
+    "p": 3,
+    "pl": "Up to $50,000 to bring you home after a serious illness.",
+    "look": ""
+   },
+   "dent": {
+    "s": "v",
+    "d": "Pain relief, up to $250",
+    "n": 250,
+    "b": "",
+    "w": "Emergency Dental: pain relief up to $250",
+    "p": 3,
+    "pl": "Only emergency pain relief, up to $250.",
+    "look": ""
+   },
+   "pre": {
+    "s": "x",
+    "d": "Not covered",
+    "n": 0,
+    "b": "",
+    "w": "Exclusions: pre-existing conditions",
+    "p": 5,
+    "pl": "Conditions you had before the trip are not covered.",
+    "look": ""
+   },
+   "mh": {
+    "s": "x",
+    "d": "Not covered",
+    "n": 0,
+    "b": "",
+    "w": "Exclusions: mental health care",
+    "p": 5,
+    "pl": "Mental health care is not covered.",
+    "look": ""
+   }
+  }
+ },
+ "PLANS": {
+  "g1": [
+   "globe",
+   "Basic"
+  ],
+  "g2": [
+   "globe",
+   "Gold"
+  ],
+  "g3": [
+   "globe",
+   "Platinum"
+  ],
+  "c1": [
+   "campus",
+   "Standard"
+  ],
+  "s1": [
+   "scholar",
+   "Gold"
+  ],
+  "t1": [
+   "travel",
+   "Standard"
+  ]
+ }
+}

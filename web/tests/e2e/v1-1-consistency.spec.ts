@@ -1,6 +1,10 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { registered } from "./registered-fixture";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 // M5 task 18: chat turns are keyed to the effective plan/tier selection.
 // Late responses from a superseded selection are discarded, historical turns
 // are labelled with their scope (evidence links stay intact), and scope
@@ -57,7 +61,7 @@ const TABLE = {
 
 async function startResults(page: Page) {
   await page.route("**/api/extract", (route) => route.fulfill({ json: registered(TABLE) }));
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', [
     "tests/fixtures/plan-a.pdf",

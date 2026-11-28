@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { registered } from "./registered-fixture";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 const FIXTURE_A = "tests/fixtures/plan-a.pdf";
 const FIXTURE_B = "tests/fixtures/plan-b.pdf";
 
@@ -14,7 +18,7 @@ function mockExtractResponse(
 }
 
 async function startIntake(page: import("@playwright/test").Page) {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
 }
 

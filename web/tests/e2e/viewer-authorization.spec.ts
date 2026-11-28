@@ -3,8 +3,12 @@
 // or document link. The owning browser still opens it normally.
 import { expect, test } from "@playwright/test";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 test("citation link without the session capability reveals nothing", async ({ page, browser }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();

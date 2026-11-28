@@ -1,10 +1,11 @@
 "use client";
 
 export default function HeaderBrandLink() {
+  const home = "/";
   return (
     <a
       className="site-header__brand"
-      href="/"
+      href={home}
       aria-label="Insurance Simplified home"
       onClick={(event) => {
         if (
@@ -18,7 +19,7 @@ export default function HeaderBrandLink() {
           return;
         event.preventDefault();
         const state = { ...window.history.state, appPage: "welcome" };
-        window.history.pushState(state, "", "/");
+        window.history.pushState(state, "", home);
         window.dispatchEvent(new PopStateEvent("popstate", { state }));
       }}
     >

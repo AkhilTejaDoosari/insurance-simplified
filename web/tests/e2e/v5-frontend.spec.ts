@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 // Synthetic policy data only. The real upload route is exercised; external
 // extraction/chat are replaced at the HTTP boundary for deterministic UI checks.
 function review(count: number) {
@@ -109,7 +113,7 @@ async function openReview(
   count: number,
 ) {
   await page.route("**/api/extract", (r) => r.fulfill({ json: review(count) }));
-  await page.goto("/");
+  await page.goto("/classic");
   // Exclude only Next's development toolbar from design-review captures.
   await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
   await page
@@ -142,7 +146,7 @@ test("Understand mode switches among uploaded PDFs without reprocessing or a com
     extractCalls++;
     return route.fulfill({ json: review(3) });
   });
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents", exact: true }).click();
   await page.setInputFiles('input[type="file"]', [
     "tests/fixtures/plan-a.pdf",
@@ -167,7 +171,7 @@ test("Understand mode switches among uploaded PDFs without reprocessing or a com
 test("V5 integrated start accepts five PDFs, rejects a sixth, and supports guidance", async ({
   page,
 }, info) => {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
   await expect(
     page.getByRole("heading", {
@@ -462,7 +466,7 @@ test("five uploaded documents display at most three plans and selection/order re
 test("PDF drop and mixed invalid files preserve useful selections", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   const transfer = await page.evaluateHandle(() => {
     const data = new DataTransfer();
     data.items.add(

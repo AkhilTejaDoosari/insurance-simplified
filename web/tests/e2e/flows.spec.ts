@@ -1,9 +1,13 @@
 import { expect, test } from "@playwright/test";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 test("upload → document reading → evidence → chat → export (quickstart Flows 1–3, 6)", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', [
     "tests/fixtures/plan-a.pdf",
@@ -112,7 +116,7 @@ test("upload → document reading → evidence → chat → export (quickstart F
 });
 
 test("no-documents checklist flow (quickstart Flow 5)", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: /don't know where to start/ }).click();
   await page.getByLabel("Age", { exact: true }).fill("34");
   await page.getByRole("button", { name: "Build my checklist" }).click();
@@ -131,7 +135,7 @@ test("no-documents checklist flow (quickstart Flow 5)", async ({ page }) => {
 test("one PDF explains evidenced terms in the results workspace", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();
@@ -154,7 +158,7 @@ test("two unassigned PDFs keep individual reading and document switching legible
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', [
     "tests/fixtures/plan-a.pdf",

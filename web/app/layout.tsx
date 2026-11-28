@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import HeaderBrandLink from "@/app/components/HeaderBrandLink";
+import SiteHeader from "@/app/components/SiteHeader";
 
 export const metadata: Metadata = {
   title: "Insurance Simplified",
@@ -18,14 +18,7 @@ export default function RootLayout({
     <html lang="en">
       <head></head>
       <body>
-        <header className="site-header">
-          <div className="site-header__inner">
-            <HeaderBrandLink />
-            <div className="topright">
-              <span className="pill">Document-first. Evidence-led.</span>
-            </div>
-          </div>
-        </header>
+        <SiteHeader />
         {children}
       </body>
     </html>

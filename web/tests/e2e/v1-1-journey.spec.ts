@@ -1,9 +1,13 @@
 import { expect, test } from "@playwright/test";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 test("navigation and states preserve intake and valid results across app and browser back", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.getByLabel("Age", { exact: true }).fill("34");
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
@@ -28,7 +32,7 @@ test("navigation and states preserve intake and valid results across app and bro
 test("navigation and states keep checklist document-free and invalidate results on replacement", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: /don't know where to start/ }).click();
   await expect(
     page.getByRole("button", { name: "Build my checklist" }),
@@ -66,7 +70,7 @@ test("navigation and states keep checklist document-free and invalidate results 
 test("navigation and states distinguish an expired session from retryable provider errors", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.route("**/api/extract", async (route) => {
     await route.fulfill({
@@ -84,7 +88,7 @@ test("navigation and states distinguish an expired session from retryable provid
 test("navigation and states let a user open the checklist from intake with a retained result", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();
@@ -128,7 +132,7 @@ test("navigation and states preserve a selected legacy tier on an intake round-t
       },
     }),
   );
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();
@@ -203,7 +207,7 @@ test("navigation and states retain independent proven plan tiers across sections
       },
     });
   });
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', [
     "tests/fixtures/plan-a.pdf",
@@ -231,7 +235,7 @@ test("navigation and states retain independent proven plan tiers across sections
 test("navigation and states do not present results for changed intake details or replacement files", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.getByLabel("Age", { exact: true }).fill("34");
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
@@ -266,7 +270,7 @@ test("navigation and states reject extraction completed after intake details cha
     await hold;
     await route.continue();
   });
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.getByLabel("Age", { exact: true }).fill("34");
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
@@ -299,7 +303,7 @@ test("navigation and states ignore an older upload after selecting a replacement
     if (uploads === 1) await hold;
     await route.continue();
   });
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();
@@ -336,7 +340,7 @@ test("navigation and states do not navigate over a later checklist choice when e
     await hold;
     await route.continue();
   });
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();
@@ -404,7 +408,7 @@ test("navigation and states ignore an old session's late context response after 
       await route.fulfill({ json: oldTable });
     } else await route.continue();
   });
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();
@@ -500,7 +504,7 @@ test("navigation and states serialize context updates within the same session", 
     }
     return route.fulfill({ json: { ...original, rows: [original.rows[0]] } });
   });
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();
@@ -557,7 +561,7 @@ test("navigation and states hide an expired contextual assessment instead of lea
         })
       : route.fulfill({ json: original }),
   );
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();
@@ -593,7 +597,7 @@ test("navigation and states hide a failed contextual assessment but offer a prov
         })
       : route.fulfill({ json: original }),
   );
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document" }).click();
@@ -620,7 +624,7 @@ test("navigation and states keep edited intake instead of applying an older in-f
     if (uploads === 1) await hold;
     await route.continue();
   });
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.getByLabel("Age", { exact: true }).fill("34");
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");

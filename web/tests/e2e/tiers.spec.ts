@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { registered } from "./registered-fixture";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 // The deterministic engine can't name tiers, so the tiered table is served
 // by mocking /api/extract with the shape the LLM path produces (planTier).
 const tier = (tier: string, display: string) => ({
@@ -70,7 +74,7 @@ test("multi-tier PDF keeps tier selection in the individual reading", async ({
   await page.route("**/api/extract", (route) =>
     route.fulfill({ json: registered(TIERED_TABLE) }),
   );
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', [
     "tests/fixtures/plan-a.pdf",

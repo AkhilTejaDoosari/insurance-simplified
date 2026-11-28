@@ -1,6 +1,10 @@
 import { test, expect } from "@playwright/test";
 import type { RegisteredComparisonTable } from "../../app/lib/extraction/types";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 const names = ["Alpha", "Beta", "Gamma", "Omega"];
 function fixture(): RegisteredComparisonTable & { contacts: unknown[] } {
   return {
@@ -95,7 +99,7 @@ test("one PDF retains independent plan and tier choices in individual and compar
     });
   }) }));
   await page.route("**/api/extract", (r) => r.fulfill({ json: data }));
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents", exact: true }).click();
   await page.setInputFiles('input[type="file"]', "tests/fixtures/plan-a.pdf");
   await page.getByRole("button", { name: "Understand my document", exact: true }).click();
@@ -125,7 +129,7 @@ test("adaptive modes retain independent scope, reorder, chat and active export",
   await page.route("**/api/extract", (route) =>
     route.fulfill({ json: fixture() }),
   );
-  await page.goto("/");
+  await page.goto("/classic");
   await page
     .getByRole("button", { name: "I have my documents", exact: true })
     .click();

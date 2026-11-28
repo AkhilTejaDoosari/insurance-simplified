@@ -8,6 +8,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 interface JourneyFixture { pdf: string; factHeading: string; rowLabel: string; citedPage: number; pageCount: number }
 const fixtureFile = process.env.REAL_FIXTURES_DIR
   ? join(resolve(process.env.REAL_FIXTURES_DIR), "e2e", "real-table-journey.json")
@@ -21,7 +25,7 @@ test.skip(!J || !existsSync(PDF), "real-document fixtures not present (set REAL_
 
 test("tiered brochure: table claims are plan-verified and open their evidence", async ({ page }) => {
   test.setTimeout(120_000);
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', [PDF]);
   await page.getByRole("button", { name: "Understand my document" }).click();

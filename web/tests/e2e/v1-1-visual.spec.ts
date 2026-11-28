@@ -2,13 +2,17 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
+// V1 screens are no longer routed (owner, 2026-11-28: hide V1, delete later). Kept until the
+// V2 screen renders through the evidence-core gate; reported as SKIPPED, never as passing.
+test.skip(true, "V1 /classic is not routed (owner 2026-11-28)");
+
 // V2 is light only (D-038, docs/v2/design.md): the page keeps the light theme when
 // the system is in dark mode. Before V2 this test required a dark page.
 test("brand and appearance stay light when the system is in dark mode", async ({
   page,
 }, testInfo) => {
   await page.emulateMedia({ colorScheme: "light" });
-  await page.goto("/");
+  await page.goto("/classic");
   await expect(page.locator(".site-header img")).toHaveAttribute(
     "src",
     "/insurance-simplified-icon.png",
@@ -76,7 +80,7 @@ test("brand and appearance stay light when the system is in dark mode", async ({
 test("brand and appearance keep readable text, status and focus in both system themes", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/classic");
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     const ratios = await page.evaluate(() => {
@@ -244,7 +248,7 @@ test("comparison workspace remains inspectable across system themes and target w
     }),
   );
 
-  await page.goto("/");
+  await page.goto("/classic");
   await page.getByRole("button", { name: "I have my documents" }).click();
   await page.setInputFiles('input[type="file"]', [
     "tests/fixtures/plan-a.pdf",
