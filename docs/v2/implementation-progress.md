@@ -18,6 +18,24 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-28 (f) — WP5 background jobs
+
+Owner: migration 0008 approved; worker through the web's internal API (D-044); no paid
+calls. **Done:** `db/migrations/0008_extraction_jobs.sql` (+down, README, schema.sql):
+table, leased claim with `FOR UPDATE SKIP LOCKED`, heartbeat, finish, idempotent
+cancel/retry, attempts → `too_many_attempts`. Web: job store (Supabase REST), internal job
+API for the worker (service token, lease-holder checks, result shape check, 5 MB cap),
+`/api/jobs/[sessionId]` (+cancel, +retry; assembles and saves the result when all jobs
+ended), `/api/extract` enqueues behind `ENGINE_JOBS=1`; reading screen follows each
+document's stage, cancel, resume after reload. Engine: `app/jobs/worker.py` (claim → PDF →
+the same read as `/v1/extract` with stage heartbeats → finish; cancellation; lease loss).
+**Verified here:** engine worker tests (lifecycle, cancel, retry, kill-mid-job recovery,
+attempts, lease loss); SQL against local Postgres (no double claim, lease takeover, late
+report refused, idempotent cancel/retry); internal API unit tests; browser tests for
+stages, cancel and resume; acceptance on dev fixtures: upload → 202 → worker → 3/3
+completed → reload 200 (no model). **Not done:** worker hosting and restart policy (WP12);
+a retried read starts the document over (no checkpoint reuse inside the read).
+
 ## Session 2026-11-28 (e) — benefit headings for generic row labels
 
 Owner: a value shown without its benefit heading is a label error (the 3 ada8c8 age-band

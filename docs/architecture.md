@@ -81,13 +81,15 @@ authoritative for anything a later request needs (D-018).
 | Document metadata, page text | `documents`, `pages` (0001) |
 | Chunks, FTS vector, embedding | `chunks` (0001) |
 | Validated comparison result (export source) | `comparison_results` (0005), 30-day expiry |
+| Background reads of a session's documents (WP5) | `extraction_jobs` (0008), written only by the web app; the engine worker reaches it through the web's internal job API (service token) |
 | UI selections | Browser |
 
 Migrations (`db/migrations/`, append-only, expand → backfill → contract):
 `0001_init` (documents, pages, chunks, `match_chunks`, `fts_search_chunks`,
 global HNSW + GIN indexes, migration ledger) · `0002_object_key` · `0003_rls`
 (owner-scoped RLS) · `0004_sessions` · `0005_comparison_results` (+down) ·
-`0006_schema_migrations_lock` (+down; applied to the dev DB, D-026).
+`0006_schema_migrations_lock` (+down; applied to the dev DB, D-026) · `0007_exact_session_match`
+(+down) · `0008_extraction_jobs` (+down; WP5 jobs, leased claim).
 `db/schema.sql` is the reference schema; `db/README.md` explains applying it.
 
 *Archived target tables* (`plan_products`, `plan_tiers`, `fact_observations`,
@@ -110,6 +112,8 @@ identity needed by retained citations.
 | `POST /api/sessions` | Create a session with an anonymous capability |
 | `POST /api/upload` / `DELETE /api/upload` | Validate and store 1–5 PDFs / close and delete the session (vectors, objects, row, result) |
 | `POST /api/extract` | Build and verify the comparison result (deterministic engine, or LLM engine when configured) |
+| `GET /api/jobs/[sessionId]`, `POST …/cancel`, `POST …/retry` | Background reads (WP5, `ENGINE_JOBS=1`): each document's stage; when all ended, the engine results are saved with the session; cancel and retry are idempotent |
+| `/api/internal/jobs/claim`, `…/[jobId]/{document,progress,finish}` | The engine worker's internal job API (service token; only the lease holder gets a document or reports) |
 | `GET /api/results/[sessionId]` | The session's saved V2 engine results for a reload, re-checked by the read-back gate (`lib/engine/read-back.ts`) |
 | `POST /api/chat` | Grounded question answering with citation verification or refusal |
 | `POST /api/export` | PDF report from the stored validated result (never recomputed) |

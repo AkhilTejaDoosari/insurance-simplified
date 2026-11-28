@@ -585,3 +585,17 @@ each call). D-036's production per-document cap is decided later.
 **Later (WP12):** a durable path for the cumulative Claude token ledger
 (`ENGINE_CLAUDE_TOKEN_LEDGER`; production state never in `/tmp`), and moving TB-3
 (evidence-core.md §5) fully to the V2 screens, after which the V1 components are deleted.
+
+# D-044 — Background jobs: the web app owns the job table; the engine worker uses its API
+
+**Status: Accepted (owner, 2026-11-28)** · WP5; migration 0008 approved.
+
+**Decision:** reads run as durable jobs in `extraction_jobs` (one per document; uploaded →
+parsing → extracting → verifying → completed / failed / cancelled; leased claim, heartbeat,
+idempotent cancel and retry; a dead worker's job is claimed again when its lease expires).
+The web app remains the only holder of the database and storage keys: the engine worker
+claims jobs, fetches PDFs and reports through the web app's internal job API with the
+shared service token, and only the lease holder may. `ENGINE_JOBS=1` turns it on; off is
+the synchronous read (rollback). Amends architecture.md's "no separate workers" for V2
+(scope.md: durable jobs).
+
