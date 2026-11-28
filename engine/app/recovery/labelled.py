@@ -241,4 +241,82 @@ def verify_same_line(
     return Status.UNRESOLVED, tuple(dict.fromkeys(reasons)) or ("label_not_printed",), None
 
 
-__all__ = ["single_column", "verify_same_line"]
+# A row label that does not name a benefit on its own (owner 2026-11-28): age bands, a
+# person level, "Each", a network or drug tier, a limb, "Death", a bare "Maximum". Such a
+# fact needs the printed section heading it sits under, proven from the layout.
+_GENERIC_WHOLE = re.compile(
+    r"^(?:each|per\s+(?:person|family|member|individual|day|visit|trip)|individual|family|"
+    r"employee|spouse|child(?:ren)?|dependents?|single|members?|students?|"
+    r"(?:lifetime\s+|overall\s+|annual\s+)?maximum|death|"
+    r"in[\s-]*network|out[\s-]*of[\s-]*network|non[\s-]*network|"
+    r"(?:non[\s-]*)?preferred(?:\s+brand)?|generic|brand(?:\s+name)?|specialty|"
+    r"tier\s*\d+|level\s*\d+|option\s*\w)$",
+    re.IGNORECASE,
+)
+_GENERIC_START = re.compile(
+    r"^(?:ages?\s+\d|age\s+(?:under|over|\d)|under\s+(?:age\s+)?\d|over\s+(?:age\s+)?\d|"
+    r"\d+\s*(?:and|or)\s+(?:older|over|under|younger)|\d+\s*(?:through|to|-|\u2013)\s*\d+|"
+    r"loss\s+of\s+(?:\d|one|two|both|an?\b))",
+    re.IGNORECASE,
+)
+
+
+def generic_label(label: str) -> bool:
+    """True when the printed label alone doesn't name the benefit."""
+    text = " ".join(label.replace("…", " ").split()).strip(" .:;,-\u2013\u2014*")
+    return bool(text) and bool(_GENERIC_WHOLE.match(text) or _GENERIC_START.match(text))
+
+
+def section_heading(layout: PageLayout, label_words: Sequence[Word]) -> str:
+    """The printed heading a generic row label sits under, or "" when it can't be proven.
+
+    Proven like a column header, from geometry only: walking up from the label's line
+    through sibling rows (their first segment starts at the label's x, ±2 pt) with no
+    larger vertical gap than 1.7 line heights, the next line up starts at least 3 pt to
+    the left (less indented), lies wholly in the label column (left of the value column)
+    and carries no value of its own. A heading wrapped over several lines at the same x
+    is joined. Anything else - no such line, a gap, a line with a value - is unproven."""
+    if not label_words:
+        return ""
+    rows = _rows(layout)
+    first = label_words[0]
+    r = next((i for i, row in enumerate(rows) if first in row), None)
+    if r is None:
+        return ""
+    x = first.box.x0
+    row = rows[r]
+    value_x = next(
+        (row[s].box.x0 for s in sorted(_segment_starts(row)) if row[s].box.x0 > first.box.x1),
+        None,
+    )
+
+    def contiguous(upper: list[Word], lower: list[Word]) -> bool:
+        return lower[0].box.top - max(w.box.bottom for w in upper) <= 1.7 * _height(upper)
+
+    i = r
+    while i > 0 and contiguous(rows[i - 1], rows[i]) and abs(rows[i - 1][0].box.x0 - x) <= 2:
+        i -= 1  # a sibling sub-row (same indentation)
+    if i == 0 or not contiguous(rows[i - 1], rows[i]):
+        return ""
+    h = i - 1
+    head = rows[h]
+    hx = head[0].box.x0
+    if hx > x - 3 or len(_segment_starts(head)) != 1:
+        return ""  # not less indented, or the line carries a value of its own
+    if value_x is not None and max(w.box.x1 for w in head) >= value_x:
+        return ""  # reaches into the value column: not a heading of the label column
+    lines = [head]
+    while (
+        h > 0
+        and contiguous(rows[h - 1], rows[h])
+        and abs(rows[h - 1][0].box.x0 - hx) <= 2
+        and len(_segment_starts(rows[h - 1])) == 1
+        and (value_x is None or max(w.box.x1 for w in rows[h - 1]) < value_x)
+        and not rows[h - 1][-1].text.rstrip().endswith((".", ":"))
+    ):
+        h -= 1
+        lines.insert(0, rows[h])
+    return " ".join(w.text for line in lines for w in line).strip()
+
+
+__all__ = ["generic_label", "section_heading", "single_column", "verify_same_line"]

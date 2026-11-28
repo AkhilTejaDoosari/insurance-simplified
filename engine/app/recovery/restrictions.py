@@ -44,6 +44,7 @@ from typing import Any
 from app.reconcile.engine import Fact
 from app.reconcile.layout import PageLayout, Word, norm
 from app.reconcile.verify import Status, Verdict
+from app.recovery.labelled import generic_label
 
 GOVERNING_COLUMN = re.compile(
     r"limitation|exception|important information|restriction|prior auth|notes?\b|why this matters",
@@ -70,6 +71,7 @@ class OpenCondition:
     GOVERNING_UNVERIFIED = "governing_text_unverified"
     GOVERNING_AMBIGUOUS = "governing_text_ambiguous"
     CROSS_REFERENCE = "cross_reference_unresolved"
+    HEADING = "heading_unproven"
 
 
 @dataclass
@@ -155,6 +157,9 @@ def link(
     for vf in out:
         if any(CROSS_REFERENCE.search(t) for t in (vf.fact.value, *vf.restrictions, *vf.footnotes)):
             vf._open(OpenCondition.CROSS_REFERENCE)
+        if generic_label(vf.fact.label) and not vf.fact.group_labels:
+            # a table row label that doesn't name the benefit, with no printed group row
+            vf._open(OpenCondition.HEADING)
     return out
 
 

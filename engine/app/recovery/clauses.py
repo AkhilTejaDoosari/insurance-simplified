@@ -111,6 +111,13 @@ class ClauseEvidence:
     # a brochure line proven to have no column (app.recovery.labelled.single_column)
     single_column: bool = False
     labelled: bool = False  # a brochure line: label and value on the same printed line
+    # the printed section heading a generic row label sits under (labelled.section_heading)
+    heading: str = ""
+
+    @property
+    def label(self) -> str:
+        """The label a person reads: the proven section heading, then the printed label."""
+        return f"{self.heading} \u2014 {self.anchor}" if self.heading else self.anchor
 
 
 @dataclass(frozen=True)
@@ -576,7 +583,12 @@ def _verify_labelled(
 ) -> ClauseVerdict:
     """Rule set in app.recovery.labelled: the quote on the label's line, else the clause
     under the label by the prose rules above; the value must be inside the quote."""
-    from app.recovery.labelled import single_column, verify_same_line  # noqa: PLC0415
+    from app.recovery.labelled import (  # noqa: PLC0415 - avoids a cycle
+        generic_label,
+        section_heading,
+        single_column,
+        verify_same_line,
+    )
 
     if not norm(c.value):
         return ClauseVerdict(c, Status.UNRESOLVED, ("empty_value",))
@@ -597,6 +609,9 @@ def _verify_labelled(
                 layout.ruled,
                 single_column=single_column(layout, label_words, quote_words),
                 labelled=True,
+                heading=section_heading(layout, label_words)
+                if generic_label(_text(label_words))
+                else "",
             ),
         )
     under = verify_clause(
@@ -706,6 +721,10 @@ def _qualify(f: ClauseFact, by_page: dict[int, PageLayout]) -> None:
     f.restrictions = list(e.governing)
     if not e.column and not e.single_column:
         f._open("column_unproven")
+    from app.recovery.labelled import generic_label  # noqa: PLC0415 - avoids a cycle
+
+    if generic_label(e.anchor) and not e.heading:
+        f._open("heading_unproven")  # the label alone doesn't name the benefit
     if any(CROSS_REFERENCE.search(t) for t in (e.text, *e.governing)):
         f._open("cross_reference_unresolved")
     for marker in _markers(e.text, e.anchor):

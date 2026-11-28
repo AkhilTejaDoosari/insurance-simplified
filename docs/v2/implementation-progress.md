@@ -18,6 +18,23 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-28 (e) — benefit headings for generic row labels
+
+Owner: a value shown without its benefit heading is a label error (the 3 ada8c8 age-band
+values count as wrong). **Done (no paid calls):** a row label that doesn't name the
+benefit on its own (age bands, person levels, "Each", network/drug tiers, "Death", "Loss
+of …", a bare "Maximum", "Student"/"Spouse" …; `labelled.generic_label`) carries the
+printed section heading it sits under, proven from the layout like a column header
+(`labelled.section_heading`: sibling rows at the label's indent, then a less-indented
+line in the label column with no value of its own; wrapped headings joined). Label shown
+and judged: "Common Carrier Accidental Death — Ages 18 through 69". No provable heading:
+`heading_unproven`, couldn't confirm with its page (brochure lines, and table rows with a
+generic label and no printed group row). Test on ada8c8's geometry with synthetic words
+(`tests/test_section_headings.py`) fails with the rule removed. **Saved replies only:**
+the 3 now carry the heading; they show couldn't confirm because the saved judge replies
+were for the old label (re-judging them is about one GPT call). Other brochures unchanged
+(4f437c 9 verified, 9f0351 2). SBC local baseline unchanged: 395/454, 0 false verified.
+
 ## Session 2026-11-28 (d) — brochure re-measure attempted; gateway still over budget
 
 Owner: model access back, re-measure the 5 brochures under the new rules ($5 hard stop).

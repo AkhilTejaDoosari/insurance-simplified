@@ -282,7 +282,7 @@ class RecoveryPipeline:
             e = cf.evidence
             governing = [*cf.restrictions, *cf.footnotes, *cf.context]
             code = interpret(
-                e.text, label=e.anchor, header=e.column, governing=governing, prose=True
+                e.text, label=e.label, header=e.column, governing=governing, prose=True
             )
             if is_column_header(e.text, e.column):
                 code = CodeCheck([], ["value_is_column_header"])
@@ -291,7 +291,7 @@ class RecoveryPipeline:
                 # the number and basis (printed words only); otherwise as printed text
                 numeric = interpret(
                     e.text,
-                    label=e.anchor,
+                    label=e.label,
                     header=e.column,
                     governing=governing,
                     term_rules=False,
@@ -299,7 +299,7 @@ class RecoveryPipeline:
                 if numeric.passed:
                     code = numeric
             item = JudgeItem(
-                e.anchor,
+                e.label,
                 e.column,
                 e.text,
                 tuple(governing),

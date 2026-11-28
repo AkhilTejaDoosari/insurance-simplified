@@ -124,7 +124,7 @@ def to_contract(
         label = " ".join((*f.group_labels, f.label)).strip() or f.header
         page, box = f.page, f.value_box
     else:
-        page, label, box = fact.page, fact.evidence.anchor, fact.evidence.text_boxes[0]
+        page, label, box = fact.page, fact.evidence.label, fact.evidence.text_boxes[0]
     layout = layouts[page]
     span = span_of(layout, box)
     now = datetime.now(UTC)
