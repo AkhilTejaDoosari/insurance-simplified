@@ -10,6 +10,7 @@ import importlib
 import json
 import multiprocessing as mp
 import resource
+import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from multiprocessing.connection import Connection, wait
@@ -39,8 +40,19 @@ class ParseResult:
     detail: str = ""
 
 
+def _limit_memory(memory_bytes: int, platform: str = sys.platform) -> None:
+    """Cap the child's address space. Linux (the engine image) enforces it; macOS's
+    kernel rejects RLIMIT_AS ("current limit exceeds maximum limit"), so on a developer
+    Mac the reader would never run - there the time and page limits still apply."""
+    try:
+        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+    except (ValueError, OSError):
+        if platform != "darwin":
+            raise
+
+
 def _child(reader_name: str, pdf: bytes, limits: Limits, conn: Connection) -> None:
-    resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
+    _limit_memory(limits.memory_bytes)
     try:
         reader = _reader(reader_name)
         doc = reader.read(pdf)

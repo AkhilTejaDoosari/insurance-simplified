@@ -1,5 +1,10 @@
 """Readers run isolated: crashes, hangs and oversize files become typed failures."""
 
+import resource
+
+import pytest
+
+from app.parsing import sandbox
 from app.parsing.sandbox import Limits, ParseFailure, parse_isolated
 from evaluation.synthetic import levels_ruled
 
@@ -41,3 +46,17 @@ def test_early_death_is_noticed_without_waiting_for_the_time_limit() -> None:
     )
     assert result.failure is ParseFailure.CRASHED
     assert time.monotonic() - started < 20
+
+
+def test_memory_limit_is_only_skipped_where_the_kernel_rejects_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """macOS rejects RLIMIT_AS; everywhere else a failure to set it is an error."""
+
+    def refuse(*_args: object) -> None:
+        raise ValueError("current limit exceeds maximum limit")
+
+    monkeypatch.setattr(resource, "setrlimit", refuse)
+    sandbox._limit_memory(1024, platform="darwin")  # skipped, no error
+    with pytest.raises(ValueError):
+        sandbox._limit_memory(1024, platform="linux")
