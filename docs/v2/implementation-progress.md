@@ -18,6 +18,20 @@ keys; nothing here is a held-out result.
 Critical recall 348/454 · false verified 0 · oracle union of readers 437/454 · restrictions
 attached 0/141. So: 89 keys are a verifier gap (a reader read them), 17 are a reading gap.
 
+## Session 2026-11-28 (d) — brochure re-measure attempted; gateway still over budget
+
+Owner: model access back, re-measure the 5 brochures under the new rules ($5 hard stop).
+**Added:** a cumulative spend cap for testing (`ENGINE_SPEND_CAP_USD` + ledger file;
+reserved before every call, a hard stop across documents and runs) and
+`brochure_run --sha` to pick documents. **Result:** KodeKey still refuses every call for
+the configured key (422 budget exceeded, $15.18 of $15.00; the key in the env files is
+unchanged), so only saved replies counted: 4f437c 9 verified / 9 couldn't confirm,
+9f0351 2 / 7, ada8c8 7 / 21, e4a351 0 / 106, f649df 0 / 18; $0.00 spent. All 17 verified
+values (review list) checked by hand against their pages: 0 false verified; 3 ada8c8 values
+("Ages 18 through 69 $50,000" …) are right for their printed rows but the label lacks
+the "Common Carrier Accidental Death" heading. Real flow on / not run (measurement
+incomplete).
+
 ## Session 2026-11-28 (c) — graceful refusals, explicit engine deadline, TB-3 on V2, V1 deleted
 
 Owner: KodeKey budget fixed until its monthly reset — no paid model calls (fakes and saved
