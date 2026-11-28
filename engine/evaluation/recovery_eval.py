@@ -28,6 +28,7 @@ from pathlib import Path
 from app.parsing.base import sha256
 from app.providers.anthropic import AnthropicClient, AnthropicConfig
 from app.providers.nvidia import NvidiaClient, NvidiaConfig
+from app.providers.openai import OpenAIClient, OpenAIConfig
 from app.reconcile.layout import read_layouts
 from app.recovery.budget import RunLimits, SpendLedger
 from app.recovery.cache import Cache
@@ -291,7 +292,7 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--visual", action="store_true", help="Claude stage")
     ap.add_argument(
         "--alt-judge",
-        choices=("none", "anthropic", "nvidia"),
+        choices=("none", "anthropic", "nvidia", "openai"),
         default="none",
         help="judge for facts the main judge's own family proposed (other family required)",
     )
@@ -308,7 +309,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     ap.add_argument(
         "--judge",
-        choices=("none", "anthropic", "nvidia"),
+        choices=("none", "anthropic", "nvidia", "openai"),
         default="none",
         help="semantic judge for key 2 (must differ from the proposing model families)",
     )
@@ -389,10 +390,15 @@ def _cost_cap(value: str) -> float | None:
 def _set_judge(
     ap: argparse.ArgumentParser, which: str, engines: Engines, *, alt: bool = False
 ) -> None:
-    model: AnthropicClient | NvidiaClient
+    model: AnthropicClient | NvidiaClient | OpenAIClient
     if which == "none":
         return
-    if which == "anthropic":
+    if which == "openai":
+        oc = OpenAIConfig.from_env()
+        if oc is None:
+            ap.error("a GPT judge needs ENGINE_OPENAI_API_KEY")
+        model, provider, family = OpenAIClient(oc), "openai", "openai-gpt"
+    elif which == "anthropic":
         an = AnthropicConfig.from_env()
         if an is None:
             ap.error("a Claude judge needs ENGINE_ANTHROPIC_API_KEY")
