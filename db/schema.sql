@@ -325,3 +325,34 @@ CREATE INDEX IF NOT EXISTS comparison_results_expires_at_idx
   ON comparison_results (expires_at);
 
 ALTER TABLE comparison_results ENABLE ROW LEVEL SECURITY;
+
+-- ------------------------------------------------- extraction_jobs (WP5)
+-- Durable background jobs for reading a session's documents with the engine
+-- (canonical form, with the claim/progress/finish/cancel/retry functions, in
+-- db/migrations/0008_extraction_jobs.sql). Server-only (no authenticated grants).
+CREATE TABLE IF NOT EXISTS extraction_jobs (
+  id                TEXT        PRIMARY KEY,
+  session_id        TEXT        NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+  document_id       TEXT        NOT NULL,
+  status            TEXT        NOT NULL DEFAULT 'uploaded'
+    CONSTRAINT extraction_jobs_status_check
+    CHECK (status IN ('uploaded', 'parsing', 'extracting', 'verifying',
+                      'completed', 'failed', 'cancelled')),
+  cloud_consent     BOOLEAN     NOT NULL DEFAULT false,
+  attempts          INTEGER     NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  max_attempts      INTEGER     NOT NULL DEFAULT 3 CHECK (max_attempts >= 1),
+  lease_owner       TEXT        NULL,
+  lease_expires_at  TIMESTAMPTZ NULL,
+  cancel_requested  BOOLEAN     NOT NULL DEFAULT false,
+  result_json       JSONB       NULL,
+  error_code        TEXT        NULL,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at        TIMESTAMPTZ NOT NULL DEFAULT now() + interval '30 days',
+  CONSTRAINT extraction_jobs_one_per_document UNIQUE (session_id, document_id)
+);
+
+CREATE INDEX IF NOT EXISTS extraction_jobs_claim_idx
+  ON extraction_jobs (status, lease_expires_at, created_at);
+
+ALTER TABLE extraction_jobs ENABLE ROW LEVEL SECURITY;

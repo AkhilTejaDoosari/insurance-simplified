@@ -37,9 +37,10 @@ psql "$SUPABASE_DB_URL" -f db/migrations/0004_sessions.sql
 psql "$SUPABASE_DB_URL" -f db/migrations/0005_comparison_results.sql
 psql -v ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f db/migrations/0006_schema_migrations_lock.sql
 psql -v ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f db/migrations/0007_exact_session_match.sql
+psql -v ON_ERROR_STOP=1 "$SUPABASE_DB_URL" -f db/migrations/0008_extraction_jobs.sql
 # 3. Verify:
 psql "$SUPABASE_DB_URL" -c "SELECT version FROM schema_migrations;"
-#    expect seven rows: 0001_init, 0002_object_key, 0003_rls, 0004_sessions, 0005_comparison_results, 0006_schema_migrations_lock, 0007_exact_session_match
+#    expect eight rows: 0001_init, 0002_object_key, 0003_rls, 0004_sessions, 0005_comparison_results, 0006_schema_migrations_lock, 0007_exact_session_match, 0008_extraction_jobs
 ```
 
 `db/schema.sql` is the canonical readable reference; `db/migrations/*.sql`
@@ -79,3 +80,9 @@ handles this automatically on next upsert).
   session's own top-k) and a mandatory `filter_session` (NULL/blank raises).
   Evidence: `evals/runs/m5-filt1/` (FILT-1). `.down.sql` restores the 0001
   body.
+- `migrations/0008_extraction_jobs.sql` — WP5 background jobs: one row per
+  (session, document) with the lifecycle uploaded → parsing → extracting →
+  verifying → completed / failed / cancelled, a leased claim
+  (`claim_extraction_job`, `FOR UPDATE SKIP LOCKED`; an expired lease makes the
+  job claimable again until `max_attempts`), heartbeat, finish, idempotent
+  cancel and retry. Server-only (service role); `.down.sql` reverses it.
