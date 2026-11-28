@@ -112,7 +112,7 @@ it is EC-13 (unrelated to EC-9 above).
 > |---|---|---|
 > | TB-1 | Provision with plan-name and period evidence not bound to real source blocks | Persisting it is refused; nothing is stored |
 > | TB-2 | Caller-built "not applicable" assessment for an exclusion that names the service | Conclusion is never covered |
-> | TB-3 | Resolution altered after issue, shown on comparison view, chat answer and export | Each surface shows "cannot be confirmed" |
+> | TB-3 | Saved result altered after issue (value, plain words or printed words), shown on the V2 results screen, its chat answer and export | Each surface shows "Couldn't confirm" and never the altered value |
 > | TB-4 | Exclusion coverage declared complete with an empty or partial exclusion list, while verified evidence contains an exclusion naming the service | Conclusion is never covered; the inventory equals the sealed exclusion provisions |
 >
 > Each test must also fail when its guard is removed.
@@ -124,6 +124,16 @@ all four pass against application code** (`app/lib/evidence/**`); each was
 shown to fail when its guard is removed (TB-1 plan-name and period span checks;
 TB-2 proposal guard; TB-3 row render gate and exclusion-outcome gate; TB-4
 caller inventory, missing-coverage-as-complete and partial-list guards).
+**TB-3 on V2 (2026-11-28, owner):** the V2 result is the engine's facts saved with the
+session (`comparison_results.result_json.engine`). Every V2 surface reads it through one
+read-back gate, `web/app/lib/engine/read-back.ts`: a fact's printed words must still be on
+its page of the session's document and a verified number inside those words; otherwise it
+is "Couldn't confirm" with its page, without a value, plain-words line or the unprinted
+words. Surfaces: the results screen and its chat (`GET /api/results` → the V2 bundle → the
+cell and the V2 chat router) and the export (`/api/export`, still unlinked, D-037). The
+test edits the saved value (and its plain words), then the saved words, and was shown to
+fail when the gate is removed (the screen showed "Verified $50"). The exclusion-outcome
+gate check stays in the same test. The V1 screens it used to render are deleted.
 AT-PERSIST is met by re-derivation (no durable seal key);
 AT-C4/AT-AUTH-ORDER pass as a library (`app/lib/evidence/authority/`), not
 yet wired into a surface.

@@ -2,7 +2,7 @@
 // tests/integration/trust-boundary.test.ts against application code.
 // Synthetic documents only; provider env blanked; local result store only.
 import { expect } from "vitest";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import React, { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,20 +10,21 @@ import { EvidenceAuthority, sha256Hex } from "@/app/lib/evidence/canonical";
 import { SessionDocumentRegistry } from "@/app/lib/evidence/registry";
 import { sealProvision, type ProvisionContent } from "@/app/lib/evidence/provision";
 import { ProvisionStore } from "@/app/lib/evidence/provision-store";
-import { issueRows, renderIssuedRows } from "@/app/lib/evidence/row-resolution";
-import { sealVerifiedTable } from "@/app/lib/evidence/session-evidence";
-import { cannotBeConfirmedFacts } from "@/app/lib/presentation/adaptive";
 import { exclusionOutcomeViews, resolveExclusionOutcomes } from "@/app/lib/evidence/exclusion-outcomes";
 import { exclusionScenario } from "./m7d-trust-fixtures";
-import AdaptiveResults from "@/app/components/AdaptiveResults";
-import { POST as chat } from "@/app/api/chat/route";
+import { NextRequest } from "next/server";
+import { GET as results } from "@/app/api/results/[sessionId]/route";
 import { POST as exportPdf } from "@/app/api/export/route";
+import { bundleFromEngine } from "@/app/demo/lib/demo-adapter";
+import { demoModel } from "@/app/demo/lib/demo-logic";
+import { demoChat } from "@/app/demo/lib/demo-chat";
+import { Cell, DemoContext } from "@/app/demo/components/shared";
+import { SESSION_CAPABILITY_COOKIE } from "@/app/lib/session-capability";
+import type { V2Document, V2Fact } from "@/app/lib/engine/client";
 import { deleteComparisonResult } from "@/app/lib/comparison-result-db";
 import { deleteSession } from "@/app/lib/session";
-import { withEvidenceId } from "@/app/lib/evidence-ids";
-import type { ComparisonTable, RegisteredComparisonTable } from "@/app/lib/extraction/types";
 import {
-  SESSIONS_DIR, SYNTHETIC_DOCUMENT, blankProviderEnv, extractedSession, pdfText, post, selectionFor, tamperStoredRow,
+  SESSIONS_DIR, SYNTHETIC_DOCUMENT, blankProviderEnv, extractedSession, pdfText, post, selectionFor,
 } from "./m7b-fixtures";
 
 // Components compile with the classic JSX runtime under Vitest.
@@ -101,9 +102,78 @@ export function runTb1(): void {
   }
 }
 
-// ---------------------------------------------------------------- TB-3
+// ---------------------------------------------------------------- TB-3 (V2)
+//
+// The V2 result is the engine's facts, saved with the session by /api/extract. An edit to
+// the saved result after it was issued must show as "Couldn't confirm" on every V2 surface:
+// the results screen (GET /api/results -> the V2 bundle -> the cell), its chat (the V2
+// chat router over the same bundle) and the export (/api/export). The guard is the V2
+// read-back gate (app/lib/engine/read-back.ts); without it each assertion below fails.
 
-const CBC = "cannot be confirmed";
+const CC = "Couldn't confirm";
+const DOC_ID = SYNTHETIC_DOCUMENT.documentId;
+const DED_CATEGORY = { key: "ded", name: "Deductible", tier: 1, order: 1, explain: "You pay this first." };
+
+function issuedEngineResult(): V2Document[] {
+  return [
+    {
+      documentId: DOC_ID,
+      filename: SYNTHETIC_DOCUMENT.filename,
+      pages: 2,
+      facts: [
+        {
+          id: "f-ded",
+          label: "Annual deductible",
+          column: "",
+          state: "verified",
+          quote: "$500 per person",
+          page: 2,
+          categoryKey: "ded",
+          value: {
+            kind: "amount", number: "500", currency: "USD", basis: "per_year", year_kind: null, text: null,
+            counts_toward_deductible: null,
+          } as V2Fact["value"],
+          plain: "You pay the first $500 yourself each year.",
+        },
+      ],
+      openItems: [],
+      categories: [DED_CATEGORY],
+      categorySearch: {},
+      checksIncomplete: false,
+    },
+  ];
+}
+
+/** Rewrites the saved engine result (local store) the way an attacker with storage access
+ *  would; the stored fingerprints are left as they are. */
+function editSavedEngineResult(sessionId: string, mutate: (docs: V2Document[]) => void): void {
+  const path = join(SESSIONS_DIR, `${sessionId}.result.json`);
+  const record = JSON.parse(readFileSync(path, "utf8"));
+  record.payload.engine ??= { documents: [] };
+  mutate(record.payload.engine.documents);
+  writeFileSync(path, JSON.stringify(record));
+}
+
+async function v2Surfaces(sessionId: string, capability: string, table: Parameters<typeof selectionFor>[0]) {
+  const req = new NextRequest(`http://localhost/api/results/${sessionId}`, {
+    headers: { cookie: `${SESSION_CAPABILITY_COOKIE}=${capability}` },
+  });
+  const res = await results(req, { params: Promise.resolve({ sessionId }) });
+  expect(res.status).toBe(200);
+  const saved = (await res.json()) as { engine: { documents: V2Document[] } };
+  const M = demoModel(bundleFromEngine(saved.engine.documents));
+  const actions = { M, openSource: () => undefined, openPdf: () => undefined, pdfUrl: () => "", pdfNote: "" };
+  const html = renderToStaticMarkup(
+    createElement(DemoContext.Provider, { value: actions }, createElement(Cell, { id: DOC_ID, k: "ded" })),
+  );
+  // the text a person reads on the screen
+  const screen = html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&");
+  const reply = demoChat(M).typed("What is the deductible?", [DOC_ID]);
+  const chatText = reply.lines.flat().map((seg) => ("text" in seg ? seg.text : seg.label)).join("");
+  const exported = await exportPdf(post("/api/export", { sessionId, selection: selectionFor(table) }, capability));
+  expect(exported.status).toBe(200);
+  return { screen, chat: chatText, exported: await pdfText(exported) };
+}
 
 export async function runTb3(): Promise<void> {
   const originalEnv = { ...process.env };
@@ -111,71 +181,56 @@ export async function runTb3(): Promise<void> {
   blankProviderEnv();
   try {
     const { sessionId, capability, table } = await extractedSession(created);
-    const target = "annual-deductible";
-    const altered = "$0 per person";
-    expect(table.rows.find((r: { factName: string }) => r.factName === target)?.values?.length).toBeGreaterThan(0);
+    editSavedEngineResult(sessionId, (docs) => docs.splice(0, docs.length, ...issuedEngineResult()));
 
-    // 1. Comparison view: rows issued by the extraction pipeline, one altered
-    //    after issue, rendered through the view-model and the UI component.
-    const core: ComparisonTable = {
-      schemaVersion: "v1", factListVersion: table.factListVersion, documents: table.documents,
-      ...(table.plans ? { plans: table.plans } : {}),
-      rows: table.rows.map((r: ComparisonTable["rows"][number]) => ({
-        ...r, values: r.values.map((v) => ({ ...v, evidence: v.evidence.map(({ documentId, page, quote }) => ({ documentId, page, quote })) })),
-      })),
-    };
-    const { authority, provisionIdsByRow } = sealVerifiedTable(sessionId, [SYNTHETIC_DOCUMENT], core);
-    const issued = issueRows(authority, sessionId, core.rows, provisionIdsByRow);
-    const index = core.rows.findIndex((r) => r.factName === target);
-    const tampered = issued.map((entry, i) => i !== index ? entry : {
-      ...entry,
-      resolution: { ...entry.resolution, row: { ...entry.resolution.row, values: entry.resolution.row.values.map((v) => ({ ...v, display: altered })) } },
+    // Issued and untouched: verified on every surface.
+    const before = await v2Surfaces(sessionId, capability, table);
+    expect(before.screen).toContain("Verified");
+    expect(before.screen).toContain("$500");
+    expect(before.chat).toContain("$500");
+    expect(before.exported).toContain("$500 per person");
+
+    // Attack 1: the saved value (and its plain words) altered after issue.
+    editSavedEngineResult(sessionId, (docs) => {
+      const f = docs[0].facts[0];
+      f.value = { ...f.value!, number: "50" };
+      f.plain = "You pay the first $50 yourself each year.";
     });
-    const rendered = renderIssuedRows(authority, sessionId, tampered);
-    const view: RegisteredComparisonTable = {
-      ...core,
-      rows: rendered.rows.map((r) => ({ ...r, values: r.values.map((v) => ({ ...v, evidence: v.evidence.map(withEvidenceId) })) })),
-    };
-    expect(cannotBeConfirmedFacts(view).map((n) => [n.concept, n.status])).toEqual([[target, CBC]]);
-    const html = renderToStaticMarkup(createElement(AdaptiveResults, {
-      table: view,
-      view: { mode: "understand", documentId: table.documents[0].documentId, planIds: [], tiers: {} },
-      sessionId, userContext: {}, contacts: [],
-    }));
-    expect(html.toLowerCase()).toContain(CBC);
-    expect(html).not.toContain(altered);
+    for (const [surface, text] of Object.entries(await v2Surfaces(sessionId, capability, table))) {
+      expect(text, surface).not.toContain("$50 ");
+      expect(text, surface).not.toMatch(/\$50(?!0)/);
+      expect(text, surface).not.toContain("Verified");
+    }
+    const after1 = await v2Surfaces(sessionId, capability, table);
+    expect(after1.screen).toContain(CC);
+    expect(after1.chat).toContain("Check page 2");
+    expect(after1.exported).toContain(CC);
+
+    // Attack 2: the saved words themselves altered (value made consistent with them).
+    editSavedEngineResult(sessionId, (docs) => {
+      docs.splice(0, docs.length, ...issuedEngineResult());
+      const f = docs[0].facts[0];
+      f.quote = "$50 per person";
+      f.value = { ...f.value!, number: "50" };
+    });
+    const after2 = await v2Surfaces(sessionId, capability, table);
+    for (const [surface, text] of Object.entries(after2)) {
+      expect(text, surface).not.toMatch(/\$50(?!0)/);
+    }
+    expect(after2.screen).toContain(CC);
+    expect(after2.exported).toContain(CC);
 
     // Exclusion/applicability outcomes take the same gate on every surface
-    // (exclusion-outcomes.ts → displayIssuedResolution): altered after issue
-    // → "cannot be confirmed"; unaltered → confirmed.
+    // (exclusion-outcomes.ts -> displayIssuedResolution): altered after issue
+    // -> "cannot be confirmed"; unaltered -> confirmed.
     const scenario = exclusionScenario({ coverage: "complete" });
     const outcomes = resolveExclusionOutcomes(scenario.store, scenario.authority, "Is acupuncture covered?");
     expect(outcomes.length).toBeGreaterThan(0);
     expect(exclusionOutcomeViews(scenario.authority, scenario.sessionId, outcomes).every((v) => v.status === "confirmed")).toBe(true);
     const alteredOutcomes = outcomes.map((o) => ({ ...o, resolution: { ...o.resolution, outcome: "verified" } }));
     const shownAltered = exclusionOutcomeViews(scenario.authority, scenario.sessionId, alteredOutcomes);
-    expect(shownAltered.map((v) => v.status)).toEqual(outcomes.map(() => CBC));
+    expect(shownAltered.map((v) => v.status)).toEqual(outcomes.map(() => "cannot be confirmed"));
     expect(shownAltered.some((v) => v.verdict === "SUPPORTED")).toBe(false);
-
-    // 2 & 3. The persisted result is altered after issue (stored fingerprint
-    //    left untouched), then read back by chat and export.
-    tamperStoredRow(sessionId, target, (row) => {
-      (row.values as { display: string }[]).forEach((v) => { v.display = altered; });
-    });
-
-    const chatRes = await chat(post("/api/chat", { sessionId, question: "What is the annual deductible?", engine: "fallback" }, capability));
-    expect(chatRes.status).toBe(200);
-    const answer = await chatRes.json();
-    expect(answer.kind).toBe("answer");
-    const related = (answer.resolutions ?? []).find((r: { factName: string }) => r.factName === target);
-    expect(related?.status).toBe(CBC);
-    expect(JSON.stringify(answer)).not.toContain(altered);
-
-    const exportRes = await exportPdf(post("/api/export", { sessionId, selection: selectionFor(table) }, capability));
-    expect(exportRes.status).toBe(200);
-    const text = await pdfText(exportRes);
-    expect(text).toContain(CBC);
-    expect(text).not.toContain(altered);
   } finally {
     process.env = { ...originalEnv };
     for (const id of created.splice(0)) {

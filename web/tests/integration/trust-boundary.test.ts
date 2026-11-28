@@ -57,7 +57,7 @@ describe("trust boundary (evidence-core.md §5, INV-EC-09 source binding)", () =
     },
   );
   it(
-    'TB-3 — Attack: Resolution altered after issue, shown on comparison view, chat answer and export — Must hold: Each surface shows "cannot be confirmed"',
+    'TB-3 — Attack: Saved result altered after issue (value, plain words or printed words), shown on the V2 results screen, its chat answer and export — Must hold: Each surface shows "Couldn\'t confirm" and never the altered value',
     async () => (await import("./m7b-trust-boundary")).runTb3(),
     30_000,
   );

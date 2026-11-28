@@ -14,6 +14,7 @@
 // (app/lib/session-auth.ts). Session ID alone is insufficient.
 
 import { loadSession } from "@/app/lib/session-store";
+import { confirmSavedEngineDocuments, tableFromEngineDocuments } from "@/app/lib/engine/read-back";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSessionCapability } from "@/app/lib/session-auth";
 import { errorResponse, newRequestId } from "@/app/lib/api-errors";
@@ -155,21 +156,30 @@ export async function POST(request: NextRequest) {
   // AT-PERSIST: the stored result carries no authority. Re-derive it from the
   // session's stored page text under this request's authority; rows that do
   // not re-derive identically render as "cannot be confirmed" (TB-3).
-  const { table } = confirmStoredResult({
-    sessionId,
-    documents: session.documents,
-    record,
-  });
+  // V2 results (the engine's facts) go through the V2 read-back gate instead: a fact
+  // altered after it was saved shows as "Couldn't confirm - check page N" (TB-3).
+  const saved = record.payload.engine?.documents;
+  const table = saved
+    ? tableFromEngineDocuments(
+        session.documents,
+        confirmSavedEngineDocuments(saved, session.documents),
+      )
+    : confirmStoredResult({ sessionId, documents: session.documents, record }).table;
   const scopes = overviewScopes(
     table,
-    selection.planIds,
-    selection.tiers,
-    selection.legacyTiersByDocument,
+    saved ? session.documents.map((d) => d.documentId) : selection.planIds,
+    saved ? {} : selection.tiers,
+    saved ? {} : selection.legacyTiersByDocument,
   );
+  // V2: one plan per document until plan levels are read (WP6), so the report's views
+  // are the session's documents.
+  const reportSelection = saved
+    ? { ...selection, planIds: session.documents.map((d) => d.documentId), tiers: {}, legacyTiersByDocument: {} }
+    : selection;
   const snapshot = structuredClone({
     table,
     userContext: record.payload.userContext,
-    selection,
+    selection: reportSelection,
     contacts: record.payload.contacts,
   });
   const overview = selection.viewMode
