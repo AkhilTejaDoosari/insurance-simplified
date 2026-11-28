@@ -46,17 +46,27 @@ from app.recovery.coverage import CoverageReport, ItemState, coverage
 from app.recovery.engines import DocumentReader, PageReader, TextModel, VisualModel
 from app.recovery.gaps import GapKind, PageGaps, find_gaps
 from app.recovery.governing import exclusion_items, resolve, units
+from app.recovery.plain import (
+    PLAIN_PROMPT_VERSION,
+    PLAIN_SCHEMA,
+    PLAIN_SYSTEM,
+    PlainItem,
+    parse_plain,
+    plain_request,
+)
 from app.recovery.policy import CloudAuthorization, CloudPolicy
 from app.recovery.restrictions import VerifiedFact, link
 from app.recovery.semantic import (
     JUDGE_PROMPT_VERSION,
     JUDGE_SCHEMA,
     JUDGE_SYSTEM,
+    UNKNOWN_FAMILY,
     CodeCheck,
     JudgeItem,
     JudgeVerdict,
     confirmed,
     interpret,
+    is_column_header,
     judge_request,
     parse_judge,
     proposer_families,
@@ -73,6 +83,7 @@ class Engines:
     docling: PageReader | None = None
     pdfplumber: PageReader | None = None
     text_model: TextModel | None = None
+    text_provider: str = "nvidia"  # cloud-policy and price name of text_model
     visual_model: VisualModel | None = None
     # semantic judge (key 2): a text model of a family other than any proposer's
     judge: TextModel | None = None
@@ -252,7 +263,11 @@ class RecoveryPipeline:
             f = vf.fact
             label = " ".join((*f.group_labels, f.label))
             governing = [*vf.restrictions, *vf.footnotes, *vf.context]
-            code = interpret(f.value, label=label, header=f.header, governing=governing)
+            code = (
+                CodeCheck([], ["value_is_column_header"])
+                if is_column_header(f.value, f.header)
+                else interpret(f.value, label=label, header=f.header, governing=governing)
+            )
             item = JudgeItem(
                 label,
                 f.header,
@@ -268,6 +283,20 @@ class RecoveryPipeline:
             code = interpret(
                 e.text, label=e.anchor, header=e.column, governing=governing, prose=True
             )
+            if is_column_header(e.text, e.column):
+                code = CodeCheck([], ["value_is_column_header"])
+            elif e.labelled:
+                # a brochure line is read like a table value when its printed words settle
+                # the number and basis (printed words only); otherwise as printed text
+                numeric = interpret(
+                    e.text,
+                    label=e.anchor,
+                    header=e.column,
+                    governing=governing,
+                    term_rules=False,
+                )
+                if numeric.passed:
+                    code = numeric
             item = JudgeItem(
                 e.anchor,
                 e.column,
@@ -278,7 +307,12 @@ class RecoveryPipeline:
             )
             pending.append((cf, code, item))
         verdicts: dict[int, JudgeVerdict] = {}
-        judgeable = [i for i, (_f, code, _it) in enumerate(pending) if code.passed]
+        # a proposer whose family is unknown can never be judged "different" (fail-closed)
+        judgeable = [
+            i
+            for i, (f, code, _it) in enumerate(pending)
+            if code.passed and UNKNOWN_FAMILY not in proposer_families(f.proposed_by_all)
+        ]
         eng = self.engines
         main = [
             i
@@ -348,23 +382,49 @@ class RecoveryPipeline:
     def _judge_call(
         self, judge: TextModel, provider: str, request: str, ledger: Ledger, sha: str
     ) -> Any:
+        return self.json_call(
+            "judge",
+            judge,
+            provider,
+            JUDGE_SYSTEM,
+            request,
+            "judge",
+            JUDGE_SCHEMA,
+            self.limits.judge_max_tokens,
+            ledger,
+            sha,
+        )
+
+    def json_call(  # noqa: PLR0917 - one call's whole description, all required
+        self,
+        stage: str,
+        judge: TextModel,
+        provider: str,
+        system: str,
+        request: str,
+        schema_name: str,
+        schema: dict[str, Any],
+        max_tokens: int,
+        ledger: Ledger,
+        sha: str,
+    ) -> Any:
+        """One capped, reserved, ledgered JSON call (the caller checked the cloud policy).
+        Returns the parsed reply, or None on refusal or failure (fail-closed)."""
         price = price_from_env(provider)
-        est = estimate_text_tokens(JUDGE_SYSTEM, request, json.dumps(JUDGE_SCHEMA))
-        worst = worst_case_usd(price, est, self.limits.judge_max_tokens) if price else None
+        est = estimate_text_tokens(system, request, json.dumps(schema))
+        worst = worst_case_usd(price, est, max_tokens) if price else None
         reserved = None if worst is None else worst * _attempts(judge)
-        one_tokens = est + self.limits.judge_max_tokens
+        one_tokens = est + max_tokens
         refusal, rid, tid = self._admit(
-            provider, reserved, one_tokens * _attempts(judge), ledger, f"{sha[:12]}:judge"
+            provider, reserved, one_tokens * _attempts(judge), ledger, f"{sha[:12]}:{stage}"
         )
         if refusal:
-            ledger.add(LedgerEntry("judge", provider, judge.model, (), 0.0, "skipped", refusal))
+            ledger.add(LedgerEntry(stage, provider, judge.model, (), 0.0, "skipped", refusal))
             return None
         t = ledger.elapsed()
-        ledger.note(f"judge {provider}: calling")
+        ledger.note(f"{stage} {provider}: calling")
         try:
-            reply = judge.complete_json(
-                JUDGE_SYSTEM, request, "judge", JUDGE_SCHEMA, self.limits.judge_max_tokens
-            )
+            reply = judge.complete_json(system, request, schema_name, schema, max_tokens)
         except Exception as exc:
             self._settle_tokens(tid, exc, one_tokens)
             charged = None
@@ -378,7 +438,7 @@ class RecoveryPipeline:
                 self.spend.settle(rid, charged)
             ledger.add(
                 LedgerEntry(
-                    "judge",
+                    stage,
                     provider,
                     judge.model,
                     (),
@@ -398,7 +458,7 @@ class RecoveryPipeline:
             self.spend.settle(rid, cost)
         ledger.add(
             LedgerEntry(
-                "judge",
+                stage,
                 provider,
                 reply.model,
                 (),
@@ -412,6 +472,59 @@ class RecoveryPipeline:
             )
         )
         return reply.data
+
+    # ---------------------------------------------------------------- plain words
+
+    def plain_words(  # noqa: PLR0917
+        self,
+        sha: str,
+        model: TextModel,
+        provider: str,
+        items: list[PlainItem],
+        authorization: CloudAuthorization | None,
+        ledger: Ledger,
+    ) -> list[str]:
+        """One checked plain-words line per item ("" when refused, failed or dropped).
+        Same policy, cap, reservation and cache rules as every other model call."""
+        out = [""] * len(items)
+        if not items or not self._allowed(provider, "plain", sha, authorization, ledger):
+            return out
+        size = max(1, self.limits.plain_items_per_call)
+        for start in range(0, len(items), size):
+            batch = items[start : start + size]
+            if ledger.calls("plain") >= self.limits.max_plain_calls or self._exhausted(ledger):
+                ledger.add(LedgerEntry("plain", provider, model.model, (), 0.0, "skipped", "limit"))
+                break
+            request = plain_request(batch)
+            key = Cache.key(
+                sha,
+                "plain",
+                provider,
+                model.model,
+                prompt=PLAIN_PROMPT_VERSION,
+                pages=[],
+                request=hashlib.sha256(request.encode()).hexdigest(),
+            )
+            data = self.cache.get(key)
+            if data is not None:
+                ledger.add(LedgerEntry("plain", provider, model.model, (), 0.0, "cached"))
+            else:
+                data = self.json_call(
+                    "plain",
+                    model,
+                    provider,
+                    PLAIN_SYSTEM,
+                    request,
+                    "plain_words",
+                    PLAIN_SCHEMA,
+                    self.limits.plain_max_tokens,
+                    ledger,
+                    sha,
+                )
+                if data is not None:
+                    self.cache.put(key, data)
+            out[start : start + len(batch)] = parse_plain(data, batch)
+        return out
 
     # ---------------------------------------------------------------- models
 
@@ -451,13 +564,14 @@ class RecoveryPipeline:
         max_out: int,
         max_attempts: int,
         clauses_out: list[ClauseCandidate] | None = None,
+        prompt_version: str = proposals.PROMPT_VERSION,
     ) -> list[Candidate]:
         key = Cache.key(
             sha,
             stage,
             provider,
             model,
-            prompt=proposals.PROMPT_VERSION,
+            prompt=prompt_version,
             pages=targets,
             request=request_digest,
         )
@@ -610,6 +724,7 @@ class RecoveryPipeline:
     ) -> list[Candidate]:
         model = self.engines.text_model
         assert model is not None  # noqa: S101 - checked by caller
+        provider = self.engines.text_provider
         by_page = {lay.number: lay for lay in layouts}
         following = {p for p, g in gaps.items() if GapKind.CONTINUES_ON_NEXT_PAGE in g.kinds}
         out: list[Candidate] = []
@@ -618,7 +733,7 @@ class RecoveryPipeline:
             if ledger.calls("text") >= self.limits.max_text_calls or self._exhausted(ledger):
                 ledger.add(
                     LedgerEntry(
-                        "text", "nvidia", model.model, tuple(targets[i:]), 0.0, "skipped", "limit"
+                        "text", provider, model.model, tuple(targets[i:]), 0.0, "skipped", "limit"
                     )
                 )
                 break
@@ -635,13 +750,13 @@ class RecoveryPipeline:
                     proposals.TEXT_SYSTEM,
                     request,
                     "table_cells",
-                    proposals.SCHEMA,
+                    proposals.TEXT_SCHEMA,
                     self.limits.text_max_tokens,
                 )
 
             out += self._model_call(
                 "text",
-                "nvidia",
+                provider,
                 model.model,
                 sha=sha,
                 targets=batch,
@@ -650,11 +765,12 @@ class RecoveryPipeline:
                 ledger=ledger,
                 disclosed=len(request.encode()),
                 estimate_in=estimate_text_tokens(
-                    proposals.TEXT_SYSTEM, request, json.dumps(proposals.SCHEMA)
+                    proposals.TEXT_SYSTEM, request, json.dumps(proposals.TEXT_SCHEMA)
                 ),
                 max_out=self.limits.text_max_tokens,
                 max_attempts=_attempts(model),
                 clauses_out=clauses_out,
+                prompt_version=proposals.TEXT_PROMPT_VERSION,
             )
         return out
 
@@ -799,7 +915,7 @@ class RecoveryPipeline:
             else routable()
         )
         if self.engines.text_model and (pages := targets):
-            if self._allowed("nvidia", "text", sha, authorization, ledger):
+            if self._allowed(self.engines.text_provider, "text", sha, authorization, ledger):
                 extra += self._text_stage(
                     sha,
                     layouts,
@@ -835,6 +951,7 @@ class RecoveryPipeline:
                     shown=shown,
                 )
 
+        extra_clauses += _unruled_lines(extra, layouts, rec)
         clauses, clause_verdicts = self._clauses(docs, layouts, rec, extra_clauses)
         facts = link(rec.facts, layouts, rec.verdicts)
         _governing(facts, clauses, layouts)
@@ -858,6 +975,25 @@ class RecoveryPipeline:
             verified_by_stage=verified_by_stage,
             reconciled=rec,
         )
+
+
+def _unruled_lines(
+    model_cells: list[Candidate], layouts: list[PageLayout], rec: Reconciled
+) -> list[ClauseCandidate]:
+    """A model's table-cell proposal on a page WITHOUT drawn table rules, that the table
+    verifier did not verify, is re-checked as a brochure line (app.recovery.labelled):
+    the same claim - this label reads this value - under rules that need no ruling lines.
+    The claimed column header is not trusted and not carried (it stays unproven). Ruled
+    pages never take this path: their cells answer to the table rules alone."""
+    by_page = {lay.number: lay for lay in layouts}
+    settled = {(f.page, norm(f.label), norm(f.value)) for f in rec.facts}
+    out: list[ClauseCandidate] = []
+    for c in model_cells:
+        lay = by_page.get(c.page)
+        if lay is None or lay.ruled or (c.page, norm(c.label), norm(c.value)) in settled:
+            continue
+        out.append(ClauseCandidate(c.reader, c.page, c.label, c.value, "labelled", c.value))
+    return out
 
 
 def _governing(

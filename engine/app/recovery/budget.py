@@ -24,6 +24,9 @@ class RunLimits:
     max_judge_calls: int = 12  # semantic judge (key 2), facts batched per call
     judge_facts_per_call: int = 10
     judge_max_tokens: int = 4_000
+    max_plain_calls: int = 4  # plain-words lines for verified facts, batched per call
+    plain_items_per_call: int = 25
+    plain_max_tokens: int = 3_000
     # D-036 per-document cost gate. Model calls stop once the document's recorded cost
     # reaches it; with a cap set, a provider without a configured price is not called
     # (an unknown cost cannot be held to a cap). None = no cap (evaluation runs only).

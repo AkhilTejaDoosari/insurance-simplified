@@ -93,7 +93,9 @@ class ClauseCandidate:
     page: int
     anchor: str
     text: str
-    structure: str = "any"  # "table": a reader's table cell (ruled pages only)
+    structure: str = "any"  # "table": a reader's table cell (ruled pages only);
+    # "labelled": a model's (label, value, quote) line - see app.recovery.labelled
+    value: str = ""  # labelled only: the value, a whole-word part of ``text`` (the quote)
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,9 @@ class ClauseEvidence:
     column: str  # printed column header, "" when unproven
     ruled: bool
     governing: tuple[str, ...] = ()  # whole governing cells of the same row, as printed
+    # a brochure line proven to have no column (app.recovery.labelled.single_column)
+    single_column: bool = False
+    labelled: bool = False  # a brochure line: label and value on the same printed line
 
 
 @dataclass(frozen=True)
@@ -554,11 +559,69 @@ def verify_clause(
         return ClauseVerdict(c, Status.UNRESOLVED, ("no_text_layer",))
     if not norm(c.anchor) or not norm(c.text):
         return ClauseVerdict(c, Status.UNRESOLVED, ("empty_anchor_or_text",))
+    if c.structure == "labelled":
+        return _verify_labelled(c, layout, following, previous)
     if layout.ruled:
         v = _verify_ruled(c, layout, following, previous)
         if v.status is Status.VERIFIED or "anchor_not_a_printed_cell" not in v.reasons:
             return v
     return _verify_unruled(c, layout)
+
+
+def _verify_labelled(
+    c: ClauseCandidate,
+    layout: PageLayout,
+    following: PageLayout | None,
+    previous: PageLayout | None,
+) -> ClauseVerdict:
+    """Rule set in app.recovery.labelled: the quote on the label's line, else the clause
+    under the label by the prose rules above; the value must be inside the quote."""
+    from app.recovery.labelled import single_column, verify_same_line  # noqa: PLC0415
+
+    if not norm(c.value):
+        return ClauseVerdict(c, Status.UNRESOLVED, ("empty_value",))
+    status, reasons, found = verify_same_line(layout, c.anchor, c.value, c.text)
+    if status is Status.VERIFIED and found is not None:
+        label_words, quote_words, printed = found
+        return ClauseVerdict(
+            c,
+            Status.VERIFIED,
+            (),
+            ClauseEvidence(
+                (layout.number,),
+                _text(label_words),
+                _t(_box(label_words)),
+                printed,
+                (_t(_box(quote_words)),),
+                "",
+                layout.ruled,
+                single_column=single_column(layout, label_words, quote_words),
+                labelled=True,
+            ),
+        )
+    under = verify_clause(
+        ClauseCandidate(c.source, c.page, c.anchor, c.text), layout, following, previous
+    )
+    if under.status is Status.VERIFIED and under.evidence is not None:
+        if _whole_words(c.value, under.evidence.text):
+            return ClauseVerdict(c, Status.VERIFIED, (), under.evidence)
+        return ClauseVerdict(c, Status.UNRESOLVED, ("value_not_in_quote",))
+    return ClauseVerdict(c, Status.UNRESOLVED, tuple(dict.fromkeys((*reasons, *under.reasons))))
+
+
+def _whole_words(value: str, text: str) -> bool:
+    """``value`` is a run of whole printed words of ``text`` (compared by norm)."""
+    target = norm(value)
+    keys = [norm(t) for t in text.split()]
+    for i in range(len(keys)):
+        acc = ""
+        for k in keys[i:]:
+            acc += k
+            if acc == target:
+                return True
+            if not target.startswith(acc):
+                break
+    return False
 
 
 # ------------------------------------------------------------------- proposers
@@ -641,7 +704,7 @@ def clause_facts(
 def _qualify(f: ClauseFact, by_page: dict[int, PageLayout]) -> None:
     e = f.evidence
     f.restrictions = list(e.governing)
-    if not e.column:
+    if not e.column and not e.single_column:
         f._open("column_unproven")
     if any(CROSS_REFERENCE.search(t) for t in (e.text, *e.governing)):
         f._open("cross_reference_unresolved")

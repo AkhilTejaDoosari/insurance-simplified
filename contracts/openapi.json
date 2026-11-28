@@ -103,6 +103,49 @@
         "title": "BlockKind",
         "type": "string"
       },
+      "CategoryInfo": {
+        "additionalProperties": false,
+        "description": "A dictionary category (US pack). Used only to match wording and order rows.",
+        "properties": {
+          "explain": {
+            "description": "One-line general explanation ('general info').",
+            "title": "Explain",
+            "type": "string"
+          },
+          "key": {
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "order": {
+            "description": "Display order inside the tier.",
+            "minimum": 0,
+            "title": "Order",
+            "type": "integer"
+          },
+          "tier": {
+            "description": "1 must know, 2 important, 3 good to know",
+            "maximum": 3,
+            "minimum": 1,
+            "title": "Tier",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "tier",
+          "order",
+          "explain"
+        ],
+        "title": "CategoryInfo",
+        "type": "object"
+      },
       "ChatAnswer": {
         "additionalProperties": false,
         "properties": {
@@ -535,6 +578,49 @@
       "Extraction": {
         "additionalProperties": false,
         "properties": {
+          "categories": {
+            "description": "The category dictionary the facts were mapped with.",
+            "items": {
+              "$ref": "#/components/schemas/CategoryInfo"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "category_search": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "description": "1-based PDF page number.",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": "For each dictionary category no fact of this document maps to: the first page where one of its dictionary wordings is printed (couldn't confirm - check that page), or null when none is printed anywhere. Searched by the dictionary's wording only, not by meaning.",
+            "title": "Category Search",
+            "type": "object"
+          },
+          "claude_tokens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenAllowance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The cumulative Claude token allowance, when one is set."
+          },
+          "dictionary_version": {
+            "default": "",
+            "description": "Category dictionary version.",
+            "title": "Dictionary Version",
+            "type": "string"
+          },
           "document_sha256": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Document Sha256",
@@ -550,9 +636,31 @@
           },
           "model_calls": {
             "default": 0,
-            "description": "Cloud model calls made (none here).",
+            "description": "Cloud model calls made for this document.",
             "title": "Model Calls",
             "type": "integer"
+          },
+          "model_cost_usd": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 0.0,
+            "description": "USD charged for this document's model calls at list price (capped per document); null when a call's cost could not be known.",
+            "title": "Model Cost Usd"
+          },
+          "model_usage": {
+            "description": "Tokens and cost per provider and stage.",
+            "items": {
+              "$ref": "#/components/schemas/ModelUsage"
+            },
+            "title": "Model Usage",
+            "type": "array"
           },
           "open_items": {
             "items": {
@@ -568,6 +676,14 @@
           },
           "parser": {
             "$ref": "#/components/schemas/ParserInfo"
+          },
+          "plain": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Fact id -> one plain-words line, only for VERIFIED facts, written only from the fact's printed label and quote and checked against them (explanation, never evidence).",
+            "title": "Plain",
+            "type": "object"
           },
           "printed": {
             "additionalProperties": {
@@ -996,6 +1112,63 @@
           "document_model_version"
         ],
         "title": "Meta",
+        "type": "object"
+      },
+      "ModelUsage": {
+        "additionalProperties": false,
+        "properties": {
+          "calls": {
+            "description": "Calls sent (cached replies are not counted).",
+            "minimum": 0,
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cost Usd"
+          },
+          "input_tokens": {
+            "minimum": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "output_tokens": {
+            "minimum": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "stage": {
+            "description": "text | judge | plain (recovery stage).",
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "stage",
+          "calls",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "ModelUsage",
         "type": "object"
       },
       "Need": {
@@ -1742,6 +1915,35 @@
         "title": "TextSpan",
         "type": "object"
       },
+      "TokenAllowance": {
+        "additionalProperties": false,
+        "properties": {
+          "cap": {
+            "description": "ENGINE_CLAUDE_TOKEN_CAP: cumulative Claude tokens.",
+            "minimum": 1,
+            "title": "Cap",
+            "type": "integer"
+          },
+          "committed": {
+            "description": "Claude tokens used so far, all documents.",
+            "minimum": 0,
+            "title": "Committed",
+            "type": "integer"
+          },
+          "remaining": {
+            "minimum": 0,
+            "title": "Remaining",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cap",
+          "committed",
+          "remaining"
+        ],
+        "title": "TokenAllowance",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -1866,6 +2068,24 @@
               "description": "The caller's plan id for these facts.",
               "title": "Plan Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated providers the user consented to for this document: 'anthropic' (Claude reads unsettled pages, judges reader facts, writes plain words) and optionally 'openai' (GPT judges Claude's facts). Used only when the deployment's cloud policy also allows it.",
+            "in": "header",
+            "name": "X-Engine-Cloud-Consent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated providers the user consented to for this document: 'anthropic' (Claude reads unsettled pages, judges reader facts, writes plain words) and optionally 'openai' (GPT judges Claude's facts). Used only when the deployment's cloud policy also allows it.",
+              "title": "X-Engine-Cloud-Consent"
             }
           },
           {

@@ -60,10 +60,18 @@ _BASIS_WORDS: tuple[tuple[Basis, re.Pattern[str]], ...] = (
         ),
     ),
     (
-        Basis.PER_INCIDENT,
+        # travel plans: "per covered trip", "per certificate period", "period of coverage"
+        Basis.PER_PERIOD_OF_COVERAGE,
         re.compile(
-            r"(?:per|/)\s*(?:prescription|script|fill|service|occurrence|trip|item|test)", re.I
+            r"(?:per|/|each)\s*(?:covered\s+)?trip\b"
+            r"|(?:per|each)\s+(?:certificate|policy|coverage|insurance)\s+period"
+            r"|\bperiod\s+of\s+coverage\b",
+            re.I,
         ),
+    ),
+    (
+        Basis.PER_INCIDENT,
+        re.compile(r"(?:per|/)\s*(?:prescription|script|fill|service|occurrence|item|test)", re.I),
     ),
 )
 _ANNUAL_TERMS = re.compile(r"deductible|out[\s-]*of[\s-]*pocket", re.I)
@@ -103,14 +111,19 @@ class CodeCheck:
         return bool(self.interpretations) and not self.problems
 
 
-def _basis(value: str, label: str, header: str, governing: list[str]) -> tuple[Basis, str]:
+def _basis(
+    value: str, label: str, header: str, governing: list[str], term_rules: bool = True
+) -> tuple[Basis, str]:
     """Printed words first (value, header, label), then the named term rules, and only
     then governing text - a limitation such as "20 visits per year" must never give a
-    copay its basis."""
+    copay its basis. ``term_rules=False`` (brochure lines): printed words only - the SBC
+    term rules ("a deductible is per year") do not hold for travel and student plans."""
     for source, text in (("value", value), ("header", header), ("label", label)):
         for basis, pattern in _BASIS_WORDS:
             if pattern.search(text):
                 return basis, source
+    if not term_rules:
+        return Basis.UNCLEAR, "none"
     if _ANNUAL_TERMS.search(label) or _ANNUAL_TERMS.search(header):
         return Basis.PER_YEAR, "term:annual_limit"
     if m := _PER_SERVICE_TERMS.search(value):
@@ -156,6 +169,13 @@ def _level(word: str | None) -> PersonLevel:
     return PersonLevel.FAMILY if word.lower().startswith("famil") else PersonLevel.INDIVIDUAL
 
 
+def is_column_header(value: str, header: str) -> bool:
+    """A cell that only repeats its own column header ("IN-NETWORK PROVIDER") is a
+    heading, not a value: there is nothing to read."""
+    key = re.sub(r"\W+", "", value).lower()
+    return bool(header) and key == re.sub(r"\W+", "", header).lower()
+
+
 def interpret(
     value: str,
     *,
@@ -163,6 +183,7 @@ def interpret(
     header: str = "",
     governing: list[str] | None = None,
     prose: bool = False,
+    term_rules: bool = True,
 ) -> CodeCheck:
     """Read the printed value; every field cites printed words or a named term rule."""
     governing = governing or []
@@ -195,7 +216,7 @@ def interpret(
     money = list(_MONEY.finditer(value))
     pct = list(_PERCENT.finditer(value))
     check = CodeCheck([])
-    basis, source = _basis(value, label, header, governing)
+    basis, source = _basis(value, label, header, governing, term_rules)
     year = _year_kind(value, label, header, *governing) if basis is Basis.PER_YEAR else None
     if not money and not pct:
         if _NOT_COVERED.search(value):
@@ -425,15 +446,29 @@ def parse_judge(data: Any, n: int, family: str, model: str) -> list[JudgeVerdict
     ]
 
 
+UNKNOWN_FAMILY = "unknown"
+
+
+def model_family(model: str) -> str:
+    """A model's family from its name. A name no rule recognises is ``unknown``, which
+    no judge may ever count as different (fail-closed)."""
+    m = model.lower().rsplit("/", 1)[-1]
+    if "claude" in m:
+        return "anthropic-claude"
+    if "nemotron" in m:
+        return "nvidia-nemotron"
+    if m.startswith(("gpt-", "o1", "o3", "o4")) or "openai" in model.lower():
+        return "openai-gpt"
+    return UNKNOWN_FAMILY
+
+
 def proposer_families(proposed_by: set[str]) -> set[str]:
-    """Model families among a fact's proposers ("text:<model>" Nemotron, "visual:" Claude)."""
-    out = set()
-    for p in proposed_by:
-        if p.startswith("text:"):
-            out.add("nvidia-nemotron")
-        elif p.startswith("visual:"):
-            out.add("anthropic-claude")
-    return out
+    """Model families among a fact's proposers. A proposer is a reader name (no family)
+    or "<stage>:<model>" for a model; the family comes from the model's name, never
+    from the stage (the text stage may run Nemotron or Claude)."""
+    return {
+        model_family(p.split(":", 1)[1]) for p in proposed_by if p.startswith(("text:", "visual:"))
+    }
 
 
 def confirmed(
@@ -444,7 +479,10 @@ def confirmed(
         return False, tuple(code.problems) or ("code_reading_failed",)
     if verdict is None:
         return False, ("judge_not_run",)
-    if verdict.family in proposer_families(proposers):
+    families = proposer_families(proposers)
+    if UNKNOWN_FAMILY in families:
+        return False, ("proposer_family_unknown",)
+    if verdict.family in families:
         return False, ("judge_same_family_as_proposer",)
     return verdict.confirmed, verdict.reasons
 
@@ -453,6 +491,7 @@ __all__ = [
     "FIELDS",
     "JUDGE_SCHEMA",
     "JUDGE_SYSTEM",
+    "UNKNOWN_FAMILY",
     "CodeCheck",
     "Interpretation",
     "JudgeItem",
@@ -460,6 +499,7 @@ __all__ = [
     "confirmed",
     "interpret",
     "judge_request",
+    "model_family",
     "parse_judge",
     "proposer_families",
 ]

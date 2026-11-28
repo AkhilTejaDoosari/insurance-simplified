@@ -20,9 +20,16 @@ from datetime import UTC, datetime
 from app.reconcile.layout import PageLayout, Word
 from app.recovery.clauses import ClauseFact
 from app.recovery.restrictions import VerifiedFact
-from app.recovery.semantic import CHECKER, CHECKER_VERSION, Interpretation, JudgeVerdict
+from app.recovery.semantic import (
+    CHECKER,
+    CHECKER_VERSION,
+    Interpretation,
+    JudgeVerdict,
+    proposer_families,
+)
 from app.schemas.document import BBox, ParserInfo, TextSpan
 from app.schemas.facts import (
+    Basis,
     CheckResult,
     Evidence,
     Fact,
@@ -133,8 +140,13 @@ def to_contract(
         if verdict is not None
         else None
     )
+    # the proposing model's family, so the contract itself also refuses a same-family judge
+    families = proposer_families(fact.proposed_by_all)
+    models = sorted(p.split(":", 1)[1] for p in fact.proposed_by_all if ":" in p)
     provenance = Provenance(
         parser=parser,
+        extractor_model=", ".join(models) or None,
+        extractor_model_family=next(iter(families)) if len(families) == 1 else None,
         structural_check=CheckResult(
             passed=True,
             checker=f"{STRUCTURAL}+{CHECKER}",
@@ -155,7 +167,8 @@ def to_contract(
             bbox=BBox(x0=box[0], y0=box[1], x1=box[2], y1=box[3]),
         )
     )
-    if not fact.presentable_as_verified or evidence is None or not readings:
+
+    def couldnt() -> list[Fact]:
         # Not verified: no value (nothing is interpreted), but the printed words and their
         # place on the page travel with it, so the user can read the original there.
         return [
@@ -170,7 +183,10 @@ def to_contract(
                 check_page=page,
             )
         ]
-    out = []
+
+    if not fact.presentable_as_verified or evidence is None or not readings:
+        return couldnt()
+    out: list[Fact | None] = []
     for r in readings:
         negated_cover = r.kind is ValueKind.COVERED and r.negated
         out.append(
@@ -185,8 +201,20 @@ def to_contract(
                 evidence=[evidence],
                 provenance=provenance,
             )
+            if _presentable(r)
+            else None
         )
-    return out
+    if any(f is None for f in out):
+        # a reading the contract cannot carry as verified (e.g. an amount whose basis is
+        # unclear): the whole printed fact stays "couldn't confirm" (fail-closed)
+        return couldnt()
+    return [f for f in out if f is not None]
+
+
+def _presentable(r: Interpretation) -> bool:
+    """The contract's VERIFIED rules this reading must meet (app.schemas.facts)."""
+    negated_cover = r.kind is ValueKind.COVERED and r.negated
+    return negated_cover or r.basis is not Basis.UNCLEAR
 
 
 __all__ = ["box_text", "column_of", "page_text", "span_of", "to_contract"]

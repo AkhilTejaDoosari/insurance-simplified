@@ -109,3 +109,20 @@ def test_extract_reads_a_plan_page_and_never_calls_a_model() -> None:
     assert set(body["printed"]) == {f["id"] for f in body["facts"] if f["evidence"]}
     assert all(f["value"] is None for f in body["facts"])  # nothing interpreted unconfirmed
     assert all(f["plan_id"] == "plan-a" and f["check_page"] == 1 for f in body["facts"])
+
+
+def test_extract_cloud_consent_header_is_checked_and_never_enough_alone() -> None:
+    from tests.test_reconcile import _pdf  # noqa: PLC0415
+
+    c = client()
+    headers = {"authorization": f"Bearer {TOKEN}", "content-type": "application/pdf"}
+    bad = c.post(
+        "/v1/extract?plan_id=p1", content=_pdf(), headers={**headers, "x-engine-cloud-consent": "x"}
+    )
+    assert bad.status_code == 422
+    res = c.post(
+        "/v1/extract?plan_id=p1",
+        content=_pdf(),
+        headers={**headers, "x-engine-cloud-consent": "anthropic"},
+    )
+    assert res.status_code == 200 and res.json()["model_calls"] == 0  # policy not set here
