@@ -33,6 +33,7 @@ are reported per provider and stage.
 import os
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
@@ -107,6 +108,37 @@ def claude_text_model() -> AnthropicClient | None:
     if config is None:
         return None
     return AnthropicClient(AnthropicConfig(**{**config.__dict__, "max_attempts": 2}))
+
+
+@dataclass(frozen=True)
+class ModelAccess:
+    """What one document's read may use, from the user's consent and the deployment."""
+
+    authorization: CloudAuthorization | None = None
+    text_model: TextModel | None = None
+    gpt_model: TextModel | None = None
+    tokens: SpendLedger | None = None
+    spend: SpendLedger | None = None
+
+
+def model_access(document_sha256: str, consent: frozenset[str] | None) -> ModelAccess:
+    """Consent names the providers the user agreed to for this document ("anthropic",
+    optionally "openai"); None: no consent, no model. The cloud policy still decides each
+    call. A misconfigured token or spend allowance means no model call at all."""
+    if consent is None:
+        return ModelAccess()
+    auth = CloudAuthorization(document_sha256, DocumentClass.CUSTOMER, consent, "caller_consent")
+    tokens, refusal = claude_token_ledger()
+    spend, spend_refusal = spend_ledger()
+    if refusal or spend_refusal:
+        return ModelAccess(authorization=auth)
+    return ModelAccess(
+        authorization=auth,
+        text_model=claude_text_model(),
+        gpt_model=gpt_judge_model() if GPT_PROVIDER in consent else None,
+        tokens=tokens,
+        spend=spend,
+    )
 
 
 def gpt_judge_model() -> OpenAIClient | None:
@@ -213,6 +245,7 @@ def extract_pdf(
     tokens: SpendLedger | None = None,
     spend: SpendLedger | None = None,
     on_ledger: Callable[[Ledger], None] | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> Extraction:
     """The whole read, synchronous (called off the event loop). Without an authorization
     (or without a Claude configuration) no model is called."""
@@ -236,7 +269,7 @@ def extract_pdf(
         tokens=tokens,
         spend=spend,
     )
-    result = pipeline.run(pdf, authorization)
+    result = pipeline.run(pdf, authorization, progress=progress)
     if on_ledger is not None:  # evaluation: per-call stages, tokens and cost
         on_ledger(result.ledger)
     sha = sha256(pdf)
@@ -374,29 +407,22 @@ async def extract(
         raise HTTPException(413, detail={"code": "PDF_TOO_LARGE"})
     if not pdf.startswith(b"%PDF-"):
         raise HTTPException(415, detail={"code": "PDF_REQUIRED"})
-    auth = None
-    model = gpt = tokens = spend = None
+    names = None
     if cloud_consent is not None:
         names = frozenset(p.strip().lower() for p in cloud_consent.split(","))
         if not names or not names <= CONSENT_PROVIDERS or "anthropic" not in names:
             raise HTTPException(422, detail={"code": "BAD_CLOUD_CONSENT"})
-        auth = CloudAuthorization(sha256(pdf), DocumentClass.CUSTOMER, names, "caller_consent")
-        tokens, refusal = claude_token_ledger()
-        spend, spend_refusal = spend_ledger()
-        refusal = refusal or spend_refusal
-        if not refusal:  # a misconfigured allowance means no model call at all
-            model = claude_text_model()
-            gpt = gpt_judge_model() if GPT_PROVIDER in names else None
+    access = model_access(sha256(pdf), names)
     try:
         return await run_in_threadpool(
             extract_pdf,
             pdf,
             plan_id,
-            auth,
-            text_model=model,
-            gpt_model=gpt,
-            tokens=tokens,
-            spend=spend,
+            access.authorization,
+            text_model=access.text_model,
+            gpt_model=access.gpt_model,
+            tokens=access.tokens,
+            spend=access.spend,
         )
     except HTTPException:
         raise
