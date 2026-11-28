@@ -34,7 +34,8 @@ def prices(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(k, v)
 
 
-HEADED = [  # (y, x of the label, label, value) - as on the brochure page
+Line = tuple[float, float, str, str]  # (y, x of the label, label, value)
+HEADED: list[Line] = [  # (y, x of the label, label, value) - as on the brochure page
     (180, 31, "Bedside Visit", "Up to $1,500 not subject to deductible"),
     (198, 31, "Common Carrier Accidental Death", ""),
     (206, 38.3, "Ages 18 through 69", "$50,000"),
@@ -43,7 +44,7 @@ HEADED = [  # (y, x of the label, label, value) - as on the brochure page
     (230, 38.3, "Ages 75 and older", "$12,500"),
     (250, 31, "Trip Interruption", "Up to $10,000 not subject to deductible"),
 ]
-NO_HEADING = [  # the same age bands right under a benefit that has its own value
+NO_HEADING: list[Line] = [  # the same age bands right under a benefit that has its own value
     (180, 31, "Trip Interruption", "Up to $10,000 not subject to deductible"),
     (188, 31, "Ages 18 through 69", "$50,000"),
     (196, 31, "Under age 18", "$10,000"),
